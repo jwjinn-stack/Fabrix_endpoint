@@ -1,0 +1,57 @@
+# gemma-4-31B-it (59G, 이미 gpu-worker-03 디스크에 존재) → Harbor 레지스트리 push.
+# HF 다운로드가 아니라 로컬 디스크(hostPath) 모델을 그대로 oras push 한다(Track A).
+# - 노드: gpu-worker-03 (hostPath /data/srv/llm-models 접근 위해 고정)
+# - 대상: harbor-core.harbor/models/gemma-4-31b-it:latest (in-cluster, plain-http)
+# - creds: fabrix-endpoint/harbor-import (username/password)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: push-gemma-to-harbor
+  namespace: fabrix-endpoint
+  labels:
+    fabrix.managed-by: fabrix-endpoint
+    purpose: model-import
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 3600   # 1h 안에 끝나야(59G 전송 여유). 초과 시 실패 처리.
+  ttlSecondsAfterFinished: 86400 # 완료 후 24h 보존(로그 확인 위해 길게).
+  template:
+    metadata:
+      labels: { purpose: model-import }
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: gpu-worker-03
+      containers:
+        - name: push
+          image: ghcr.io/oras-project/oras:v1.2.0
+          env:
+            - { name: HOST, value: "harbor-core.harbor" }
+            - { name: PROJECT, value: "models" }
+            - { name: MODEL_NAME, value: "gemma-4-31b-it" }
+            - name: HARBOR_USER
+              valueFrom: { secretKeyRef: { name: harbor-import, key: username } }
+            - name: HARBOR_PASS
+              valueFrom: { secretKeyRef: { name: harbor-import, key: password } }
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cd /models/google/gemma-4-31B-it
+              echo "=== 파일 목록 ==="; ls -la; du -sh .
+              oras login --plain-http -u "$HARBOR_USER" -p "$HARBOR_PASS" "$HOST"
+              echo "=== push 시작: $HOST/$PROJECT/$MODEL_NAME:latest ==="
+              oras push --plain-http "$HOST/$PROJECT/$MODEL_NAME:latest" . \
+                --annotation "fabrix.source=local-disk" \
+                --annotation "fabrix.model-id=google/gemma-4-31B-it"
+              echo "=== pushed: $HOST/$PROJECT/$MODEL_NAME:latest ==="
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "2", memory: "10Gi" }
+      volumes:
+        - name: models
+          hostPath:
+            path: /data/srv/llm-models
+            type: Directory

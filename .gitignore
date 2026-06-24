@@ -1,0 +1,21 @@
+# Go
+/backend/bin/
+*.test
+*.out
+
+# Node / React
+/web/node_modules/
+/web/dist/
+/web/.vite/
+
+# Env / secrets
+.env
+.env.local
+*.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+.gstack/
+.env.dev.local

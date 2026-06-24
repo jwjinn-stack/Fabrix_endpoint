@@ -1,0 +1,13 @@
+# harbor-registry 배포 패치 — registry-data(emptyDir) → PVC(harbor-registry-data, gpu-worker-02:/data) + 노드 고정.
+# 적용: kubectl patch deploy harbor-registry -n harbor --type=strategic --patch-file deploy/k8s/harbor-registry-patch.yaml
+# (local PV + fsGroup 10000 → kubelet 가 /data/harbor/registry 를 그룹 10000 으로 chown. 사전 mkdir 필요.)
+spec:
+  template:
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: gpu-worker-02
+      volumes:
+        - name: registry-data
+          emptyDir: null
+          persistentVolumeClaim:
+            claimName: harbor-registry-data

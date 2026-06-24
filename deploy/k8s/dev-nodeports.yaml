@@ -1,0 +1,19 @@
+# dev 전용 NodePort — dev 머신(백엔드)이 port-forward 없이 항상 통신.
+# 기존 ClusterIP 서비스는 건드리지 않고 별도 NodePort 서비스만 추가(비파괴).
+# 운영 전환 시에는 인클러스터 ClusterIP DNS 사용(이 파일 미적용).
+#
+# ※ ClickHouse(우리 ns fabrix-endpoint)만 NodePort. Semantic Router 는 공유/보호 ns
+#   (vllm-semantic-router-system)라 NodePort 추가 대신 dev-up.sh 의 견고한 port-forward
+#   (연결 확인 + 자동 복구)로 통신한다.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse-nodeport
+  namespace: fabrix-endpoint
+  labels: { app: clickhouse, purpose: dev-nodeport }
+spec:
+  type: NodePort
+  selector: { app: clickhouse }
+  ports:
+    - { name: http, port: 8123, targetPort: 8123, nodePort: 30123 }

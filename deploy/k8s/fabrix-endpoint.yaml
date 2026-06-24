@@ -1,0 +1,101 @@
+# FABRIX Endpoint 우리 워크로드 (api + web) — ns fabrix-endpoint
+# 이미지: GitHub Actions가 GHCR로 빌드·푸시 → 클러스터가 pull.
+# ⚠ GHCR 패키지가 private면 imagePullSecret 필요(아래 주석 참고). public이면 불필요.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabrix-api
+  namespace: fabrix-endpoint
+  labels: { app: fabrix-api }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: fabrix-api }
+  template:
+    metadata:
+      labels: { app: fabrix-api }
+    spec:
+      # imagePullSecrets: [{ name: ghcr-pull }]   # GHCR private 일 때만
+      containers:
+        - name: api
+          image: ghcr.io/maymustai/fabrix-endpoint-backend:latest
+          ports: [{ containerPort: 8080 }]
+          env:
+            - { name: FABRIX_API_ADDR, value: ":8080" }
+            - { name: FABRIX_DATA_SOURCE, value: "live" }
+            # 인클러스터 vmselect (VictoriaMetrics Prometheus 쿼리)
+            - { name: FABRIX_VMSELECT_URL, value: "http://vmselect-vm.observability:8481/select/0/prometheus" }
+            - { name: FABRIX_ALLOWED_ORIGINS, value: "*" }
+            # 추론 프록시 업스트림(gemma4 Dynamo)
+            - { name: FABRIX_GEMMA_UPSTREAM, value: "http://gemma4-31b-vllm-agg-frontend-nodeport.dynamo-inference:8000" }
+            # 가드레일(Semantic Router HTTP classify)
+            - { name: FABRIX_SR_URL, value: "http://semantic-router.vllm-semantic-router-system:8080" }
+            - { name: FABRIX_POLICY_VERSION, value: "v1" }
+            # 증적/롤업(ClickHouse) — dev 자격증명(deploy/k8s/clickhouse.yaml과 동일)
+            - { name: FABRIX_CLICKHOUSE_URL, value: "http://fabrix:fabrix_dev@clickhouse.fabrix-endpoint:8123" }
+            # 키·앱(CNPG) — 시크릿의 in-cluster 연결 URI
+            - name: FABRIX_DATABASE_URL
+              valueFrom: { secretKeyRef: { name: fabrix-pg-app, key: uri } }
+            # 증적 비식별 솔트(운영은 별도 Secret 권장)
+            - { name: FABRIX_AUDIT_SALT, value: "fabrix-prod-salt-change-me" }
+          readinessProbe:
+            httpGet: { path: /api/v1/healthz, port: 8080 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/v1/healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "500m", memory: "256Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabrix-api
+  namespace: fabrix-endpoint
+  labels: { app: fabrix-api }
+spec:
+  selector: { app: fabrix-api }
+  ports: [{ name: http, port: 8080, targetPort: 8080 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fabrix-web
+  namespace: fabrix-endpoint
+  labels: { app: fabrix-web }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: fabrix-web }
+  template:
+    metadata:
+      labels: { app: fabrix-web }
+    spec:
+      # imagePullSecrets: [{ name: ghcr-pull }]
+      containers:
+        - name: web
+          image: ghcr.io/maymustai/fabrix-endpoint-web:latest
+          ports: [{ containerPort: 80 }]
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "20m", memory: "32Mi" }
+            limits: { cpu: "200m", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fabrix-web
+  namespace: fabrix-endpoint
+  labels: { app: fabrix-web }
+spec:
+  type: NodePort
+  selector: { app: fabrix-web }
+  ports:
+    - { name: http, port: 80, targetPort: 80, nodePort: 30092 } # 30090/91 = fabrix-v2

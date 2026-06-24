@@ -1,0 +1,45 @@
+# vLLM Semantic Router (가드레일 ext_proc) — dev values
+# 차트: oci://ghcr.io/vllm-project/charts/semantic-router (v0.0.0-latest)
+# ns: vllm-semantic-router-system
+#
+# 변경점: persistence.storageClassName "standard" → "-" (이 클러스터 기본 SC = local-path).
+# 분류기 모델은 부팅 시 HF 자동 다운로드 → PVC 캐시 (egress 가능 dev). 폐쇄망 전환 시 existingClaim.
+# 선택 의존(redis/milvus/jaeger/prometheus/grafana)은 차트 기본값 그대로 전부 비활성.
+# 게이트웨이/라우트/EnvoyExtensionPolicy 는 차트가 만들지 않음 → 우리가 격리 구성으로 별도 생성.
+
+# 이미지 버전 핀 (재현성 + 차트 config 스키마 정합).
+# 롤링 `latest` 이미지는 canonical v0.3 config를 요구하나, v0.0.0-latest 차트는
+# 옛 스키마(pre-v0.3) config를 렌더 → 불일치로 CrashLoop. v0.2.0(pre-v0.3)으로 핀해 정합.
+image:
+  tag: "v0.2.0"
+
+persistence:
+  enabled: true
+  storageClassName: "local-path" # 클러스터 기본 SC (WaitForFirstConsumer)
+  size: 20Gi # 분류기 다중 모델 대비 여유 (차트 기본 10Gi)
+
+serviceAccount:
+  create: true
+rbac:
+  create: true # ClusterRole(dynamo CRD 읽기) + binding
+
+# ext_proc gRPC :50051, HTTP :8080, metrics :9190 (차트 기본)
+
+# --- config override: PII mapping 경로 교정 ---
+# 차트 v0.0.0-latest 기본값(values.yaml L276-281)은 pii_model 블록이 자기모순:
+#   model_id      = models/pii_classifier_modernbert-base_presidio_token_model  (HF에서 정상 다운로드됨)
+#   pii_mapping_path = models/mom-pii-classifier/pii_type_mapping.json          (존재하지 않는 디렉토리/파일)
+# 실측: PVC 내 pii_classifier_modernbert-base_presidio_token_model/ 에는
+#       pii_type_mapping.json 이 없고 label_mapping.json 만 존재.
+#       label_mapping.json 의 포맷({label_to_idx, id_to_label})은
+#       정상 동작하는 jailbreak_type_mapping.json 과 동일 → ExtProc 로더 호환.
+# 따라서 mapping_path 를 model_id 와 같은 디렉토리의 label_mapping.json 으로 정합.
+# (참고: 공식 v0.2.0 config 도 pii_mapping_path 파일명을 label_mapping.json 으로 사용)
+config:
+  classifier:
+    pii_model:
+      model_id: "models/pii_classifier_modernbert-base_presidio_token_model"
+      use_modernbert: true
+      threshold: 0.7
+      use_cpu: true
+      pii_mapping_path: "models/pii_classifier_modernbert-base_presidio_token_model/label_mapping.json"

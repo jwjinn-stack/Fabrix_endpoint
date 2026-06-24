@@ -1,0 +1,17 @@
+# FABRIX Endpoint 마스터 DB (CloudNativePG) — app/api_key 등 관계형 마스터 데이터.
+# 문서 Part 1 ACCESS 모델. 키는 해시만 저장(R4). dev: 단일 인스턴스 + local-path.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: fabrix-pg
+  namespace: fabrix-endpoint
+spec:
+  instances: 1
+  storage:
+    size: 5Gi
+    storageClass: local-path
+  bootstrap:
+    initdb:
+      database: fabrix
+      owner: fabrix
+  # CNPG가 자격증명 시크릿(fabrix-pg-app) + 서비스(fabrix-pg-rw:5432) 자동 생성

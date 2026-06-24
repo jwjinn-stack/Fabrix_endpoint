@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────────────────
+# FABRIX Endpoint — DynamoGraphDeployment 템플릿 ① 집약(Aggregated) 패턴
+# 용도: 개발/테스트 (단일 워커, prefill+decode 한 파드). vLLM PS 라우터 대체(D-5)
+# 참고 패턴: dynamo agg.yaml (Frontend + 단일 decode worker)
+# ⚠ 필드 스키마는 Dynamo 버전에 따라 다름 — 배포 전 공식 문서로 키 재확인(부록 B)
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: nvidia.com/v1alpha1            # ⚠ 버전 확인 필요(설치된 Operator CRD 기준)
+kind: DynamoGraphDeployment
+metadata:
+  name: qwen3-30b-agg
+  namespace: vllm-prod-stack
+  labels:
+    # FABRIX 귀속 라벨 — Prometheus relabel이 app_id/dept_id로 승격(통합문서 §3-3)
+    fabrix.app_id: "platform-shared"
+    fabrix.dept_id: "D-PLATFORM"
+spec:
+  services:
+    # ── 1) 진입점(OpenAI 호환 /v1/*) ──────────────────────────────
+    Frontend:
+      componentType: frontend
+      replicas: 1
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:latest   # ⚠ 태그 고정 권장
+          # Frontend는 라우팅·OpenAI API 노출. 모델 인자는 워커와 일치시킴
+          command: ["python3", "-m", "dynamo.frontend"]
+          args:
+            - "--http-port=8000"
+          # API 키 인증(D-1: 보안 신원=키). Bearer 토큰 시크릿 주입
+          envFromSecret: fabrix-vllm-api-keys   # ⚠ Dynamo의 프론트 인증 방식 확인 필요
+
+    # ── 2) 추론 워커(vLLM 엔진, prefill+decode 동일 파드) ──────────
+    VllmDecodeWorker:
+      componentType: worker
+      replicas: 1
+      resources:
+        limits:
+          gpu: "1"                 # MIG 슬라이스 1개. 프로파일 지정은 nodeSelector/resourceName로(확인 필요)
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:latest
+          command: ["python3", "-m", "dynamo.vllm"]
+          args:
+            - "--model=Qwen/Qwen3-30B-A3B-Thinking-2507-FP8"
+            - "--served-model-name=Qwen/Qwen3-30B-A3B"   # /v1/models 노출명
+            - "--max-model-len=16384"
+            - "--enable-prefix-caching"                   # 캐시 효과(통합문서 §4-5)
+          volumeMounts:
+            - name: model-cache
+              mountPath: /data            # PowerScale PVC에서 가중치 로드(PDF 배포 가이드)
+          startupProbe:                    # 모델 로딩 대기(수분 소요)
+            httpGet: { path: /health, port: 8000 }
+            failureThreshold: 60
+            periodSeconds: 10
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: vllm-model-weights-claim   # PowerScale CSI (ReadWriteMany)

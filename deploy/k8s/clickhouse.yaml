@@ -1,0 +1,66 @@
+# ClickHouse — 증적/롤업 분석 미러 (dev, ns fabrix-endpoint)
+# 문서 2-4 guard_audit / 3-5 usage_rollup 의 조회 미러.
+# dev 한정: 단일 인스턴스, local-path PVC. 운영은 클러스터/복제 별도 검토.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: clickhouse-data
+  namespace: fabrix-endpoint
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clickhouse
+  namespace: fabrix-endpoint
+  labels: { app: clickhouse }
+spec:
+  replicas: 1
+  strategy: { type: Recreate } # localPV는 RWO → 롤링 불가
+  selector:
+    matchLabels: { app: clickhouse }
+  template:
+    metadata:
+      labels: { app: clickhouse }
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:24.8-alpine
+          ports:
+            - { name: http, containerPort: 8123 }
+            - { name: native, containerPort: 9000 }
+          env:
+            - { name: CLICKHOUSE_DB, value: fabrix }
+            - { name: CLICKHOUSE_USER, value: fabrix }
+            - { name: CLICKHOUSE_PASSWORD, value: fabrix_dev } # dev 전용
+            - { name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT, value: "1" }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "4Gi" }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/clickhouse }
+          readinessProbe:
+            httpGet: { path: /ping, port: 8123 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: clickhouse-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: fabrix-endpoint
+  labels: { app: clickhouse }
+spec:
+  selector: { app: clickhouse }
+  ports:
+    - { name: http, port: 8123, targetPort: 8123 }
+    - { name: native, port: 9000, targetPort: 9000 }

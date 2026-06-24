@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────────
+# FABRIX Endpoint — DynamoGraphDeployment 템플릿 ② 집약+라우터(agg_router)
+# 용도: 프로덕션 (다중 replica + KV-aware 라우팅 + 세션 어피니티)
+# 핵심: D-1의 x-user-id(sessionID)로 세션 라우팅 어피니티 → 캐시 hit↑ TTFT↓
+# ⚠ 라우팅/플래너 필드명은 Dynamo 버전별 상이 — 공식 문서 재확인(부록 B)
+# ─────────────────────────────────────────────────────────────────────────
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: qwen3-30b-prod
+  namespace: vllm-prod-stack
+  labels:
+    fabrix.app_id: "wm-advisor-chatbot"
+    fabrix.dept_id: "D-RETAIL"
+spec:
+  services:
+    Frontend:
+      componentType: frontend
+      replicas: 2                          # 진입점 이중화(HA)
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:latest
+          command: ["python3", "-m", "dynamo.frontend"]
+          args:
+            - "--http-port=8000"
+            - "--router-mode=kv"           # KV-aware 라우터 활성(⚠ 플래그명 확인)
+            - "--router-session-key=x-user-id"   # 세션 어피니티 키 = sessionID(D-1)
+          envFromSecret: fabrix-vllm-api-keys
+
+    VllmDecodeWorker:
+      componentType: worker
+      replicas: 4                          # 4 replica (PDF Use case: replica↑ → latency↓)
+      resources:
+        limits:
+          gpu: "1"
+      extraPodSpec:
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/vllm-runtime:latest
+          command: ["python3", "-m", "dynamo.vllm"]
+          args:
+            - "--model=Qwen/Qwen3-30B-A3B-Thinking-2507-FP8"
+            - "--served-model-name=Qwen/Qwen3-30B-A3B"
+            - "--max-model-len=16384"
+            - "--enable-prefix-caching"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /data
+          startupProbe:
+            httpGet: { path: /health, port: 8000 }
+            failureThreshold: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            periodSeconds: 30
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: vllm-model-weights-claim
+
+  # ── SLO Planner 기반 오토스케일(KEDA 대체, D-5) ───────────────────
+  # ⚠ Planner 설정 위치/스키마는 Dynamo 버전별 상이 — 공식 문서 확인.
+  #    개념: SLO(TTFT 목표) 위반 시 replica 증설, 유휴 시 축소.
+  planner:                                 # (확인 필요) 별도 CR이거나 spec 하위일 수 있음
+    enabled: true
+    slo:
+      ttft_p95_ms: 200                      # 증권사 상담봇 목표(예시)
+    minReplicas: 2
+    maxReplicas: 8
+    scaleDownCooldownSeconds: 300           # GPU 로딩 시간 고려(PDF p26 KEDA와 동일 취지)

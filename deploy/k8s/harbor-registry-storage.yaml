@@ -1,0 +1,35 @@
+# Harbor registry 스토리지를 gpu-worker-02:/data(md0, 3.5T)로 이전.
+# 배경: 현재 harbor-registry 의 registry-data 볼륨이 emptyDir → 비영구 + 노드 rootfs(35G) 한정.
+#       gpu-worker-02 /data(여유 1.5T)에 hostPath PV/PVC 로 영구·대용량 저장. (Harbor 현재 0 repos → 손실 없음)
+# ⚠ 적용 = 공유 Harbor 변경. 아래 PV/PVC 생성 + 배포 패치(별도) 후 rollout.
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: harbor-registry-data
+  labels: { app: harbor, component: registry, fabrix.managed-by: fabrix-endpoint }
+spec:
+  capacity: { storage: 1000Gi }       # md0 여유 내(상한일 뿐, 실제는 파일시스템 용량)
+  accessModes: [ReadWriteOnce]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: harbor-local
+  volumeMode: Filesystem
+  local:
+    path: /data/harbor/registry        # gpu-worker-02 의 md0(/data)
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - { key: kubernetes.io/hostname, operator: In, values: ["gpu-worker-02"] }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: harbor-registry-data
+  namespace: harbor
+  labels: { app: harbor, component: registry, fabrix.managed-by: fabrix-endpoint }
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: harbor-local
+  resources: { requests: { storage: 1000Gi } }
+  volumeName: harbor-registry-data

@@ -1,0 +1,19 @@
+# Dynamo Frontend OpenAI 포트(openai-http:8000)에서 dynamo_frontend_* / vllm:* 메트릭 수집.
+# 기존 'dynamo' 스크레이프는 system(9090) 포트만 봐서 추론 메트릭이 누락됨 → 이걸로 보강.
+# selector {} = dynamo-inference 의 모든 서비스 대상이나, 'openai-http' 포트가 있는
+# 서비스(= *-frontend-nodeport)만 실제 스크레이프됨. 향후 모델에도 자동 적용.
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMServiceScrape
+metadata:
+  name: dynamo-frontend-openai
+  namespace: observability
+  labels:
+    fabrix.maymust.com/managed-by: fabrix-endpoint
+spec:
+  namespaceSelector:
+    matchNames: ["dynamo-inference"]
+  selector: {}
+  endpoints:
+    - port: openai-http
+      path: /metrics
+      interval: 15s

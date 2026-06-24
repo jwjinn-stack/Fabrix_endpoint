@@ -1,0 +1,75 @@
+# 가드레일 게이트웨이 배선 (운영 강제, SSOT R9 §2-1)
+# 전용 Gateway(envoy 클래스) + HTTPRoute(→gemma) + EnvoyExtensionPolicy(ext_proc→SR:50051) + ReferenceGrant.
+# 공유 Envoy GW(kserve) 미변경 — 별도 Gateway 만 추가(다른 팀 무영향).
+# 모든 클라이언트(우리 프록시 미경유 포함)가 PII/Jailbreak 판정을 거치게 강제. x-vsr-matched-* 헤더 부착.
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: fabrix-guard-gw
+  namespace: dynamo-inference
+  labels: { fabrix.managed-by: fabrix-endpoint }
+spec:
+  gatewayClassName: envoy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes: { namespaces: { from: Same } }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: fabrix-guard-route
+  namespace: dynamo-inference
+  labels: { fabrix.managed-by: fabrix-endpoint }
+spec:
+  parentRefs:
+    - name: fabrix-guard-gw
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: / }
+      backendRefs:
+        - name: gemma4-31b-vllm-agg-frontend-nodeport
+          port: 8000
+---
+# ext_proc → Semantic Router gRPC :50051 (요청 경로에 가드레일 삽입)
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyExtensionPolicy
+metadata:
+  name: fabrix-guard-extproc
+  namespace: dynamo-inference
+  labels: { fabrix.managed-by: fabrix-endpoint }
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: fabrix-guard-route
+  extProc:
+    - backendRefs:
+        - name: semantic-router
+          namespace: vllm-semantic-router-system
+          port: 50051
+      processingMode:
+        request:
+          body: Buffered
+        response: {}
+---
+# (참고) SR gRPC h2c: Envoy Gateway 는 ext_proc backendRef 를 gRPC(h2c)로 호출.
+# 필요 시 SR Service 포트에 appProtocol: kubernetes.io/h2c 또는 Backend 리소스로 명시.
+---
+# 교차-ns 허용: EnvoyExtensionPolicy(dynamo-inference) → SR Service(vllm-semantic-router-system)
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: fabrix-guard-extproc-grant
+  namespace: vllm-semantic-router-system
+  labels: { fabrix.managed-by: fabrix-endpoint }
+spec:
+  from:
+    - group: gateway.envoyproxy.io
+      kind: EnvoyExtensionPolicy
+      namespace: dynamo-inference
+  to:
+    - group: ""
+      kind: Service

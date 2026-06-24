@@ -1,0 +1,73 @@
+# MinIO — WORM 증적 불변 보존(ObjectScale 대체, dev). ns fabrix-endpoint.
+# Object Lock(WORM) 버킷에 가드레일 증적을 불변 객체로 미러(원본). ClickHouse=가변 조회 미러.
+# 운영은 Dell ObjectScale / S3 Object Lock 으로 교체.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: fabrix-endpoint
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 10Gi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: fabrix-endpoint
+  labels: { app: minio }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: minio } }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - { name: MINIO_ROOT_USER, value: fabrixadmin }
+            - { name: MINIO_ROOT_PASSWORD, value: fabrix_worm_dev } # dev 전용
+          ports:
+            - { containerPort: 9000 }
+            - { containerPort: 9001 }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: minio-data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: fabrix-endpoint
+  labels: { app: minio }
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: api, port: 9000, targetPort: 9000 }
+    - { name: console, port: 9001, targetPort: 9001 }
+---
+# dev NodePort(백엔드가 머신에서 접근). 운영은 인클러스터 DNS.
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-nodeport
+  namespace: fabrix-endpoint
+  labels: { app: minio, purpose: dev-nodeport }
+spec:
+  type: NodePort
+  selector: { app: minio }
+  ports:
+    - { name: api, port: 9000, targetPort: 9000, nodePort: 30903 }
