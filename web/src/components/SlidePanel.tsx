@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 // 마스터-디테일 우측 슬라이드 패널 — 목록 행 클릭 → 페이지 이동 없이 상세.
@@ -21,8 +21,11 @@ export default function SlidePanel({
   footer?: ReactNode;
   width?: number;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!open) return;
+    // 열릴 때 패널로 첫 포커스 이동 — 키보드/스크린리더가 상세 내용으로 진입.
+    panelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -34,8 +37,10 @@ export default function SlidePanel({
   return (
     <div className="slide-overlay" onClick={onClose} role="presentation">
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         className="slide-panel"
-        style={{ width }}
+        style={{ width, outline: "none" }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

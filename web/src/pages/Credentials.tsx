@@ -55,6 +55,18 @@ export default function Credentials() {
     return () => ctrl.abort();
   }, [load]);
 
+  // 에러·공지 자동 소거 — 사용자가 수정 후 재시도할 때 옛 메시지가 남아 혼란 주지 않게.
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 6000);
+    return () => clearTimeout(t);
+  }, [error]);
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 3000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   const credFor = (kind: string) => creds.find((c) => c.kind === kind);
 
   const openEdit = (kind: string) => {
@@ -133,6 +145,7 @@ export default function Credentials() {
                   <label className="pg-field">
                     <span>{k.valueLabel}{c?.set ? " (비워두면 기존 값 유지)" : ""}</span>
                     <input type="password" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} placeholder={k.ph} autoComplete="off" />
+                    {c?.set && <span className="cred-help" style={{ marginTop: 4 }}>비워두면 기존 값이 유지됩니다. 새 값을 입력하면 교체됩니다.</span>}
                   </label>
                   <div className="modal-actions">
                     <button type="button" className="btn-ghost" onClick={() => setEdit(null)}>취소</button>

@@ -16,6 +16,45 @@ const REFRESH_MS = 15_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
 
+// ── 골든 시그널 "지금 정상?" 요약 ──
+// 관제 1순위 질문에 한눈에 답한다: 트래픽·에러·지연·포화 4신호 + 종합 상태등(green/amber/red).
+type SigTone = "green" | "amber" | "red";
+const TONE_RANK: Record<SigTone, number> = { green: 0, amber: 1, red: 2 };
+const STATUS_LABEL: Record<SigTone, string> = { green: "정상", amber: "주의", red: "위험" };
+// 임계: 값이 warn 이상이면 주의, crit 이상이면 위험(높을수록 나쁜 지표 기준).
+function sigTone(v: number, warn: number, crit: number): SigTone {
+  return v >= crit ? "red" : v >= warn ? "amber" : "green";
+}
+
+function HealthBanner({ overview }: { overview: DashboardOverview }) {
+  const errRate = (1 - overview.traffic.success_rate) * 100; // %
+  const signals: { k: string; v: string; tone: SigTone }[] = [
+    { k: "트래픽", v: `${overview.traffic.qps.toFixed(1)} QPS`, tone: "green" },
+    { k: "에러율", v: `${errRate.toFixed(2)}%`, tone: sigTone(errRate, 1, 5) },
+    { k: "지연 p95", v: `${overview.quality.ttft_p95_ms}ms`, tone: sigTone(overview.quality.ttft_p95_ms, 140, 250) },
+    { k: "GPU 포화", v: pct(overview.gpu.usage_perc), tone: sigTone(overview.gpu.usage_perc * 100, 85, 95) },
+  ];
+  const overall = signals.reduce<SigTone>((w, s) => (TONE_RANK[s.tone] > TONE_RANK[w] ? s.tone : w), "green");
+  return (
+    <div className={`health-banner ${overall}`} role="status" aria-live="polite">
+      <span className={`health-status ${overall}`}>
+        <span className="health-dot" aria-hidden="true" />
+        {STATUS_LABEL[overall]}
+      </span>
+      <span className="health-title">지금 시스템 상태</span>
+      <div className="health-signals">
+        {signals.map((s) => (
+          <span key={s.k} className={`health-sig ${s.tone}`}>
+            <span className="health-sig-dot" aria-hidden="true" />
+            <span className="health-sig-k">{s.k}</span>
+            <b>{s.v}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
 // 전기간 대비 변화율(%): 시계열을 전반/후반으로 나눠 평균 비교. 데이터 부족하면 미표시.
 function deltaPct(vals: number[]): number | undefined {
@@ -148,6 +187,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
 
       {overview && series && (
         <>
+          <HealthBanner overview={overview} />
           {panels.cards && (
           <>
           {/* D-01/D-03: 동일 높이 KPI 타일 그리드(auto-fit) — 폭에 따라 3~4열로 자연 줄바꿈,

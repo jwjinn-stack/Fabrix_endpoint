@@ -5,6 +5,8 @@ import type { Endpoint, EndpointPreview, EndpointSpec, HarborModel, IssuedKey, O
 import type { Page } from "../components/Layout";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
@@ -64,6 +66,8 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [detail, setDetail] = useState<Endpoint | null>(null);
+  const [confirmDel, setConfirmDel] = useState<Endpoint | null>(null); // 삭제 확인 대상(비가역)
+  const { density, setDensity } = useTableDensity("endpoints");
   // 선택지 소스: Harbor 모델 · 기존 앱 · 기존 부서.
   const [harborModels, setHarborModels] = useState<HarborModel[]>([]);
   const [orgApps, setOrgApps] = useState<OrgApp[]>([]);
@@ -171,13 +175,19 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
     }
   };
 
-  const remove = async (ns: string, name: string) => {
+  const remove = async () => {
+    if (!confirmDel) return;
+    const { namespace: ns, name } = confirmDel;
+    setBusy(true);
     try {
       await deleteEndpoint(ns, name);
       setNotice(`삭제됨: ${name}`);
+      setConfirmDel(null);
       load();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -277,6 +287,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
         <span className="crumb">모델 / 엔드포인트 배포</span>
         <div className="spacer" />
         <span className="updated">{eps.length}개</span>
+        <DensityToggle density={density} onChange={setDensity} />
         {canDeploy && (
           <button type="button" className="btn-primary" onClick={() => { setWizard(true); setPreview(null); }} disabled={!available}>
             + 엔드포인트 생성
@@ -302,7 +313,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
         {eps.length === 0 && !loading ? (
           <div className="empty">배포된 엔드포인트가 없습니다. “+ 엔드포인트 생성”으로 모델을 배포하세요.</div>
         ) : (
-          <table className="usage-table">
+          <table className={`usage-table density-${density}`}>
             <thead>
               <tr>
                 <th>이름</th>
@@ -335,7 +346,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
                       </button>
                     )}
                     {e.managed && canDeploy && (
-                      <button type="button" className="btn-ghost btn-sm" onClick={(ev) => { ev.stopPropagation(); remove(e.namespace, e.name); }}>
+                      <button type="button" className="btn-danger-ghost" onClick={(ev) => { ev.stopPropagation(); setConfirmDel(e); }}>
                         삭제
                       </button>
                     )}
@@ -371,6 +382,21 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
           </>
         )}
       </SlidePanel>
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        title="엔드포인트 삭제"
+        danger
+        busy={busy}
+        confirmLabel="삭제"
+        message={
+          <>
+            <b>{confirmDel?.name}</b> 엔드포인트를 삭제합니다. 배포된 모델 서빙이 중단되며 <b>되돌릴 수 없습니다</b>.
+          </>
+        }
+        onConfirm={remove}
+        onCancel={() => setConfirmDel(null)}
+      />
 
       {wizard && (
         <div className="modal-overlay" onClick={() => setWizard(false)}>

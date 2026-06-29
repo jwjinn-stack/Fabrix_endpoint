@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchEnginePipeline, fetchGuardAudit, fetchProxyStats } from "../api/client";
 import type { EnginePipeline, GuardAuditRow, ProxyStats } from "../api/types";
 import StatCard from "../components/StatCard";
+import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import PipelineWaterfall from "../components/PipelineWaterfall";
 import EnginePipelinePanel from "../components/EnginePipelinePanel";
@@ -49,7 +50,8 @@ export default function Traffic() {
       ]);
       setStats(s);
       setPipeline(p);
-      setStream(g.rows.slice(0, 20));
+      // 최신순 보장 — API 정렬 순서와 무관하게 ts 내림차순 후 상위 20건.
+      setStream([...g.rows].sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, 20));
       setError(null);
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError((e as Error).message);
@@ -86,7 +88,7 @@ export default function Traffic() {
       </div>
 
       {error && <div className="state error" role="alert">트래픽 지표를 불러오지 못했습니다. ({error})</div>}
-      {!error && loading && !stats && <div className="state" role="status">트래픽 지표를 수집하는 중…</div>}
+      {!error && loading && !stats && <SkeletonCards count={5} />}
 
       {/* 파이프라인 다이어그램 */}
       <div className="card pipeline">
@@ -94,11 +96,19 @@ export default function Traffic() {
         <div className="pipe">
           <div className="pipe-node">클라이언트</div>
           <div className="pipe-arrow">→</div>
-          <div className="pipe-node pipe-fabrix">가드레일<br /><small>{s ? `${s.avg_guard_ms}ms` : "—"}</small></div>
+          <div className="pipe-node pipe-fabrix">
+            가드레일<br />
+            <small className={s && s.avg_guard_ms >= s.avg_upstream_ms ? "pipe-warn" : ""}>{s ? `${s.avg_guard_ms}ms` : "—"}</small>
+            {s && s.avg_guard_ms >= s.avg_upstream_ms && s.avg_guard_ms > 0 && <span className="pipe-bottleneck">● 병목</span>}
+          </div>
           <div className="pipe-arrow">→</div>
           <div className="pipe-node pipe-fabrix">귀속 · 쿼터</div>
           <div className="pipe-arrow">→</div>
-          <div className="pipe-node">엔진 (Dynamo)<br /><small>{s ? `${s.avg_upstream_ms}ms` : "—"}</small></div>
+          <div className="pipe-node">
+            엔진 (Dynamo)<br />
+            <small className={s && s.avg_upstream_ms > s.avg_guard_ms ? "pipe-warn" : ""}>{s ? `${s.avg_upstream_ms}ms` : "—"}</small>
+            {s && s.avg_upstream_ms > s.avg_guard_ms && <span className="pipe-bottleneck">● 병목</span>}
+          </div>
         </div>
         {s && <PipelineWaterfall stats={s} />}
       </div>
@@ -122,8 +132,8 @@ export default function Traffic() {
           <div className="card-head"><h3>HTTP 에러 분해 <span className="info" title="최근 윈도우 동안 코드별 응답 건수. 4xx=클라이언트 / 429=레이트리밋 / 5xx=서버">ⓘ</span></h3></div>
           <div className="err-codes">
             {([
-              ["400", "Bad request", "amber"], ["401", "Unauthorized", "amber"],
-              ["404", "Not found", "neutral"], ["429", "Rate limited", "red"], ["500", "Server error", "red"],
+              ["400", "Bad request", "blue"], ["401", "Unauthorized", "blue"],
+              ["404", "Not found", "blue"], ["429", "Rate limited", "red"], ["500", "Server error", "red"],
             ] as const).map(([code, label, tone]) => (
               <div key={code} className={`err-code err-${tone}`}>
                 <div className="ec-code">{code}</div>

@@ -92,6 +92,8 @@ export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, mode
           <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head"><h3>모델 임포트 — {src.title}</h3><button type="button" className="icon" aria-label="닫기" onClick={() => setImp(null)}>✕</button></div>
 
+            {impBusy && <div className="import-progress" role="status" aria-label="처리 중"><span /></div>}
+
             {src.cred && !credSet(src.cred) && (
               <div className="state" role="status">
                 {src.cred === "hf" ? "Hugging Face" : "NGC"} 토큰이 미설정입니다. 게이트/비공개 모델은 실패할 수 있습니다.{" "}

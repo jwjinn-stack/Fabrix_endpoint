@@ -340,6 +340,17 @@ body {
 .chip.warn { color: var(--warn, #b06a00); border-color: var(--warn, #b06a00); background: color-mix(in srgb, var(--warn, #b06a00) 10%, transparent); }
 .link-btn { border: none; background: none; color: var(--primary-strong); cursor: pointer; font: inherit; text-decoration: underline; padding: 0; }
 
+/* 임포트 진행 표시 — 비결정 진행 막대(다운로드→패키징→push 진행 중) */
+.import-progress { height: 3px; background: var(--primary-weak); border-radius: 3px; overflow: hidden; }
+.import-progress > span { display: block; height: 100%; width: 40%; background: var(--primary); border-radius: 3px; animation: import-slide 1.1s ease-in-out infinite; }
+@keyframes import-slide {
+  0% { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .import-progress > span { animation: none; width: 100%; margin-left: 0; opacity: 0.6; }
+}
+
 .content {
   grid-area: content;
   overflow-y: auto;
@@ -612,7 +623,8 @@ body {
 }
 .chart-legend {
   display: flex;
-  gap: var(--sp-4);
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
   margin-bottom: var(--sp-1);
   font-size: var(--fs-sm);
   color: var(--text-dim);
@@ -767,6 +779,33 @@ body {
   border-bottom: none;
 }
 
+/* 가로 스크롤 컨테이너 — 컬럼 많은 테이블(키 등)이 카드를 넘칠 때 페이지 본문 대신 테이블만 스크롤 */
+.table-scroll { overflow-x: auto; }
+
+/* 행 밀도 — 압축/보통/여유. 사용자가 정보 밀도를 조절(대량 행 스캔). */
+.usage-table.density-compact td, .usage-table.density-compact th { padding: 5px var(--sp-3); }
+.usage-table.density-relaxed td, .usage-table.density-relaxed th { padding: 13px var(--sp-3); }
+.density-toggle { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; }
+.density-toggle button {
+  border: none; background: var(--surface); color: var(--text-dim);
+  font: inherit; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); cursor: pointer;
+  transition: background var(--ease), color var(--ease);
+}
+.density-toggle button + button { border-left: 1px solid var(--border); }
+.density-toggle button:hover { background: var(--surface-2); }
+.density-toggle button.active { background: var(--primary-weak); color: var(--primary-strong); font-weight: 600; }
+
+/* 좌측 첫 컬럼 고정 — 가로 스크롤 시 식별자(키 이름 등) 항상 보이게 */
+.usage-table.sticky-first th:first-child,
+.usage-table.sticky-first td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.usage-table.sticky-first thead th:first-child { z-index: 2; }
+.usage-table.sticky-first tbody tr:hover td:first-child { background: var(--surface-2); }
+
 /* ── 공용 버튼 ── */
 .btn-primary {
   background: var(--primary);
@@ -794,6 +833,109 @@ body {
 .btn-ghost:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .btn-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
 .pill.warn { background: var(--amber-weak); color: var(--amber); }
+
+/* 위험(파괴적) 버튼 — 삭제·회수 등 비가역 액션. 액센트와 무관하게 항상 빨강. */
+.btn-danger {
+  background: var(--red);
+  border: 1px solid var(--red);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease);
+}
+.btn-danger:hover:not(:disabled) { background: #a51717; border-color: #a51717; }
+.btn-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 회수/삭제 등 위험 인라인 버튼(테이블 행) — 평소 중립, hover 시 위험 강조 */
+.btn-danger-ghost {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--ease), color var(--ease), background var(--ease);
+}
+.btn-danger-ghost:hover:not(:disabled) { border-color: var(--red); color: var(--red); background: var(--red-weak); }
+.btn-danger-ghost:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* 확인 다이얼로그 본문 */
+.confirm-message { font-size: var(--fs-body); color: var(--text-dim); line-height: var(--lh-body); }
+.confirm-message b { color: var(--text); }
+
+/* ── 골든시그널 "지금 정상?" 배너 ── */
+.health-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.health-banner.amber { border-left-color: var(--amber); }
+.health-banner.red { border-left-color: var(--red); }
+.health-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: var(--fs-card-title);
+}
+.health-status.green { color: var(--green); }
+.health-status.amber { color: var(--amber); }
+.health-status.red { color: var(--red); }
+.health-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.health-status.green .health-dot,
+.health-banner.green .health-status .health-dot { box-shadow: 0 0 0 3px var(--green-weak); }
+.health-title { color: var(--text-dim); font-size: var(--fs-sm); }
+.health-signals { display: flex; gap: var(--sp-2) var(--sp-4); flex-wrap: wrap; margin-left: auto; }
+.health-sig {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.health-sig b { color: var(--text); font-weight: 700; }
+.health-sig-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.health-sig.green .health-sig-dot { background: var(--green); }
+.health-sig.amber .health-sig-dot { background: var(--amber); }
+.health-sig.red .health-sig-dot { background: var(--red); }
+.health-sig.amber b { color: var(--amber); }
+.health-sig.red b { color: var(--red); }
+@media (max-width: 680px) {
+  .health-signals { margin-left: 0; width: 100%; }
+}
+
+/* 성공 토스트 — 우상단, 액션 성공 피드백(역할 변경·추가·삭제 등) */
+.toast {
+  position: fixed;
+  top: calc(var(--topbar-h) + 12px);
+  right: 20px;
+  z-index: 60;
+  background: var(--green-weak);
+  border: 1px solid var(--green);
+  color: var(--green);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  box-shadow: var(--shadow-card-hover);
+  animation: toast-in var(--ease);
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ── 모델 카탈로그 ── */
 .model-grid {
@@ -875,6 +1017,9 @@ body {
   border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: var(--sp-2);
 }
 .pg-input textarea:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -1px; }
+/* 차단 가이드 — 왜 막혔는지/어디서 정책 확인하는지 */
+.pg-guard-hint { margin-top: 6px; font-size: var(--fs-xs); color: var(--text-dim); background: var(--red-weak); border: 1px solid var(--red-border); border-radius: var(--radius-sm); padding: 6px 9px; line-height: 1.5; }
+.pg-guard-hint b { color: var(--red); }
 
 /* ── 카탈로그 모달리티 탭 ── */
 .modality-tabs { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-4); border-bottom: 1px solid var(--border); }
@@ -1402,6 +1547,9 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .span-track { flex: 1; position: relative; height: 16px; }
 .span-bar { position: absolute; top: 2px; height: 12px; border-radius: 3px; min-width: 2px; }
 .span-ms { flex: none; width: 56px; text-align: right; font-size: var(--fs-xs); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* 스팬 인라인 에러/경고 사유 — 어느 단계가 문제였는지 한눈에 */
+.span-reason { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--red); background: var(--red-weak); border-radius: 3px; padding: 0 5px; }
+.span-reason.warn { color: var(--amber); background: var(--amber-weak); }
 .span-wf-legend { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-faint); }
 .span-wf-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 
@@ -1620,6 +1768,11 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ec-label { font-size: var(--fs-xs); color: var(--text-faint); }
 .err-amber .ec-count { color: var(--amber); }
 .err-red .ec-count { color: var(--red); }
+.err-blue .ec-count { color: var(--blue); } /* 4xx 클라이언트 오류 — 서버 위험(5xx)과 구분 */
+
+/* 파이프라인 병목 배지 — 가장 느린 단계 표시 */
+.pipe-bottleneck { display: inline-block; margin-top: 2px; font-size: var(--fs-xs); font-weight: 700; color: var(--amber); }
+.pipe-node small.pipe-warn { color: var(--amber); font-weight: 700; }
 
 /* ══════════════════ 트레이스 Langfuse 정합: 소스 배지 + 비용 ══════════════════ */
 .span-src { flex: none; font-size: 8px; font-weight: 800; letter-spacing: 0.3px; padding: 1px 4px; border-radius: 3px; border: 1px solid; }
@@ -1647,6 +1800,9 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .sess-turn { display: flex; gap: var(--sp-3); padding: var(--sp-2) 0; position: relative; }
 .st-dot { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--primary-weak); color: var(--primary-strong); border: 2px solid var(--surface); font-size: var(--fs-xs); font-weight: 700; display: grid; place-items: center; z-index: 1; }
 .sess-turn.blocked .st-dot { background: var(--red-weak); color: var(--red); }
+/* 에러 턴 강조 — 한눈에 문제 턴 식별 */
+.sess-turn.error { background: var(--red-weak); border-radius: var(--radius-sm); }
+.sess-turn.error .st-dot { background: var(--red); color: #fff; }
 .st-body { flex: 1; min-width: 0; }
 .st-line1 { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .st-time { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }

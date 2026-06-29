@@ -214,6 +214,13 @@ export default function Traces() {
 }
 
 // span 깊이 계산: parent_id 체인을 따라 들여쓰기 레벨 산출(O-01 트리 뷰).
+// 스팬 속성에서 에러 사유 추출 — OTel/Langfuse 공통 키 중 먼저 잡히는 값.
+function spanErrReason(sp: TraceSpan): string | undefined {
+  const a = sp.attributes ?? {};
+  const v = a["exception.message"] ?? a["error.message"] ?? a["status_message"] ?? a["gen_ai.error"] ?? a["error"];
+  return v != null && v !== "" ? String(v) : undefined;
+}
+
 function spanDepth(sp: TraceSpan, byId: Map<string, TraceSpan>): number {
   let depth = 0;
   let cur = sp.parent_id ? byId.get(sp.parent_id) : undefined;
@@ -352,7 +359,9 @@ function TraceDetailView({ detail, openSpan, onToggleSpan }: { detail: TraceDeta
                       <span className="span-name">{sp.name}</span>
                       <span className={`span-src span-src-${sp.source}`} title={sp.source === "langfuse" ? "Langfuse observation (토큰·비용·프롬프트)" : "OTel → victoria-traces (Dynamo/vLLM)"}>{sp.source === "langfuse" ? "LF" : "VT"}</span>
                       {sp.derived && <span className="span-derived" title="별도 span 이 아님 — vLLM llm_request span 의 속성(gen_ai.latency.*)을 구간 분해한 것">attr</span>}
-                      {sp.status === "error" && <span className="span-err" title="에러">!</span>}
+                      {sp.status === "error" && <span className="span-err" title={spanErrReason(sp) ?? "에러"}>!</span>}
+                      {sp.status === "error" && spanErrReason(sp) && <span className="span-reason" title={spanErrReason(sp)}>{spanErrReason(sp)}</span>}
+                      {sp.status !== "error" && sp.level === "WARNING" && <span className="span-reason warn" title="경고">경고</span>}
                     </span>
                     <span className="span-track">
                       <span className="span-bar" style={{ left: `${left}%`, width: `${width}%`, background: color, opacity: sp.status === "error" ? 1 : 0.85 }} />

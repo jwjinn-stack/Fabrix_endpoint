@@ -46,6 +46,8 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
   const [detail, setDetail] = useState<HarborModel | null>(null);
   const [metrics, setMetrics] = useState<ModelMetric[]>([]);
   const [q, setQ] = useState("");
+  const [proj, setProj] = useState("all"); // 프로젝트 필터
+  const [deployFilter, setDeployFilter] = useState("all"); // 배포 상태 필터: all|deployed|undeployed
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -73,6 +75,18 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
     return () => ctrl.abort();
   }, [load]);
 
+  const projects = [...new Set(models.map((m) => m.project))].sort();
+  const visibleModels = models.filter((m) => {
+    if (q.trim() && !`${m.name} ${m.full_ref} ${m.tags.join(" ")}`.toLowerCase().includes(q.trim().toLowerCase())) return false;
+    if (proj !== "all" && m.project !== proj) return false;
+    if (deployFilter !== "all") {
+      const deployed = !!matchMetric(m.name, metrics)?.deployed;
+      if (deployFilter === "deployed" && !deployed) return false;
+      if (deployFilter === "undeployed" && deployed) return false;
+    }
+    return true;
+  });
+
   return (
     <>
       <div className="page-head">
@@ -81,7 +95,20 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
         <div className="spacer" />
         {status?.registry && <span className="updated">레지스트리 {status.registry} · {nf.format(status.model_count ?? 0)}개</span>}
         {available && models.length > 0 && (
-          <input className="search-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="모델 검색…" aria-label="모델 검색" />
+          <>
+            <input className="search-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="모델 검색…" aria-label="모델 검색" />
+            {projects.length > 1 && (
+              <select className="range-select" value={proj} onChange={(e) => setProj(e.target.value)} aria-label="프로젝트 필터">
+                <option value="all">프로젝트: 전체</option>
+                {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            )}
+            <select className="range-select" value={deployFilter} onChange={(e) => setDeployFilter(e.target.value)} aria-label="배포 상태 필터">
+              <option value="all">상태: 전체</option>
+              <option value="deployed">서빙 중</option>
+              <option value="undeployed">미배포</option>
+            </select>
+          </>
         )}
         {canImport && <button type="button" className="btn-primary" onClick={() => onNavigate("model-import")}>+ 모델 임포트</button>}
       </div>
@@ -95,9 +122,8 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
       {/* 모델 있음 → 카드 그리드 */}
       {available && models.length > 0 && (
         <div className="model-grid">
-          {models
-            .filter((m) => !q.trim() || `${m.name} ${m.full_ref} ${m.tags.join(" ")}`.toLowerCase().includes(q.trim().toLowerCase()))
-            .map((m) => {
+          {visibleModels.length === 0 && <div className="empty">조건에 맞는 모델이 없습니다. 검색·필터를 완화해 보세요.</div>}
+          {visibleModels.map((m) => {
             const mt = matchMetric(m.name, metrics);
             return (
             <div className="model-card" key={m.full_ref}>

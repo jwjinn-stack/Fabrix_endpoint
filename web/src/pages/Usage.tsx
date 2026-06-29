@@ -3,6 +3,7 @@ import { fetchOverview, fetchUsage, fetchUsageTrend } from "../api/client";
 import type { DashboardOverview, UsageReport, UsageRow, UsageTrend } from "../api/types";
 import type { Page } from "../components/Layout";
 import StatCard from "../components/StatCard";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton";
 import StackedShareBar from "../components/StackedShareBar";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import UsageTrendChart from "../components/UsageTrendChart";
@@ -100,6 +101,18 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
   const totalCost = rows.reduce((s, r) => s + (r.est_cost_krw ?? 0), 0);
   // 가장 비싼 항목 Top — 비용 책임 추적(Datadog "Most Expensive" 패턴).
   const topCost = [...rows].sort((a, b) => (b.est_cost_krw ?? 0) - (a.est_cost_krw ?? 0))[0];
+  // 추세 기준선(delta) — 추세 시계열 전반/후반 평균 비교. 실제 데이터가 있는 요청·토큰에만 적용.
+  const trendDelta = (pick: (p: { requests: number; tokens: number }) => number): number | undefined => {
+    const pts = trend?.points ?? [];
+    if (pts.length < 4) return undefined;
+    const h = Math.floor(pts.length / 2);
+    const prev = pts.slice(0, h).reduce((s, p) => s + pick(p), 0) / h;
+    const cur = pts.slice(h).reduce((s, p) => s + pick(p), 0) / (pts.length - h);
+    if (prev === 0) return cur === 0 ? 0 : undefined;
+    return ((cur - prev) / prev) * 100;
+  };
+  const reqDelta = trendDelta((p) => p.requests);
+  const tokDelta = trendDelta((p) => p.tokens);
   const isModel = group === "model";
   const groupMeta = GROUPS.find((g) => g.value === group)!;
 
@@ -128,18 +141,22 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
         </div>
       )}
       {!error && loading && !report && (
-        <div className="state" role="status" aria-live="polite">
-          사용량을 집계하는 중입니다…
-        </div>
+        <>
+          <SkeletonCards count={4} />
+          <div className="card" style={{ marginTop: "var(--sp-4)" }}>
+            <SkeletonRows rows={6} cols={5} />
+          </div>
+        </>
       )}
 
       {report && rows.length > 0 && (
         <>
           <div className="cards-4">
-            <StatCard title="총 요청" info={`${groupMeta.label} 합산`} metrics={[{ label: "requests", value: nf.format(totalReq) }]} />
-            <StatCard title="총 토큰" info="입력 + 출력 토큰" metrics={[
+            <StatCard title="총 요청" info={`${groupMeta.label} 합산 · 변화율은 기간 내 전반 대비 후반`} metrics={[{ label: "requests", value: nf.format(totalReq), delta: reqDelta, deltaGood: "up" }]} />
+            <StatCard title="총 토큰" info="입력 + 출력 토큰 · 변화율은 기간 내 전반 대비 후반" metrics={[
               { label: "입력", value: compact(totalIn), tone: "teal" },
               { label: "출력", value: compact(totalOut), tone: "amber" },
+              { label: "합계 추세", value: compact(totalIn + totalOut), delta: tokDelta, deltaGood: "up" },
             ]} />
             <StatCard title="추정 비용" info="토큰 × 모델 단가 (자가호스팅 추정)" metrics={[
               { label: "합계", value: `₩${compact(totalCost)}` },
@@ -188,7 +205,7 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
               ]}
             />
           </div>
-          {(overview.tokens.prompt_tokens > 0 || overview.tokens.completion_tokens > 0) && (
+          {(overview.tokens.prompt_tokens + overview.tokens.completion_tokens) > 100 && (
             <div className="card">
               <StackedShareBar
                 title={`토큰 분해 (기간 누적) · 입력 ${overview.tokens.prompt_tokens.toLocaleString("ko-KR")} / 출력 ${overview.tokens.completion_tokens.toLocaleString("ko-KR")}`}

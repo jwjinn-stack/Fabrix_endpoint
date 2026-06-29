@@ -73,6 +73,13 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
   // 오토스크롤 추종 여부(사용자가 위로 스크롤하면 false). 하단 100px 이내면 true.
   const [following, setFollowing] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // 응답 생성이 끝나(idle 복귀) 입력으로 포커스 이동 — 키보드/스크린리더 흐름 개선.
+  const prevStatusRef = useRef<ChatStatus>("idle");
+  useEffect(() => {
+    if (prevStatusRef.current !== "idle" && status === "idle") inputRef.current?.focus();
+    prevStatusRef.current = status;
+  }, [status]);
 
   // 타이프라이터 RAF/타이머 핸들 — cleanup 용.
   const rafRef = useRef<number | null>(null);
@@ -357,7 +364,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
 
         {/* 우: 대화 */}
         <div className="card pg-chat" style={{ position: "relative" }}>
-          <div className="pg-messages" ref={scrollRef} onScroll={onScroll}>
+          <div className="pg-messages" ref={scrollRef} onScroll={onScroll} role="log" aria-live="polite" aria-relevant="additions text" aria-label="대화 내용">
             {turns.length === 0 && <div className="empty">메시지를 입력해 모델을 시험해 보세요.</div>}
             {turns.map((t, i) => {
               if (t.role === "user") {
@@ -403,6 +410,12 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
                         {t.content}
                         {st === "streaming" && <span className="stream-caret" />}
                       </div>
+                      {/* 차단 가이드 — 왜 막혔고 어디서 정책을 보는지 */}
+                      {t.blocked && (
+                        <div className="pg-guard-hint">
+                          입력에서 위험·민감 표현이 감지되어 정책에 따라 차단되었습니다. 발동 규칙·통과 조건은 <b>가드레일</b> 화면의 해당 증적에서 확인할 수 있습니다.
+                        </div>
+                      )}
 
                       {/* 평문 신뢰도/판정 큐(M-04) */}
                       {cue && (
@@ -477,6 +490,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
 
           <div className="pg-input">
             <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

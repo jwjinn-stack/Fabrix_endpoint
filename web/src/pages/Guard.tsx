@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchGuardAudit, fetchGuardContent, fetchGuardStatus, type GuardStatus } from "../api/client";
 import type { GuardAuditReport, GuardAuditRow, GuardContent, TimeRange } from "../api/types";
 import StatCard from "../components/StatCard";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton";
 import GuardPolicyPanel from "../components/GuardPolicy";
 import MaskingPolicyPanel from "../components/MaskingPolicy";
 import GuardOverview from "../components/GuardOverview";
@@ -255,7 +256,12 @@ export default function Guard() {
       )}
 
       {tab === "audit" && !error && loading && !report && (
-        <div className="state" role="status">증적을 조회하는 중입니다…</div>
+        <>
+          <SkeletonCards count={4} />
+          <div className="card" style={{ marginTop: "var(--sp-4)" }}>
+            <SkeletonRows rows={8} cols={6} />
+          </div>
+        </>
       )}
 
       <SlidePanel
@@ -284,6 +290,14 @@ export default function Guard() {
                     : "유형 미상"}
                 </div>
               )}
+              {/* 규칙 → 이유 → 통과 조건 (가드레일 핵심: 왜 막혔고 무엇을 바꾸면 통과되는지) */}
+              <div>
+                <b>발동 규칙:</b>{" "}
+                {detail.guard_types?.length
+                  ? detail.guard_types.map((t) => (t === "pii" ? "PII 정책" : t === "jailbreak" ? "Jailbreak 차단 정책" : t === "secrets" ? "시크릿 차단 정책" : `${t} 정책`)).join(", ")
+                  : "해당 없음"}
+                {detail.policy_version ? ` · 정책 ${detail.policy_version}` : ""}
+              </div>
               <div style={{ color: "var(--text-dim)" }}>
                 {detail.decision === "blocked"
                   ? "이 요청은 가드레일에서 차단되었습니다."
@@ -291,6 +305,17 @@ export default function Guard() {
                     ? "통과했으나 표시(flagged)된 요청입니다."
                     : "정상 통과한 요청입니다."}
               </div>
+              {detail.decision !== "allowed" && (
+                <div style={{ color: "var(--text-dim)" }}>
+                  <b style={{ color: "var(--text)" }}>통과 조건:</b>{" "}
+                  {detail.guard_types?.includes("pii")
+                    ? "해당 PII 유형을 마스킹으로 처리하거나 예외 등록하면 통과됩니다."
+                    : detail.guard_types?.includes("jailbreak")
+                      ? "정책을 ‘표시(flag)’로 낮추거나 해당 패턴을 예외 등록하면 통과됩니다."
+                      : "정책에서 해당 패턴을 예외 처리하면 통과됩니다."}
+                  {canPolicy ? " 아래 ‘정책 조정’에서 변경할 수 있습니다." : ""}
+                </div>
+              )}
             </div>
 
             <DetailRow label="동작">{decisionBadge(detail.decision)}</DetailRow>
@@ -357,7 +382,7 @@ export default function Guard() {
                       <span className={`tag ${content.output.blocked ? "tag-red" : "tag-amber"}`}>{content.output.blocked ? "차단됨" : "표시됨"}</span>
                       <span className="gc-reason">{content.output.reason}</span>
                       <span className="gc-cat">category: <code>{content.output.category}</code></span>
-                      {content.masked && <span className="tag tag-amber">일부 마스킹</span>}
+                      {content.masked && <span className="tag tag-amber">일부 마스킹{detail.pii_subtypes?.length ? `: ${detail.pii_subtypes.map(piiLabel).join(", ")}` : ""}</span>}
                     </div>
                     <p className="gc-hint">
                       {content.captured

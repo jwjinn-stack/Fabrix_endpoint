@@ -3,6 +3,7 @@ import { createUser, deleteUser, fetchUsers, updateUser } from "../api/client";
 import type { User } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
@@ -70,6 +71,19 @@ function BrandColorCard() {
 
 const ROLE_LABEL: Record<string, string> = { admin: "관리자(Admin)", user: "일반(User)", super: "슈퍼(Super)" };
 const ROLE_TONE: Record<string, BadgeTone> = { admin: "red", super: "pink", user: "green" };
+// 권한 등급(높을수록 강함) — 상향 시 확인 다이얼로그를 띄우는 기준.
+const ROLE_RANK: Record<string, number> = { user: 0, super: 1, admin: 2 };
+const isEscalation = (from: string, to: string) => (ROLE_RANK[to] ?? 0) > (ROLE_RANK[from] ?? 0);
+
+// 백엔드 에러를 사람이 읽고 조치 가능한 문장으로 변환.
+function humanizeError(msg: string): string {
+  const m = msg.toLowerCase();
+  if (m.includes("already exists") || m.includes("duplicate")) return "이미 등록된 이메일입니다. 다른 이메일을 사용하세요.";
+  if (m.includes("invalid email") || m.includes("email")) return "이메일 형식이 올바르지 않습니다.";
+  if (m.includes("forbidden") || m.includes("permission") || m.includes("403")) return "권한이 없습니다. 관리자에게 문의하세요.";
+  if (m.includes("network") || m.includes("failed to fetch")) return "서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요.";
+  return msg;
+}
 
 function roleTag(role: string) {
   return <Badge tone={ROLE_TONE[role] ?? "neutral"}>{ROLE_LABEL[role] ?? role}</Badge>;
@@ -97,6 +111,15 @@ export default function Settings() {
   const [form, setForm] = useState({ email: "", name: "", role: "user", dept_id: "" });
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
+  const [notice, setNotice] = useState<string | null>(null); // 성공 토스트
+  const [confirmRole, setConfirmRole] = useState<{ user: User; role: string } | null>(null); // 권한 상향 확인
+  const [confirmDel, setConfirmDel] = useState<User | null>(null); // 사용자 삭제 확인
+
+  // 토스트 — 3초 후 자동 소거.
+  const toast = useCallback((msg: string) => {
+    setNotice(msg);
+    setTimeout(() => setNotice(null), 3000);
+  }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -118,15 +141,32 @@ export default function Settings() {
     return () => ctrl.abort();
   }, [load]);
 
-  const changeRole = async (u: User, role: string) => {
-    try {
-      await updateUser(u.user_id, { role, dept_id: u.dept_id, status: u.status });
-      load();
-    } catch (e) { setError((e as Error).message); }
+  // 역할 변경 — 권한 상향(user→super/admin 등)이면 확인 다이얼로그, 아니면 즉시 적용.
+  const changeRole = (u: User, role: string) => {
+    if (role === u.role) return;
+    if (isEscalation(u.role, role)) { setConfirmRole({ user: u, role }); return; }
+    void applyRole(u, role);
   };
 
-  const remove = async (id: string) => {
-    try { await deleteUser(id); load(); } catch (e) { setError((e as Error).message); }
+  const applyRole = async (u: User, role: string) => {
+    setBusy(true);
+    try {
+      await updateUser(u.user_id, { role, dept_id: u.dept_id, status: u.status });
+      setConfirmRole(null);
+      toast(`${u.name}님의 역할을 ${ROLE_LABEL[role] ?? role}(으)로 변경했습니다.`);
+      load();
+    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+  };
+
+  const remove = async () => {
+    if (!confirmDel) return;
+    setBusy(true);
+    try {
+      await deleteUser(confirmDel.user_id);
+      toast(`${confirmDel.name}님을 삭제했습니다.`);
+      setConfirmDel(null);
+      load();
+    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
   const submit = async () => {
@@ -135,9 +175,10 @@ export default function Settings() {
     try {
       await createUser(form);
       setModal(false);
+      toast(`${form.name}님을 추가했습니다.`);
       setForm({ email: "", name: "", role: "user", dept_id: "" });
       load();
-    } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
   return (
@@ -151,6 +192,7 @@ export default function Settings() {
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
+      {notice && <div className="toast" role="status">{notice}</div>}
       {!error && loading && users.length === 0 && <div className="state" role="status">사용자를 불러오는 중…</div>}
 
       {canConfig && <ReconfigurePanel />}
@@ -184,7 +226,7 @@ export default function Settings() {
                   <td>{u.dept_id || <span className="muted">—</span>}</td>
                   <td>{u.status === "active" ? <Badge tone="green" dot>활성</Badge> : <Badge tone="neutral" dot>비활성</Badge>}</td>
                   <td className="num">
-                    {canWrite && <button type="button" className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); remove(u.user_id); }}>삭제</button>}
+                    {canWrite && <button type="button" className="btn-danger-ghost" onClick={(e) => { e.stopPropagation(); setConfirmDel(u); }}>삭제</button>}
                   </td>
                 </tr>
               ))}
@@ -266,6 +308,32 @@ export default function Settings() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmRole}
+        title="권한 상향 확인"
+        danger
+        busy={busy}
+        confirmLabel="권한 부여"
+        message={
+          <>
+            <b>{confirmRole?.user.name}</b>님에게 <b>{confirmRole ? (ROLE_LABEL[confirmRole.role] ?? confirmRole.role) : ""}</b> 권한을 부여합니다. 더 넓은 운영·관리 권한이 적용됩니다. 계속할까요?
+          </>
+        }
+        onConfirm={() => confirmRole && applyRole(confirmRole.user, confirmRole.role)}
+        onCancel={() => setConfirmRole(null)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmDel}
+        title="사용자 삭제"
+        danger
+        busy={busy}
+        confirmLabel="삭제"
+        message={<><b>{confirmDel?.name}</b>({confirmDel?.email}) 사용자를 삭제합니다. <b>되돌릴 수 없습니다</b>.</>}
+        onConfirm={remove}
+        onCancel={() => setConfirmDel(null)}
+      />
     </>
   );
 }

@@ -88,7 +88,7 @@ function AppInner() {
       {effPage === "settings" && <Settings />}
       {effPage === "credentials" && <Credentials />}
       {effPage === "keys" && <Keys />}
-      {effPage === "diagnostics" && <Diagnostics />}
+      {effPage === "diagnostics" && <Diagnostics onNavigate={navigate} />}
     </Layout>
   );
 }

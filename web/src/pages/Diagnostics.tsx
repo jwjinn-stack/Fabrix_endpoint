@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchDiagnostics, probeOne } from "../api/client";
 import type { DiagNetwork, DiagReport, DiagSample, DiagStatus, DiagTiming, FailKind } from "../api/types";
+import type { Page } from "../components/Layout";
 import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonRows } from "../components/Skeleton";
 import InspectDrawer from "../components/InspectDrawer";
@@ -98,7 +99,7 @@ function contractMark(d: DiagStatus): { sym: string; cls: string; text: string }
 }
 
 // O-08+: 상태별 "구체 사유 + 조치 힌트" + 단계 타이밍 + 확장(요청 명세·응답/계약·지금 테스트).
-function DiagTile({ c, onRetry, onInspect }: { c: DiagStatus; onRetry: () => void; onInspect: (s: DiagStatus) => void }) {
+function DiagTile({ c, onRetry, onInspect, onNavigate }: { c: DiagStatus; onRetry: () => void; onInspect: (s: DiagStatus) => void; onNavigate: (p: Page) => void }) {
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState<DiagStatus | null>(null); // "지금 테스트" 결과(있으면 우선)
   const [tested, setTested] = useState(false);
@@ -165,12 +166,12 @@ function DiagTile({ c, onRetry, onInspect }: { c: DiagStatus; onRetry: () => voi
             {state === "fail" && <span aria-hidden="true">⚠ </span>}{reason}
           </div>
           {(state === "fail" || state === "warn") ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap" }}>
               <button type="button" className="btn-ghost btn-sm" onClick={onRetry}>재시도</button>
-              <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-faint)" }}>해결 안 되면 설정 → 연동에서 자격증명·RBAC 확인</span>
+              <button type="button" className="link-btn" onClick={() => onNavigate("credentials")}>설정 → 연동 고치기 →</button>
             </div>
           ) : (
-            <span style={{ fontSize: "var(--fs-xs)", color: "var(--text-faint)" }}>활성화하려면 설정 → 연동에서 이 의존성을 구성하세요.</span>
+            <button type="button" className="link-btn" onClick={() => onNavigate("credentials")}>설정 → 연동에서 구성하기 →</button>
           )}
         </div>
       )}
@@ -283,7 +284,7 @@ function NetworkPanel({ net }: { net: DiagNetwork }) {
 }
 
 // 연동 상태 — 외부 의존성 능동 프로브 + 통신 디버깅(실사이트 연동·디버깅용). GET /api/v1/diagnostics.
-export default function Diagnostics() {
+export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const [report, setReport] = useState<DiagReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -358,7 +359,7 @@ export default function Diagnostics() {
         ) : (
           <div className="diag-tiles">
             {report?.checks.map((c) => (
-              <DiagTile key={c.name} c={c} onRetry={() => load()} onInspect={setInspect} />
+              <DiagTile key={c.name} c={c} onRetry={() => load()} onInspect={setInspect} onNavigate={onNavigate} />
             ))}
           </div>
         )}

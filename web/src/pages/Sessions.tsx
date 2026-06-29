@@ -223,8 +223,16 @@ function SessionDetailView({ detail }: { detail: SessionDetail }) {
         }}
       >
         <button type="button" className="btn-ghost btn-sm" onClick={prev} disabled={cur === 0} aria-label="이전 턴">◀</button>
-        <button type="button" className="btn-primary btn-sm" onClick={togglePlay} disabled={last <= 0} aria-label={playing ? "일시정지" : "재생"} style={{ minWidth: 36 }}>
-          {playing ? "⏸" : "▶"}
+        <button
+          type="button"
+          className="btn-primary btn-sm"
+          onClick={togglePlay}
+          disabled={last <= 0}
+          aria-label={playing ? "일시정지" : cur >= last ? "처음부터 재생" : "재생"}
+          title={playing ? "일시정지" : cur >= last ? "처음부터 다시 재생" : "재생"}
+          style={{ minWidth: 36 }}
+        >
+          {playing ? "⏸" : cur >= last ? "↻" : "▶"}
         </button>
         <button type="button" className="btn-ghost btn-sm" onClick={next} disabled={cur >= last} aria-label="다음 턴">▶|</button>
         <span style={{ fontVariantNumeric: "tabular-nums", fontSize: "var(--fs-sm)", color: "var(--text-dim)", minWidth: 52, textAlign: "center" }}>
@@ -272,7 +280,7 @@ function SessionDetailView({ detail }: { detail: SessionDetail }) {
           return (
             <li
               key={t.trace_id}
-              className={`sess-turn ${t.decision === "blocked" ? "blocked" : ""}`}
+              className={`sess-turn ${t.decision === "blocked" ? "blocked" : ""} ${t.status === "error" ? "error" : ""}`}
               onClick={() => jump(i)}
               style={{
                 opacity,

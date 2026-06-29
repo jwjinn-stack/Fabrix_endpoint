@@ -97,22 +97,33 @@ export default function Eval() {
         </button>
       </div>
 
-      {results.map((r, i) => (
+      {results.map((r, i) => {
+        const blocked = r.guard?.decision === "blocked";
+        return (
         <div className="card" key={i}>
           <div className="card-head">
             <h3>{r.model} {r.judge_model !== r.model && <span className="muted">· 심판 {r.judge_model}</span>}</h3>
+            {/* 확정(메트릭) vs 확률(AI 심판) 구분 — 점수는 LLM 판정이라 참고치임을 명시 */}
+            <span className="tag" title="LLM-as-judge 채점 — 결정론적 측정이 아닌 확률적 판정(참고치)">AI 심판</span>
             <span className="spacer" />
-            <span className="eval-score" style={{ color: scoreColor(r.score) }}>{r.score} / 5</span>
-            <span style={{ marginLeft: "var(--sp-2)", fontSize: "var(--fs-xs)", color: scoreColor(r.score), border: `1px solid ${scoreColor(r.score)}`, borderRadius: "var(--radius-sm)", padding: "1px 6px" }}>{scoreCue(r.score)}</span>
+            {blocked ? (
+              <span className="tag tag-red">평가 불가 · 응답 차단</span>
+            ) : (
+              <>
+                <span className="eval-score" style={{ color: scoreColor(r.score) }}>{r.score} / 5</span>
+                <span style={{ marginLeft: "var(--sp-2)", fontSize: "var(--fs-xs)", color: scoreColor(r.score), border: `1px solid ${scoreColor(r.score)}`, borderRadius: "var(--radius-sm)", padding: "1px 6px" }}>{scoreCue(r.score)}</span>
+              </>
+            )}
           </div>
           <dl className="detail-grid">
             <div className="detail-pair"><dt>프롬프트</dt><dd>{r.prompt}</dd></div>
-            <div className="detail-pair"><dt>응답</dt><dd>{r.guard?.decision === "blocked" ? <span className="tag tag-red">가드레일 차단</span> : r.response}</dd></div>
+            <div className="detail-pair"><dt>응답</dt><dd>{blocked ? <span className="tag tag-red">가드레일 차단</span> : r.response}</dd></div>
             <div className="detail-pair"><dt>채점 근거</dt><dd>{r.rationale}</dd></div>
             <div className="detail-pair"><dt>지연</dt><dd>{r.latency_ms}ms</dd></div>
           </dl>
         </div>
-      ))}
+        );
+      })}
     </>
   );
 }
