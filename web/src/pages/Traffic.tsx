@@ -96,7 +96,7 @@ export default function Traffic() {
         <div className="pipe">
           <div className="pipe-node">클라이언트</div>
           <div className="pipe-arrow">→</div>
-          <div className="pipe-node pipe-fabrix">
+          <div className={`pipe-node pipe-fabrix ${s && s.avg_guard_ms >= s.avg_upstream_ms && s.avg_guard_ms > 0 ? "pipe-node-bottleneck" : ""}`}>
             가드레일<br />
             <small className={s && s.avg_guard_ms >= s.avg_upstream_ms ? "pipe-warn" : ""}>{s ? `${s.avg_guard_ms}ms` : "—"}</small>
             {s && s.avg_guard_ms >= s.avg_upstream_ms && s.avg_guard_ms > 0 && <span className="pipe-bottleneck">● 병목</span>}
@@ -104,7 +104,7 @@ export default function Traffic() {
           <div className="pipe-arrow">→</div>
           <div className="pipe-node pipe-fabrix">귀속 · 쿼터</div>
           <div className="pipe-arrow">→</div>
-          <div className="pipe-node">
+          <div className={`pipe-node ${s && s.avg_upstream_ms > s.avg_guard_ms ? "pipe-node-bottleneck" : ""}`}>
             엔진 (Dynamo)<br />
             <small className={s && s.avg_upstream_ms > s.avg_guard_ms ? "pipe-warn" : ""}>{s ? `${s.avg_upstream_ms}ms` : "—"}</small>
             {s && s.avg_upstream_ms > s.avg_guard_ms && <span className="pipe-bottleneck">● 병목</span>}

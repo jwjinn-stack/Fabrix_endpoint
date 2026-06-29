@@ -7,6 +7,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import SummaryStrip from "../components/SummaryStrip";
 import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
@@ -305,6 +306,15 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
 
       {!error && loading && eps.length === 0 && <div className="state" role="status">엔드포인트를 불러오는 중…</div>}
 
+      {eps.length > 0 && (
+        <SummaryStrip items={[
+          { label: "전체", value: eps.length },
+          { label: "Active", value: eps.filter((e) => e.ready).length, tone: "green" },
+          { label: "Pending", value: eps.filter((e) => !e.ready).length, tone: eps.some((e) => !e.ready) ? "amber" : "default" },
+          { label: "총 replica", value: eps.reduce((s, e) => s + (e.replicas ?? 0), 0) },
+        ]} />
+      )}
+
       <div className="card">
         <div className="card-head">
           <h3>배포된 엔드포인트 (DynamoGraphDeployment)</h3>
@@ -336,7 +346,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
                   <td className="num">{e.replicas}</td>
                   <td>{e.ready ? <Badge tone="green" dot>Active</Badge> : <Badge tone="amber" dot>Pending</Badge>}</td>
                   <td>{e.managed ? <Badge tone="pink">FABRIX</Badge> : <Badge tone="neutral">운영</Badge>}</td>
-                  <td className="num">
+                  <td className="num row-actions">
                     <button type="button" className="btn-ghost btn-sm" onClick={(ev) => { ev.stopPropagation(); openLogs(e); }}>
                       로그
                     </button>

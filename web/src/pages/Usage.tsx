@@ -160,7 +160,7 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
             ]} />
             <StatCard title="추정 비용" info="토큰 × 모델 단가 (자가호스팅 추정)" metrics={[
               { label: "합계", value: `₩${compact(totalCost)}` },
-              ...(topCost ? [{ label: `최고 ${rowKey(topCost, group)}`, value: `₩${compact(topCost.est_cost_krw ?? 0)}`, tone: "amber" as const }] : []),
+              ...(topCost ? [{ label: `최고 ${rowKey(topCost, group)}`, value: `₩${compact(topCost.est_cost_krw ?? 0)}` }] : []),
             ]} />
             <StatCard title={`활성 ${groupMeta.col}`} info="집계 구간에 사용량이 있는 항목 수" metrics={[{ label: groupMeta.col, value: rows.length }]} />
           </div>

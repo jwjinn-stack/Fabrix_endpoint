@@ -4,6 +4,7 @@ import type { SpanKind, TimeRange, TraceDetail, TraceListReport, TraceSpan } fro
 import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
+import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -47,6 +48,7 @@ const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hou
 
 export default function Traces() {
   const [range, setRange] = useState<TimeRange>("24h");
+  const { density, setDensity } = useTableDensity("traces");
   const [filters, setFilters] = useState({ decision: "all", status: "all", model: "all", app: "all" });
   const [data, setData] = useState<TraceListReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,6 +119,7 @@ export default function Traces() {
         <span className="crumb">관제 / 트레이스</span>
         <div className="spacer" />
         <span className="updated">{data ? `${traces.length}건 · ${data.source}` : "—"}</span>
+        <DensityToggle density={density} onChange={setDensity} />
         <select className="range-select" value={range} onChange={(e) => setRange(e.target.value as TimeRange)}>
           {RANGES.map((r) => <option key={r.value} value={r.value}>기간: {r.label}</option>)}
         </select>
@@ -165,7 +168,7 @@ export default function Traces() {
 
         {traces.length > 0 && (
           <div className="tbl-scroll">
-            <table className="usage-table">
+            <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
                   <th>시각</th><th>모델</th><th>앱</th><th>엔드포인트</th>

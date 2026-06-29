@@ -365,7 +365,16 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
         {/* 우: 대화 */}
         <div className="card pg-chat" style={{ position: "relative" }}>
           <div className="pg-messages" ref={scrollRef} onScroll={onScroll} role="log" aria-live="polite" aria-relevant="additions text" aria-label="대화 내용">
-            {turns.length === 0 && <div className="empty">메시지를 입력해 모델을 시험해 보세요.</div>}
+            {turns.length === 0 && (
+              <div className="pg-empty">
+                <p className="empty" style={{ margin: 0 }}>메시지를 입력해 모델을 시험해 보세요.</p>
+                <div className="pg-suggest">
+                  {["한 문장으로 요약해줘", "이 코드의 버그를 찾아줘", "표로 정리해줘", "쉬운 말로 설명해줘"].map((sug) => (
+                    <button key={sug} type="button" className="pg-suggest-chip" onClick={() => { setInput(sug); inputRef.current?.focus(); }}>{sug}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             {turns.map((t, i) => {
               if (t.role === "user") {
                 return (

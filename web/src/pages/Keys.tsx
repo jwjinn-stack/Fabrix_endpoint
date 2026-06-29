@@ -4,6 +4,7 @@ import type { APIKeyView, IssuedKey, OrgApp } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import SummaryStrip from "../components/SummaryStrip";
 import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
@@ -197,6 +198,15 @@ export default function Keys() {
       )}
 
       {!error && loading && keys.length === 0 && <div className="state" role="status">키 목록을 불러오는 중…</div>}
+
+      {keys.length > 0 && (
+        <SummaryStrip items={[
+          { label: "전체 키", value: keys.length },
+          { label: "활성", value: keys.filter((k) => k.enabled).length, tone: "green" },
+          { label: "회수됨", value: keys.filter((k) => !k.enabled).length },
+          { label: "예산 임계 초과", value: keys.filter((k) => k.quota_tpd && (k.tokens_today ?? 0) / k.quota_tpd >= (k.alert_threshold ?? 0.8)).length, tone: keys.some((k) => k.quota_tpd && (k.tokens_today ?? 0) / k.quota_tpd >= (k.alert_threshold ?? 0.8)) ? "amber" : "default" },
+        ]} />
+      )}
 
       <div className="card">
         <div className="card-head"><h3>API 키</h3></div>

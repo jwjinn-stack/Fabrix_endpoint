@@ -227,7 +227,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
               onLink={() => onNavigate?.("guard")}
               onRefresh={() => load()}
               metrics={[
-                { label: "차단", value: overview.guardrail.blocked, tone: "red", spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down" },
+                { label: "차단", value: overview.guardrail.blocked, tone: overview.guardrail.blocked > 0 ? "red" : undefined, spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down" },
                 { label: "PII", value: overview.guardrail.pii, tone: "pink" },
                 { label: "flagged", value: overview.guardrail.flagged, tone: "amber" },
               ]}

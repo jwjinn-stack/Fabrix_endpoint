@@ -97,6 +97,15 @@ export default function Eval() {
         </button>
       </div>
 
+      {results.length === 0 && !busy && (
+        <div className="card eval-guide">
+          <div className="empty" style={{ textAlign: "left", lineHeight: 1.6 }}>
+            <b>LLM-as-judge 평가</b><br />
+            대상 모델의 응답을 심판 모델이 1~5점으로 채점합니다. 모델 교체·양자화 전후 같은 프롬프트를 반복 실행해 점수 회귀를 확인하세요. 결과는 이 영역에 누적되고, 2건 이상이면 추이 차트가 나타납니다.
+          </div>
+        </div>
+      )}
+
       {results.map((r, i) => {
         const blocked = r.guard?.decision === "blocked";
         return (

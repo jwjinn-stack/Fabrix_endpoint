@@ -311,7 +311,8 @@ body {
 .nav-subitem.active { color: var(--primary-strong); font-weight: 600; border-left-color: var(--primary); background: var(--primary-weak); }
 
 /* 서드파티 자격증명 화면 */
-.cred-list { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 720px; }
+.cred-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-4); max-width: 1040px; }
+@media (max-width: 900px) { .cred-list { grid-template-columns: 1fr; } }
 .cred-card { display: flex; flex-direction: column; gap: var(--sp-3); }
 .cred-head { display: flex; align-items: center; justify-content: space-between; }
 .cred-head h3 { margin: 0; font-size: var(--fs-lg); }
@@ -782,6 +783,21 @@ body {
 /* 가로 스크롤 컨테이너 — 컬럼 많은 테이블(키 등)이 카드를 넘칠 때 페이지 본문 대신 테이블만 스크롤 */
 .table-scroll { overflow-x: auto; }
 
+/* 리스트 상단 요약 칩 줄 — 요약 우선 + 넓은 화면 빈 공간 완화 */
+.summary-strip { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: var(--sp-4); }
+.summary-chip { flex: 1; min-width: 120px; background: var(--surface); padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
+.summary-chip .sc-val { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text); }
+.summary-chip .sc-label { font-size: var(--fs-xs); color: var(--text-dim); }
+.summary-chip.green .sc-val { color: var(--green); }
+.summary-chip.amber .sc-val { color: var(--amber); }
+.summary-chip.red .sc-val { color: var(--red); }
+
+/* 행 액션 hover-reveal — 평소엔 숨겨 버튼 밭을 없애고, 행 hover/포커스 시 노출. 터치 기기는 항상 노출. */
+.usage-table .row-actions { opacity: 0; transition: opacity var(--ease); }
+.usage-table tbody tr:hover .row-actions,
+.usage-table tbody tr:focus-within .row-actions { opacity: 1; }
+@media (hover: none) { .usage-table .row-actions { opacity: 1; } }
+
 /* 행 밀도 — 압축/보통/여유. 사용자가 정보 밀도를 조절(대량 행 스캔). */
 .usage-table.density-compact td, .usage-table.density-compact th { padding: 5px var(--sp-3); }
 .usage-table.density-relaxed td, .usage-table.density-relaxed th { padding: 13px var(--sp-3); }
@@ -880,14 +896,17 @@ body {
   padding: var(--sp-3) var(--sp-4);
   margin-bottom: var(--sp-4);
 }
-.health-banner.amber { border-left-color: var(--amber); }
-.health-banner.red { border-left-color: var(--red); }
+.health-banner.amber { border-left-color: var(--amber); background: color-mix(in srgb, var(--amber) 4%, var(--surface)); }
+.health-banner.red { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 4%, var(--surface)); }
+/* 위험/주의 신호 값 강조 — 등급 신호에 시선이 바로 꽂히게 */
+.health-sig.red, .health-sig.amber { font-weight: 600; }
+.health-sig.red .health-sig-dot, .health-sig.amber .health-sig-dot { width: 8px; height: 8px; }
 .health-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  font-size: var(--fs-card-title);
+  font-size: 14px;
 }
 .health-status.green { color: var(--green); }
 .health-status.amber { color: var(--amber); }
@@ -1020,6 +1039,11 @@ body {
 /* 차단 가이드 — 왜 막혔는지/어디서 정책 확인하는지 */
 .pg-guard-hint { margin-top: 6px; font-size: var(--fs-xs); color: var(--text-dim); background: var(--red-weak); border: 1px solid var(--red-border); border-radius: var(--radius-sm); padding: 6px 9px; line-height: 1.5; }
 .pg-guard-hint b { color: var(--red); }
+/* 빈 상태 추천 프롬프트 — 첫 사용 편의 + 빈 영역 완화 */
+.pg-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-4); margin-top: 12vh; }
+.pg-suggest { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: center; max-width: 420px; }
+.pg-suggest-chip { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-dim); border-radius: 999px; padding: 6px 14px; font: inherit; font-size: var(--fs-sm); cursor: pointer; transition: border-color var(--ease), color var(--ease); }
+.pg-suggest-chip:hover { border-color: var(--primary); color: var(--primary); }
 
 /* ── 카탈로그 모달리티 탭 ── */
 .modality-tabs { display: flex; gap: var(--sp-1); margin-bottom: var(--sp-4); border-bottom: 1px solid var(--border); }
@@ -1081,11 +1105,10 @@ body {
 }
 .cards-6 {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--sp-4);
   margin-bottom: var(--sp-4);
 }
-@media (max-width: 1300px) { .cards-6 { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 760px) { .cards-6 { grid-template-columns: repeat(2, 1fr); } }
 
 /* P4-8 엔드포인트 실시간 로그 팝업 */
@@ -1098,7 +1121,8 @@ body {
 .slide-actions { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-3) 0; }
 
 /* P4-6 모델 카드 운영 메트릭 칩 */
-.model-ops { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--sp-2) 0; }
+.model-ops { display: flex; flex-wrap: nowrap; gap: 4px; margin: var(--sp-2) 0; overflow: hidden; }
+.model-ops .ops-chip { flex: none; white-space: nowrap; }
 .ops-chip { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--surface-2, var(--primary-weak)); color: var(--text-faint); border: 1px solid var(--border); }
 .ops-chip b { color: var(--text); font-weight: 700; }
 .ops-chip.pattern-disagg { background: var(--teal-weak); color: var(--teal); border-color: var(--teal); }
@@ -1263,6 +1287,7 @@ body {
 .cap-head { display: flex; align-items: center; gap: var(--sp-2); }
 .cap-head h3 { margin: 0; font-size: var(--fs-card-title); }
 .cap-icon { font-size: 18px; }
+.cap-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .cap-desc { margin: 0; font-size: var(--fs-body); color: var(--text-dim); line-height: var(--lh-body); }
 .cap-stat { font-size: var(--fs-sm); color: var(--text-faint); }
 .cap-stat b { color: var(--primary-strong); font-size: var(--fs-body); }
@@ -1640,7 +1665,7 @@ tr.row-sel { background: var(--primary-weak) !important; }
 @media (max-width: 1100px) { .bento { grid-template-columns: repeat(6, minmax(0, 1fr)); } .bento > .span-8, .bento > .span-6 { grid-column: span 6; } .bento > .span-3, .bento > .span-4 { grid-column: span 3; } }
 @media (max-width: 760px) { .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); } .bento > * { grid-column: span 2 !important; } }
 /* 진단 상태 타일(§2·O-07) */
-.diag-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--sp-3); }
+.diag-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-4); }
 .diag-tile { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--surface); }
 .diag-tile.ok { border-left-color: var(--green); }
 .diag-tile.warn { border-left-color: var(--amber); }
@@ -1772,6 +1797,7 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 /* 파이프라인 병목 배지 — 가장 느린 단계 표시 */
 .pipe-bottleneck { display: inline-block; margin-top: 2px; font-size: var(--fs-xs); font-weight: 700; color: var(--amber); }
+.pipe-node.pipe-node-bottleneck { border-color: var(--amber-border); background: var(--amber-weak); }
 .pipe-node small.pipe-warn { color: var(--amber); font-weight: 700; }
 
 /* ══════════════════ 트레이스 Langfuse 정합: 소스 배지 + 비용 ══════════════════ */

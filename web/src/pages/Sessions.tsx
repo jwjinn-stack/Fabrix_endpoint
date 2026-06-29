@@ -4,6 +4,7 @@ import type { SessionDetail, SessionListReport, SessionTurn, TimeRange } from ".
 import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
+import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -25,6 +26,7 @@ const decTone = (d: string): BadgeTone => (d === "blocked" ? "red" : d === "flag
 
 export default function Sessions() {
   const [range, setRange] = useState<TimeRange>("24h");
+  const { density, setDensity } = useTableDensity("sessions");
   const [app, setApp] = useState("all");
   const [data, setData] = useState<SessionListReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +83,7 @@ export default function Sessions() {
         <span className="crumb">관제 / 세션</span>
         <div className="spacer" />
         <span className="updated">{data ? `${sessions.length}개 · ${data.source}` : "—"}</span>
+        <DensityToggle density={density} onChange={setDensity} />
         <select className="range-select" value={range} onChange={(e) => setRange(e.target.value as TimeRange)}>
           {RANGES.map((r) => <option key={r.value} value={r.value}>기간: {r.label}</option>)}
         </select>
@@ -112,7 +115,7 @@ export default function Sessions() {
 
         {sessions.length > 0 && (
           <div className="tbl-scroll">
-            <table className="usage-table">
+            <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
                   <th>세션</th><th>시작</th><th className="num">턴</th><th>사용자</th><th>앱</th>
