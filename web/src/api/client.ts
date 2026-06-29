@@ -20,6 +20,9 @@ import type {
   GuardPolicy,
   GuardVerdict,
   MaskingPolicy,
+  MetricDimension,
+  MetricMeta,
+  MetricsBreakdown,
   HarborModel,
   HarborStatus,
   ImportResult,
@@ -129,6 +132,16 @@ export function fetchTimeseries(range: TimeRange, signal?: AbortSignal): Promise
 export function fetchUsage(range: TimeRange, groupBy = "model", signal?: AbortSignal): Promise<UsageReport> {
   const q = new URLSearchParams({ range, group_by: groupBy });
   return getJSON<UsageReport>(`/usage?${q.toString()}`, signal);
+}
+
+// 메트릭 차원 groupby(L2). dim ∈ /metrics/dimensions 의 key(model|endpoint|namespace).
+export function fetchMetricsBreakdown(range: TimeRange, dim = "model", signal?: AbortSignal): Promise<MetricsBreakdown> {
+  const q = new URLSearchParams({ range, dim });
+  return getJSON<MetricsBreakdown>(`/metrics/breakdown?${q.toString()}`, signal);
+}
+
+export function fetchMetricDimensions(signal?: AbortSignal): Promise<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }> {
+  return getJSON<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }>(`/metrics/dimensions`, signal);
 }
 
 export function fetchUsageTrend(range: TimeRange, signal?: AbortSignal): Promise<UsageTrend> {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchCredentials, harborImport } from "../api/client";
 import type { ImportResult, ThirdPartyCred } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { NavFn } from "../router";
 import { useCap } from "../capabilities";
 
 // 모델 임포트 — NGC/HuggingFace/업로드 소스에서 모델을 Harbor 레지스트리로 가져온다.
@@ -12,7 +12,7 @@ const SOURCES = [
   { value: "upload", title: "직접 업로드", icon: "↥", desc: "호환 포맷 모델을 파일/버킷에서 직접 업로드(개발: CLI push).", ph: "예: ./qwen2.5-0.5b", cred: "" },
 ] as const;
 
-export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, model?: string) => void }) {
+export default function ModelImport({ onNavigate }: { onNavigate: NavFn }) {
   const canImport = useCap().can("models.write"); // 모델 임포트 권한 — observe 에선 false(읽기 전용)
   const [creds, setCreds] = useState<ThirdPartyCred[]>([]);
   const [imp, setImp] = useState<null | string>(null);

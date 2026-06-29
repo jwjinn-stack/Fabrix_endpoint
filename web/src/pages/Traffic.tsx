@@ -6,6 +6,7 @@ import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import PipelineWaterfall from "../components/PipelineWaterfall";
 import EnginePipelinePanel from "../components/EnginePipelinePanel";
+import DimensionBreakdown from "../components/DimensionBreakdown";
 
 const REFRESH_MS = 10_000;
 const nf = new Intl.NumberFormat("ko-KR");
@@ -89,6 +90,9 @@ export default function Traffic() {
 
       {error && <div className="state error" role="alert">트래픽 지표를 불러오지 못했습니다. ({error})</div>}
       {!error && loading && !stats && <SkeletonCards count={5} />}
+
+      {/* L2 차원 분해 — 트래픽/품질을 model·endpoint·namespace 로 groupby(최근 1시간). */}
+      <DimensionBreakdown range="1h" title="트래픽 차원 분해 (L2 · 최근 1시간)" initialDim="model" />
 
       {/* 파이프라인 다이어그램 */}
       <div className="card pipeline">

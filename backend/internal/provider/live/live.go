@@ -424,6 +424,59 @@ func (p *Provider) Usage(ctx context.Context, rng domain.TimeRange) (domain.Usag
 	}, nil
 }
 
+// MetricsBreakdown 는 동일 트래픽/품질 메트릭을 한 차원(model|endpoint|namespace)으로
+// 쪼개 반환한다(L2 groupby). dim 은 domain.MetricDimensions 의 친화명 → Prometheus 라벨.
+// Overview(전역)·Usage(model 고정)와 달리 임의 공통 차원으로 분해해 "어느 그룹이 튀나"를 본다.
+func (p *Provider) MetricsBreakdown(ctx context.Context, rng domain.TimeRange, dim string) (domain.MetricsBreakdown, error) {
+	label, ok := domain.DimensionLabel(dim)
+	if !ok {
+		return domain.MetricsBreakdown{}, fmt.Errorf("지원하지 않는 차원: %s", dim)
+	}
+	d := rng.PromDuration()
+	by := func(agg, metric string) map[string]float64 {
+		return p.vectorByLabel(ctx, fmt.Sprintf("sum by (%s)(%s(%s[%s]))", label, agg, metric, d), label)
+	}
+	reqs := by("increase", "dynamo_frontend_requests_total")
+	qps := by("rate", "dynamo_frontend_requests_total")
+	inTok := by("increase", "dynamo_frontend_input_sequence_tokens_sum")
+	cachedTok := by("increase", "dynamo_frontend_cached_tokens_sum")
+	outTok := by("increase", "dynamo_frontend_output_tokens_total")
+	ttft := p.vectorByLabel(ctx, fmt.Sprintf("histogram_quantile(0.95, sum by (%s,le)(rate(dynamo_frontend_time_to_first_token_seconds_bucket[%s])))", label, d), label)
+	itl := p.vectorByLabel(ctx, fmt.Sprintf("sum by (%s)(rate(dynamo_frontend_inter_token_latency_seconds_sum[%s]))/sum by (%s)(rate(dynamo_frontend_inter_token_latency_seconds_count[%s]))", label, d, label, d), label)
+	e2e := p.vectorByLabel(ctx, fmt.Sprintf("histogram_quantile(0.95, sum by (%s,le)(rate(dynamo_frontend_request_duration_seconds_bucket[%s])))", label, d), label)
+
+	rows := make([]domain.MetricsBreakdownRow, 0, len(reqs))
+	for key, rc := range reqs {
+		if rc <= 0 {
+			continue
+		}
+		cacheHit := 0.0
+		if inTok[key] > 0 {
+			cacheHit = clamp01(cachedTok[key] / inTok[key])
+		}
+		rows = append(rows, domain.MetricsBreakdownRow{
+			Key:              key,
+			Requests:         int64(rc + 0.5),
+			QPS:              round(qps[key], 2),
+			TTFTp95ms:        round(ttft[key]*1000, 0),
+			ITLavgMs:         round(itl[key]*1000, 0),
+			E2Ep95ms:         round(e2e[key]*1000, 0),
+			CacheHitRate:     round(cacheHit, 3),
+			PromptTokens:     int64(inTok[key] + 0.5),
+			CompletionTokens: int64(outTok[key] + 0.5),
+		})
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Requests > rows[j].Requests })
+
+	return domain.MetricsBreakdown{
+		Range:       rng,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Dimension:   dim,
+		Label:       label,
+		Rows:        rows,
+	}, nil
+}
+
 // ── GPU/MIG (문서 4-4, 효율 스코어 3-4) — DCGM 실측 ──
 
 // seriesByUUID 는 GPU UUID → (라벨, 값) 맵을 만든다(per-GPU 조인 키).

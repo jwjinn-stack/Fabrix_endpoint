@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Layout, { type Page } from "./components/Layout";
-import { pageFromPath, pathForPage, queryParam, capForPage } from "./router";
+import { pageFromPath, pathForPage, queryParam, capForPage, type NavParams } from "./router";
 import { CapabilitiesProvider, useCap } from "./capabilities";
 import { TimeRangeProvider } from "./timeRange";
 import { ThemeProvider } from "./theme";
@@ -42,10 +42,10 @@ function AppInner() {
     pageFromPath(window.location.pathname) === "playground" ? queryParam("model") : undefined,
   );
 
-  const navigate = useCallback((p: Page, model?: string) => {
-    if (p === "playground") setPgModel(model);
+  const navigate = useCallback((p: Page, params?: NavParams) => {
+    if (p === "playground") setPgModel(params?.model);
     setPage(p);
-    const path = pathForPage(p, p === "playground" ? { model } : undefined);
+    const path = pathForPage(p, params as Record<string, string | undefined> | undefined);
     if (path !== window.location.pathname + window.location.search) {
       window.history.pushState({ page: p }, "", path);
     }

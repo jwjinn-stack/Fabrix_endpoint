@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchOverview, fetchUsage, fetchUsageTrend } from "../api/client";
-import type { DashboardOverview, UsageReport, UsageRow, UsageTrend } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { DashboardOverview, MetricsBreakdownRow, UsageReport, UsageRow, UsageTrend } from "../api/types";
+import type { NavFn } from "../router";
+import DimensionBreakdown from "../components/DimensionBreakdown";
 import StatCard from "../components/StatCard";
 import { SkeletonCards, SkeletonRows } from "../components/Skeleton";
 import StackedShareBar from "../components/StackedShareBar";
@@ -43,7 +44,7 @@ function toCSV(report: UsageReport, group: string): string {
   return [head.join(","), ...lines].join("\n");
 }
 
-export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }) {
+export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
   // 기간은 전역 컨텍스트 공유(G-05) — 관제·트레이스 화면과 동일 선택 유지.
   const { range } = useTimeRange();
   const [group, setGroup] = useState("model");
@@ -173,6 +174,15 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
           </div>
         </>
       )}
+
+      {/* L2 성능 차원 분해 — model/endpoint/namespace 로 groupby, 행 클릭 → 트레이스 drill-through. */}
+      <DimensionBreakdown
+        range={range}
+        title="성능 차원 분해 (L2)"
+        onDrill={(row: MetricsBreakdownRow, dim: string) =>
+          onNavigate?.("traces", { range, model: dim === "model" ? row.key : undefined })
+        }
+      />
 
       {/* P4-4 사용량 추세 + forecast — 토글을 차트 헤더 흐름에 넣어 제목과 겹치지 않게(반응형). */}
       {trend && trend.points.length >= 3 && (

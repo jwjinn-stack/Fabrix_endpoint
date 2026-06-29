@@ -300,6 +300,45 @@ export interface UsageReport {
   rows: UsageRow[];
 }
 
+// 메트릭 차원 groupby(L2) — GET /api/v1/metrics/dimensions / breakdown.
+export interface MetricDimension {
+  key: string; // model | endpoint | namespace
+  label: string; // 실제 Prometheus 라벨
+  title: string; // 화면 표시명
+}
+
+// 메트릭 카탈로그(C2) — AI grounding + UI 툴팁/이상강조 공용 메타데이터.
+export interface MetricMeta {
+  key: string; // MetricsBreakdownRow 필드 키
+  title: string;
+  unit: string; // ms | req/s | ratio | tokens | count
+  lower_better: boolean; // 낮을수록 좋음(latency 류)
+  desc: string;
+  related?: string[];
+  warn_above?: number;
+  warn_below?: number;
+}
+
+export interface MetricsBreakdownRow {
+  key: string; // 차원 값
+  requests: number;
+  qps: number;
+  ttft_p95_ms: number;
+  itl_avg_ms: number;
+  e2e_p95_ms: number;
+  cache_hit_rate: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
+export interface MetricsBreakdown {
+  range: TimeRange;
+  generated_at: string;
+  dimension: string;
+  label: string;
+  rows: MetricsBreakdownRow[];
+}
+
 export interface UsageTrendPoint {
   ts: string;
   requests: number;

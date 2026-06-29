@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchOverview, fetchTimeseries } from "../api/client";
 import type { DashboardOverview, Timeseries } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { NavFn } from "../router";
 import StatCard from "../components/StatCard";
 import BarList from "../components/BarList";
 import type { BarItem } from "../components/BarList";
@@ -66,7 +66,7 @@ function deltaPct(vals: number[]): number | undefined {
   return ((cur - prev) / prev) * 100;
 }
 
-export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => void }) {
+export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
   // 기간은 전역 컨텍스트 공유 — 사용량·트레이스 화면과 동일 선택이 유지된다(G-05).
   const { range } = useTimeRange();
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
@@ -196,6 +196,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
             <StatCard
               title="실시간 트래픽"
               info="vLLM 엔진 실행/대기 요청 수와 성공률"
+              link="트래픽 상세 →"
+              onLink={() => onNavigate?.("traffic")}
               onRefresh={() => load()}
               metrics={[
                 { label: "QPS", value: overview.traffic.qps.toFixed(1), spark: sparkQps, delta: deltaPct(sparkQps), deltaGood: "up" },
@@ -213,6 +215,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
             <StatCard
               title="응답 품질"
               info="TTFT/ITL 분포와 KV prefix 캐시 적중률"
+              link="차원 분해 →"
+              onLink={() => onNavigate?.("usage")}
               onRefresh={() => load()}
               metrics={[
                 { label: "TTFT p95", value: overview.quality.ttft_p95_ms, unit: "ms", tone: overview.quality.ttft_p95_ms > 140 ? "amber" : undefined, spark: sparkTtft, delta: deltaPct(sparkTtft), deltaGood: "down" },
@@ -237,6 +241,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
               <StatCard
                 title="GPU / MIG"
                 info="GPU 사용률·KV 캐시·MIG 슬라이스 효율"
+                link="GPU 상세 →"
+                onLink={() => onNavigate?.("gpu")}
                 onRefresh={() => load()}
                 metrics={[
                   { label: "사용률", value: pct(overview.gpu.usage_perc), bar: overview.gpu.usage_perc },

@@ -1,0 +1,189 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchMetricDimensions, fetchMetricsBreakdown } from "../api/client";
+import type { MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, TimeRange } from "../api/types";
+
+// DimensionBreakdown — L2(Group) 공통 컴포넌트.
+// 차원(model|endpoint|namespace) 셀렉터 + /metrics/breakdown 표 + 카탈로그 기반 이상강조(C6).
+// 행 클릭 → onDrill(row, dim) 로 drill-through(예: trace 로 점프) — L2→L3.
+// 차원/메트릭 의미는 /metrics/dimensions(카탈로그)에서 받아 UI·툴팁·이상강조를 한 출처로 그린다.
+
+const nf = new Intl.NumberFormat("ko-KR");
+function compact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return nf.format(Math.round(n));
+}
+
+// 표시할 측정 컬럼 순서(카탈로그 key 기준). 카탈로그에 없는 key 는 무시.
+const COLS = ["requests", "qps", "ttft_p95_ms", "itl_avg_ms", "e2e_p95_ms", "cache_hit_rate", "prompt_tokens", "completion_tokens"] as const;
+
+function cellValue(row: MetricsBreakdownRow, key: string): number {
+  return (row as unknown as Record<string, number>)[key] ?? 0;
+}
+
+function fmt(unit: string, v: number): string {
+  if (unit === "ms") return `${nf.format(Math.round(v))}ms`;
+  if (unit === "ratio") return `${Math.round(v * 100)}%`;
+  if (unit === "req/s") return v.toFixed(2);
+  return compact(v);
+}
+
+// median 은 상대 이상치(컬럼 중앙값 대비 편차) 판정 기준.
+function median(vals: number[]): number {
+  if (vals.length === 0) return 0;
+  const s = [...vals].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+// isWarn — 카탈로그 임계치(절대) + 컬럼 중앙값 대비(상대) 로 이상 여부. 방향(lower_better) 반영.
+function isWarn(meta: MetricMeta, v: number, med: number): boolean {
+  if (meta.lower_better) {
+    if (meta.warn_above && v > meta.warn_above) return true;
+    return med > 0 && v > med * 1.6;
+  }
+  if (meta.warn_below && v > 0 && v < meta.warn_below) return true;
+  return false; // requests/qps/tokens 등 방향 없는 양은 경고 안 함
+}
+
+export default function DimensionBreakdown({
+  range,
+  initialDim = "model",
+  title = "차원별 분해 (L2)",
+  onDrill,
+}: {
+  range: TimeRange;
+  initialDim?: string;
+  title?: string;
+  onDrill?: (row: MetricsBreakdownRow, dim: string) => void;
+}) {
+  const [dims, setDims] = useState<MetricDimension[]>([]);
+  const [catalog, setCatalog] = useState<MetricMeta[]>([]);
+  const [dim, setDim] = useState(initialDim);
+  const [data, setData] = useState<MetricsBreakdown | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState<string>("requests");
+
+  // 차원/카탈로그는 1회 로드.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchMetricDimensions(ctrl.signal)
+      .then((r) => { setDims(r.dimensions); setCatalog(r.metrics); })
+      .catch(() => { /* 폴백: 차원 셀렉터만 비활성 */ });
+    return () => ctrl.abort();
+  }, []);
+
+  const load = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        const r = await fetchMetricsBreakdown(range, dim, signal);
+        setData(r);
+        setError(null);
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [range, dim],
+  );
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setLoading(true);
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  const metaByKey = useMemo(() => Object.fromEntries(catalog.map((m) => [m.key, m])), [catalog]);
+  const cols = useMemo(() => COLS.filter((k) => metaByKey[k]), [metaByKey]);
+  const medians = useMemo(() => {
+    const rows = data?.rows ?? [];
+    const out: Record<string, number> = {};
+    for (const k of cols) out[k] = median(rows.map((r) => cellValue(r, k)));
+    return out;
+  }, [data, cols]);
+
+  const rows = useMemo(() => {
+    const rs = [...(data?.rows ?? [])];
+    rs.sort((a, b) => cellValue(b, sortKey) - cellValue(a, sortKey));
+    return rs;
+  }, [data, sortKey]);
+
+  const dimTitle = dims.find((d) => d.key === dim)?.title ?? dim;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>{title}</h3>
+        <span className="info" title="동일 메트릭을 차원으로 분해해 어느 그룹이 튀는지 봅니다. 주황 = 임계치 초과 또는 그룹 중앙값 대비 이상.">ⓘ</span>
+        <span className="spacer" />
+        <select
+          className="range-select"
+          value={dim}
+          onChange={(e) => { setLoading(true); setDim(e.target.value); }}
+          aria-label="groupby 차원"
+          disabled={dims.length === 0}
+        >
+          {(dims.length ? dims : [{ key: dim, label: dim, title: dim }]).map((d) => (
+            <option key={d.key} value={d.key}>차원: {d.title}</option>
+          ))}
+        </select>
+      </div>
+
+      {error && <div className="empty" role="alert">분해를 불러오지 못했습니다. ({error})</div>}
+      {!error && loading && !data && <div className="empty">불러오는 중…</div>}
+      {!error && data && rows.length === 0 && <div className="empty">선택한 기간/차원에 데이터가 없습니다.</div>}
+
+      {!error && rows.length > 0 && (
+        <table className="usage-table">
+          <thead>
+            <tr>
+              <th>{dimTitle}</th>
+              {cols.map((k) => {
+                const m = metaByKey[k];
+                return (
+                  <th
+                    key={k}
+                    className={`num sortable${sortKey === k ? " active" : ""}`}
+                    title={`${m.desc}${m.related?.length ? ` · 함께 보기: ${m.related.join(", ")}` : ""}`}
+                    onClick={() => setSortKey(k)}
+                    role="button"
+                  >
+                    {m.title}{sortKey === k ? " ↓" : ""}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr
+                key={r.key}
+                className={onDrill ? "clickable" : undefined}
+                onClick={onDrill ? () => onDrill(r, dim) : undefined}
+                title={onDrill ? "트레이스로 드릴다운" : undefined}
+              >
+                <td>{r.key}</td>
+                {cols.map((k) => {
+                  const m = metaByKey[k];
+                  const v = cellValue(r, k);
+                  const warn = isWarn(m, v, medians[k]);
+                  return (
+                    <td key={k} className="num">
+                      <span style={warn ? { color: "var(--amber, #d98e00)", fontWeight: 600 } : undefined}
+                        title={warn ? (m.lower_better ? "임계치/중앙값 대비 높음" : "임계치 미만") : undefined}>
+                        {fmt(m.unit, v)}{warn ? (m.lower_better ? " ▲" : " ▼") : ""}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}

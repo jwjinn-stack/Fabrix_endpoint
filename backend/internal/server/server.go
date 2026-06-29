@@ -106,6 +106,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("GET /api/v1/diagnostics/{name}", s.handleProbeOne) // 단일 라이브 재프로브("지금 테스트")
 
+	// FABRIX MCP(C7, read-only) — AI 에이전트가 대시보드 메트릭·차원·인사이트를 질의. JSON-RPC 2.0.
+	mux.HandleFunc("POST /api/v1/mcp", s.handleMCP)
+
 	// 관제 대시보드(4-1) + 트래픽/프록시 뷰(4-5) — dashboard cap.
 	if can(capability.Dashboard) {
 		mux.HandleFunc("GET /api/v1/dashboard/overview", s.handleOverview)
@@ -116,6 +119,8 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/gpu/timeseries", s.handleGPUTimeseries)
 		mux.HandleFunc("GET /api/v1/proxy/stats", s.handleProxyStats)
 		mux.HandleFunc("GET /api/v1/proxy/pipeline", s.handleEnginePipeline)
+		mux.HandleFunc("GET /api/v1/metrics/breakdown", s.handleMetricsBreakdown) // L2 차원 groupby
+		mux.HandleFunc("GET /api/v1/metrics/dimensions", s.handleMetricDimensions)
 	}
 
 	// 모델 카탈로그 + Harbor 레지스트리 조회 — models cap.

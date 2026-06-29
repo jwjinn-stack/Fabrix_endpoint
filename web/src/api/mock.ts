@@ -12,7 +12,7 @@ import type {
   APIKeyView, Capabilities, ConfigStatus, ConfigView, DiagReport, DiagStatus, ChatResponse, DashboardOverview, Endpoint, EndpointPreview,
   EnginePipeline, EvalResult, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
   GuardAuditRow, GuardDecision, GuardPolicy, GuardVerdict, HarborModel, HarborStatus,
-  ImportResult, IssuedKey, MaskingPolicy, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
+  ImportResult, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
   OrgTree, ProxyStats, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
   SpanKind, ThirdPartyCred, TimePoint, TimeRange, Timeseries,
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
@@ -250,6 +250,49 @@ function genUsage(range: TimeRange, groupBy: string): UsageReport {
   }
   rows.sort((a, b) => b.requests - a.requests);
   return { range, generated_at: new Date().toISOString(), group_by: groupBy, rows };
+}
+
+// 메트릭 차원 groupby(L2) — 차원 카탈로그 + 차원별 분해 합성.
+const METRIC_DIMENSIONS: MetricDimension[] = [
+  { key: "model", label: "model", title: "모델" },
+  { key: "endpoint", label: "dynamo_endpoint", title: "엔드포인트" },
+  { key: "namespace", label: "dynamo_namespace", title: "네임스페이스" },
+];
+
+const METRIC_CATALOG: MetricMeta[] = [
+  { key: "requests", title: "요청 수", unit: "count", lower_better: false, desc: "기간 누적 요청 수" },
+  { key: "qps", title: "QPS", unit: "req/s", lower_better: false, desc: "초당 요청 수(트래픽 규모)" },
+  { key: "ttft_p95_ms", title: "TTFT p95", unit: "ms", lower_better: true, warn_above: 500, desc: "첫 토큰까지 지연 p95. 큐 적체·prefix cache 적중률에 강하게 의존", related: ["qps", "cache_hit_rate"] },
+  { key: "itl_avg_ms", title: "ITL 평균", unit: "ms", lower_better: true, warn_above: 50, desc: "토큰 간 지연(=TPOT) 평균. 생성 속도", related: ["e2e_p95_ms"] },
+  { key: "e2e_p95_ms", title: "E2E p95", unit: "ms", lower_better: true, desc: "요청 전체 지연 p95. 출력 토큰 수에 비례하므로 길다고 비정상 아님", related: ["ttft_p95_ms", "itl_avg_ms"] },
+  { key: "cache_hit_rate", title: "캐시 적중률", unit: "ratio", lower_better: false, warn_below: 0.5, desc: "prefix/KV 캐시 적중률. 비용·TTFT의 숨은 드라이버", related: ["ttft_p95_ms", "prompt_tokens"] },
+  { key: "prompt_tokens", title: "입력 토큰", unit: "tokens", lower_better: false, desc: "기간 누적 입력 토큰(비용 드라이버)" },
+  { key: "completion_tokens", title: "출력 토큰", unit: "tokens", lower_better: false, desc: "기간 누적 출력 토큰(비용 드라이버)" },
+];
+
+function genMetricsBreakdown(range: TimeRange, dim: string): MetricsBreakdown {
+  const def = METRIC_DIMENSIONS.find((d) => d.key === dim) ?? METRIC_DIMENSIONS[0];
+  const keys = dim === "endpoint" ? ["/v1/chat/completions", "/v1/completions", "/v1/embeddings"]
+    : dim === "namespace" ? ["wm-prod", "wm-staging", "research-sandbox"]
+    : CHAT_MODELS.slice(0, 3).map((m) => m.id);
+  const rows: MetricsBreakdownRow[] = keys.map((key) => {
+    const r = rng(hash(`mb:${range}:${dim}:${key}`));
+    const req = Math.floor(800 + r() * 13000);
+    const ttft = Math.round(40 + r() * 480);
+    return {
+      key,
+      requests: req,
+      qps: +(2 + r() * 14).toFixed(2),
+      ttft_p95_ms: ttft,
+      itl_avg_ms: Math.round(14 + r() * 12),
+      e2e_p95_ms: Math.round(ttft * 3 + r() * 400),
+      cache_hit_rate: +(r() * 0.7).toFixed(3),
+      prompt_tokens: req * Math.floor(150 + r() * 300),
+      completion_tokens: req * Math.floor(80 + r() * 150),
+    };
+  });
+  rows.sort((a, b) => b.requests - a.requests);
+  return { range, generated_at: new Date().toISOString(), dimension: dim, label: def.label, rows };
 }
 
 function genUsageTrend(range: TimeRange): UsageTrend {
@@ -924,6 +967,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /dashboard/timeseries": return ok(genTimeseries(parseRange(q)));
     case "GET /usage": return ok(genUsage(parseRange(q), q.get("group_by") ?? "model"));
     case "GET /usage/trend": return ok(genUsageTrend(parseRange(q)));
+    case "GET /metrics/breakdown": return ok(genMetricsBreakdown(parseRange(q), q.get("dim") ?? "model"));
+    case "GET /metrics/dimensions": return ok({ dimensions: METRIC_DIMENSIONS, metrics: METRIC_CATALOG });
     case "GET /models": return ok({ generated_at: new Date().toISOString(), models: MODELS.map(modelInfo) } satisfies ModelCatalog);
     case "GET /models/metrics": return ok(genModelMetrics());
     case "GET /guard/audit": return ok(genGuardAudit(parseRange(q), q.get("decision") ?? undefined, q.get("type") ?? undefined));

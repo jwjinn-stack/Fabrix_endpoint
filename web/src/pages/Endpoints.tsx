@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createEndpoint, deleteEndpoint, fetchEndpointLogs, fetchEndpoints, fetchHarborModels, fetchKeys, fetchOrg, issueKey, previewEndpoint } from "../api/client";
 import type { EndpointLogs } from "../api/client";
 import type { Endpoint, EndpointPreview, EndpointSpec, HarborModel, IssuedKey, OrgApp } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { NavFn } from "../router";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import SummaryStrip from "../components/SummaryStrip";
+import DimensionBreakdown from "../components/DimensionBreakdown";
+import type { MetricsBreakdownRow } from "../api/types";
 import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
@@ -53,7 +55,7 @@ const GPU_KRW_PER_HOUR = 4500;
 
 // 엔드포인트(모델 배포) — DynamoGraphDeployment CR 목록 + 생성 위저드.
 // 안전: 생성은 기본 미리보기(서버 dry-run). 실제 적용은 명시적 확인. 삭제는 FABRIX 생성분만.
-export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model?: string) => void }) {
+export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
   const { can } = useCap(); // 쓰기 권한: 생성·삭제 endpoints.write / 키 발급 keys.write
   const canDeploy = can("endpoints.write");
   const canIssueKey = can("keys.write");
@@ -314,6 +316,16 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
           { label: "총 replica", value: eps.reduce((s, e) => s + (e.replicas ?? 0), 0) },
         ]} />
       )}
+
+      {/* L2 엔드포인트 차원 분해 — 엔드포인트별 트래픽/품질(최근 24시간), 행 클릭 → 트레이스. */}
+      <DimensionBreakdown
+        range="24h"
+        title="엔드포인트 차원 분해 (L2 · 최근 24시간)"
+        initialDim="endpoint"
+        onDrill={(row: MetricsBreakdownRow, dim: string) =>
+          onNavigate?.("traces", { range: "24h", model: dim === "model" ? row.key : undefined })
+        }
+      />
 
       <div className="card">
         <div className="card-head">

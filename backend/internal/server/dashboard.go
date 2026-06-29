@@ -245,6 +245,45 @@ func (s *Server) handleUsageTrend(w http.ResponseWriter, r *http.Request) {
 	httpx.JSON(w, http.StatusOK, tr)
 }
 
+// metricsBreakdownSource 는 차원별 메트릭 분해(L2 groupby) 능력(live·mock 모두 구현).
+type metricsBreakdownSource interface {
+	MetricsBreakdown(ctx context.Context, rng domain.TimeRange, dim string) (domain.MetricsBreakdown, error)
+}
+
+// handleMetricsBreakdown 는 GET /api/v1/metrics/breakdown?range=&dim= (L2 groupby).
+// 동일 트래픽/품질 메트릭을 차원(model|endpoint|namespace)으로 쪼개 "어느 그룹이 튀나"를 본다.
+func (s *Server) handleMetricsBreakdown(w http.ResponseWriter, r *http.Request) {
+	rng := domain.ParseRange(r.URL.Query().Get("range"))
+	dim := r.URL.Query().Get("dim")
+	if dim == "" {
+		dim = "model"
+	}
+	if _, ok := domain.DimensionLabel(dim); !ok {
+		httpx.Error(w, http.StatusBadRequest, "지원하지 않는 차원: "+dim)
+		return
+	}
+	src, ok := s.dashboard.(metricsBreakdownSource)
+	if !ok {
+		httpx.Error(w, http.StatusServiceUnavailable, "메트릭 분해 소스 미지원")
+		return
+	}
+	rep, err := src.MetricsBreakdown(r.Context(), rng, dim)
+	if err != nil {
+		httpx.Error(w, http.StatusBadGateway, "메트릭 분해 조회 실패: "+err.Error())
+		return
+	}
+	httpx.JSON(w, http.StatusOK, rep)
+}
+
+// handleMetricDimensions 는 GET /api/v1/metrics/dimensions (groupby 차원 + 메트릭 카탈로그).
+// 동적 groupby UI(L2)·FABRIX MCP 가 가능한 차원/메트릭 의미를 발견하는 단일 출처.
+func (s *Server) handleMetricDimensions(w http.ResponseWriter, _ *http.Request) {
+	httpx.JSON(w, http.StatusOK, map[string]any{
+		"dimensions": domain.MetricDimensions,
+		"metrics":    domain.MetricCatalog,
+	})
+}
+
 // gpuSource 는 GPU/MIG 상세를 제공하는 옵셔널 능력(live·mock 모두 구현).
 type gpuSource interface {
 	GPU(ctx context.Context) (domain.GPUReport, error)

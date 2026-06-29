@@ -5,6 +5,7 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import { queryParam } from "../router";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -47,13 +48,17 @@ function p95(vals: number[]): number {
 const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hour12: false });
 
 export default function Traces() {
-  const [range, setRange] = useState<TimeRange>("24h");
+  // L2→L3 drill-through: 도착 시 URL 쿼리(model/decision/range)로 초기 필터를 시드한다.
+  const qModel = queryParam("model");
+  const qDecision = queryParam("decision");
+  const [range, setRange] = useState<TimeRange>(() => (queryParam("range") as TimeRange) || "24h");
   const { density, setDensity } = useTableDensity("traces");
-  const [filters, setFilters] = useState({ decision: "all", status: "all", model: "all", app: "all" });
+  const [filters, setFilters] = useState({ decision: qDecision || "all", status: "all", model: qModel || "all", app: "all" });
   const [data, setData] = useState<TraceListReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: [], apps: [] });
+  // 들어온 model 을 옵션 모집단에 시드(필터≠all 이면 옵션 갱신이 막히므로 빈 select 방지).
+  const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: qModel ? [qModel] : [], apps: [] });
 
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);

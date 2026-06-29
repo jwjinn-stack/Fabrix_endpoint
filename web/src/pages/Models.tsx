@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchHarborModels, fetchHarborStatus, fetchModelMetrics } from "../api/client";
 import type { HarborModel, HarborStatus, ModelMetric } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { NavFn } from "../router";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
 import { useCap } from "../capabilities";
@@ -34,7 +34,7 @@ function human(bytes: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
-export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: string) => void }) {
+export default function Models({ onNavigate }: { onNavigate: NavFn }) {
   const { can } = useCap();
   const canImport = can("models.write"); // 모델 임포트 권한
   const canDeploy = can("endpoints.write"); // 엔드포인트 생성 권한
@@ -166,7 +166,7 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
               )}
               <code className="model-id">{m.full_ref}</code>
               <div className="model-actions">
-                {canDeploy && <button type="button" className="btn-primary" onClick={() => onNavigate("endpoints", m.name)}>엔드포인트 생성 →</button>}
+                {canDeploy && <button type="button" className="btn-primary" onClick={() => onNavigate("endpoints", { model: m.name })}>엔드포인트 생성 →</button>}
                 <button type="button" className="btn-ghost" onClick={() => setDetail(m)}>상세</button>
               </div>
             </div>
@@ -202,7 +202,7 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
         title={detail ? `모델 · ${detail.name}` : ""}
         subtitle={detail?.project}
         onClose={() => setDetail(null)}
-        footer={detail && canDeploy ? <button type="button" className="btn-primary" onClick={() => { onNavigate("endpoints", detail.name); setDetail(null); }}>엔드포인트 생성 →</button> : undefined}
+        footer={detail && canDeploy ? <button type="button" className="btn-primary" onClick={() => { onNavigate("endpoints", { model: detail.name }); setDetail(null); }}>엔드포인트 생성 →</button> : undefined}
       >
         {detail && (
           <>
