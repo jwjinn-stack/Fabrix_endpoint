@@ -5,9 +5,9 @@ import "testing"
 func TestParseRange(t *testing.T) {
 	cases := map[string]TimeRange{
 		"1h": Range1h, "6h": Range6h, "24h": Range24h, "7d": Range7d,
-		"":        Range1h, // 미지정 → 1h
-		"bogus":   Range1h, // 불명 → 1h
-		"30m":     Range1h,
+		"":      Range1h, // 미지정 → 1h
+		"bogus": Range1h, // 불명 → 1h
+		"30m":   Range1h,
 	}
 	for in, want := range cases {
 		if got := ParseRange(in); got != want {

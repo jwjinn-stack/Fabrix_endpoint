@@ -10,6 +10,13 @@ const REFRESH_MS = 10_000;
 const nf = new Intl.NumberFormat("ko-KR");
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
+// D-07 로컬 윈도우 — 라이브 rate 집계 구간(초). 전역 시간범위와 별개(Traffic 은 라이브 윈도우 의미).
+const WINDOWS: { value: number; label: string }[] = [
+  { value: 300, label: "5분" },
+  { value: 600, label: "10분" },
+  { value: 1800, label: "30분" },
+];
+
 function fmtTime(ts: string) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return ts;
@@ -31,11 +38,12 @@ export default function Traffic() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<GuardAuditRow | null>(null);
+  const [windowSec, setWindowSec] = useState(600); // D-07 로컬 라이브 윈도우(초)
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const [s, p, g] = await Promise.all([
-        fetchProxyStats(600, signal),
+        fetchProxyStats(windowSec, signal),
         fetchEnginePipeline(signal),
         fetchGuardAudit("1h", {}, signal),
       ]);
@@ -48,7 +56,7 @@ export default function Traffic() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [windowSec]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -66,6 +74,11 @@ export default function Traffic() {
         <h1>트래픽 / 프록시</h1>
         <span className="crumb">관제 / 트래픽</span>
         <div className="spacer" />
+        <select className="range-select" value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} aria-label="라이브 윈도우">
+          {WINDOWS.map((w) => (
+            <option key={w.value} value={w.value}>윈도우: {w.label}</option>
+          ))}
+        </select>
         <button type="button" className="refresh-btn" onClick={() => load()} aria-label="트래픽 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
@@ -100,6 +113,25 @@ export default function Traffic() {
           <StatCard title="엔진 지연" info="업스트림 추론 왕복" metrics={[{ label: "avg", value: s.avg_upstream_ms, unit: "ms" }, { label: "p95", value: s.p95_upstream_ms, unit: "ms" }]} />
           <StatCard title="프록시 오버헤드" info="가드레일/(가드레일+엔진)" metrics={[{ label: "비율", value: pct(s.overhead_perc), tone: s.overhead_perc > 0.4 ? "amber" : "green", bar: s.overhead_perc, barColor: s.overhead_perc > 0.4 ? "var(--amber)" : "var(--green)" }]} />
           <StatCard title="차단율" info="가드레일 차단 비율" metrics={[{ label: "block", value: pct(s.block_rate), tone: "red", bar: s.block_rate, barColor: "var(--red)" }]} />
+        </div>
+      )}
+
+      {/* HTTP 에러 코드 분해 (Analytics Errors 매핑) */}
+      {s?.errors && (
+        <div className="card">
+          <div className="card-head"><h3>HTTP 에러 분해 <span className="info" title="최근 윈도우 동안 코드별 응답 건수. 4xx=클라이언트 / 429=레이트리밋 / 5xx=서버">ⓘ</span></h3></div>
+          <div className="err-codes">
+            {([
+              ["400", "Bad request", "amber"], ["401", "Unauthorized", "amber"],
+              ["404", "Not found", "neutral"], ["429", "Rate limited", "red"], ["500", "Server error", "red"],
+            ] as const).map(([code, label, tone]) => (
+              <div key={code} className={`err-code err-${tone}`}>
+                <div className="ec-code">{code}</div>
+                <div className="ec-count">{nf.format(s.errors![code] ?? 0)}</div>
+                <div className="ec-label">{label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

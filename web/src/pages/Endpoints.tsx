@@ -5,6 +5,7 @@ import type { Endpoint, EndpointPreview, EndpointSpec, HarborModel, IssuedKey, O
 import type { Page } from "../components/Layout";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
+import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
 
@@ -33,11 +34,26 @@ const empty: EndpointSpec = {
   dept_id: "",
   harbor_ref: "",
   access: "cluster",
+  auto_shutdown: "off",
+  speculative: false,
 };
+
+// 유휴 자동 종료 옵션 (Together AI Auto-shutdown 매핑) — 유휴 N 후 0 으로 스케일다운.
+const AUTO_SHUTDOWN = [
+  { value: "off", label: "사용 안 함 (상시 가동)" },
+  { value: "15m", label: "15분" }, { value: "30m", label: "30분" },
+  { value: "1h", label: "1시간" }, { value: "3h", label: "3시간" },
+  { value: "6h", label: "6시간" }, { value: "12h", label: "12시간" }, { value: "24h", label: "24시간" },
+];
+// 자가호스팅 GPU 단가(추정) — H100 시간당 원. 비용 요약 산출용.
+const GPU_KRW_PER_HOUR = 4500;
 
 // 엔드포인트(모델 배포) — DynamoGraphDeployment CR 목록 + 생성 위저드.
 // 안전: 생성은 기본 미리보기(서버 dry-run). 실제 적용은 명시적 확인. 삭제는 FABRIX 생성분만.
 export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model?: string) => void }) {
+  const { can } = useCap(); // 쓰기 권한: 생성·삭제 endpoints.write / 키 발급 keys.write
+  const canDeploy = can("endpoints.write");
+  const canIssueKey = can("keys.write");
   const [eps, setEps] = useState<Endpoint[]>([]);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,9 +277,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
         <span className="crumb">모델 / 엔드포인트 배포</span>
         <div className="spacer" />
         <span className="updated">{eps.length}개</span>
-        <button type="button" className="btn-primary" onClick={() => { setWizard(true); setPreview(null); }} disabled={!available}>
-          + 엔드포인트 생성
-        </button>
+        {canDeploy && (
+          <button type="button" className="btn-primary" onClick={() => { setWizard(true); setPreview(null); }} disabled={!available}>
+            + 엔드포인트 생성
+          </button>
+        )}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
@@ -311,10 +329,12 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
                     <button type="button" className="btn-ghost btn-sm" onClick={(ev) => { ev.stopPropagation(); openLogs(e); }}>
                       로그
                     </button>
-                    <button type="button" className="btn-ghost btn-sm" onClick={(ev) => { ev.stopPropagation(); openKeyModal(e); }}>
-                      키 발급
-                    </button>
-                    {e.managed && (
+                    {canIssueKey && (
+                      <button type="button" className="btn-ghost btn-sm" onClick={(ev) => { ev.stopPropagation(); openKeyModal(e); }}>
+                        키 발급
+                      </button>
+                    )}
+                    {e.managed && canDeploy && (
                       <button type="button" className="btn-ghost btn-sm" onClick={(ev) => { ev.stopPropagation(); remove(e.namespace, e.name); }}>
                         삭제
                       </button>
@@ -451,6 +471,44 @@ export default function Endpoints({ onNavigate }: { onNavigate?: (p: Page, model
                 <input type="number" min={1} value={form.gpu} onChange={(e) => setForm({ ...form, gpu: +e.target.value })} /></label>
               <label className="pg-field"><span>max_model_len</span>
                 <input type="number" min={1024} step={1024} value={form.max_model_len} onChange={(e) => setForm({ ...form, max_model_len: +e.target.value })} /></label>
+            </div>
+            <div className="pg-field-row">
+              <label className="pg-field"><span>유휴 자동종료 <small className="muted">(KEDA scale-to-zero)</small></span>
+                <select className="range-select" value={form.auto_shutdown} onChange={(e) => setForm({ ...form, auto_shutdown: e.target.value })}>
+                  {AUTO_SHUTDOWN.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select></label>
+              <label className="pg-field spec-toggle"><span>Speculative decoding <small className="muted">(vLLM Eagle3)</small></span>
+                <label className="switch-row">
+                  <input type="checkbox" checked={!!form.speculative} onChange={(e) => setForm({ ...form, speculative: e.target.checked })} />
+                  <span>{form.speculative ? "사용 — 초안 모델(Eagle3)로 TTFT·throughput 개선" : "사용 안 함"}</span>
+                </label></label>
+            </div>
+            {form.auto_shutdown !== "off" && (
+              <p className="modal-note" style={{ margin: "-2px 0 4px", color: "var(--amber)" }}>
+                ⓘ 유휴 시 0으로 축소(scale-to-zero)는 Dynamo 단독으로 안 되며, 이 엔드포인트에 <b>KEDA ScaledObject</b>를 함께 배포해야 동작합니다(KAI 스케줄러 클러스터에 KEDA 설치 전제). KEDA 미설치 시 정책만 기록됩니다.
+              </p>
+            )}
+
+            {/* 상시 비용 요약 (Together AI Summary 매핑) — 모델·하드웨어 선택에 따라 실시간 추정 */}
+            <div className="cost-summary" aria-live="polite">
+              <div className="cs-head">예상 비용 <small>(자가호스팅 GPU 단가 기준 추정)</small></div>
+              {(() => {
+                const gpus = (form.gpu || 0) * (form.replicas || 0);
+                const perHour = gpus * GPU_KRW_PER_HOUR;
+                const perMin = perHour / 60;
+                return (
+                  <div className="cs-body">
+                    <div className="cs-metric"><span>분당</span><b>₩{Math.round(perMin).toLocaleString()}</b></div>
+                    <div className="cs-metric"><span>시간당</span><b>₩{perHour.toLocaleString()}</b></div>
+                    <div className="cs-metric"><span>월(상시)</span><b>₩{Math.round(perHour * 730).toLocaleString()}</b></div>
+                    <div className="cs-note">
+                      GPU {form.gpu} × replica {form.replicas} = <b>{gpus} GPU</b>
+                      {form.auto_shutdown !== "off" && <> · 유휴 {AUTO_SHUTDOWN.find((a) => a.value === form.auto_shutdown)?.label} 후 0 스케일다운 → 월 비용 절감</>}
+                      {form.speculative && <> · speculative on</>}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
             {preview && (
               <div className="ep-preview">

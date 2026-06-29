@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchOverview, fetchTimeseries } from "../api/client";
-import type { DashboardOverview, TimeRange, Timeseries } from "../api/types";
+import type { DashboardOverview, Timeseries } from "../api/types";
 import type { Page } from "../components/Layout";
 import StatCard from "../components/StatCard";
 import BarList from "../components/BarList";
@@ -8,13 +8,8 @@ import type { BarItem } from "../components/BarList";
 import TimeseriesChart from "../components/TimeseriesChart";
 import Alarms from "../components/Alarms";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
-
-const RANGES: { value: TimeRange; label: string }[] = [
-  { value: "1h", label: "최근 1시간" },
-  { value: "6h", label: "최근 6시간" },
-  { value: "24h", label: "최근 24시간" },
-  { value: "7d", label: "최근 7일" },
-];
+import { SkeletonCards } from "../components/Skeleton";
+import { RANGES, RangeSelect, useTimeRange } from "../timeRange";
 
 const REFRESH_MS = 15_000;
 
@@ -33,8 +28,8 @@ function deltaPct(vals: number[]): number | undefined {
 }
 
 export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => void }) {
-  // 기본 24h — 열자마자 누적 데이터(가드레일·사용량)가 보이도록(idle 1h 는 0만 보임).
-  const [range, setRange] = useState<TimeRange>("24h");
+  // 기간은 전역 컨텍스트 공유 — 사용량·트레이스 화면과 동일 선택이 유지된다(G-05).
+  const { range } = useTimeRange();
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [series, setSeries] = useState<Timeseries | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +37,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
   const [refreshing, setRefreshing] = useState(false);
   // 관제뷰 빌더(#16) — 패널 표시 토글, localStorage 저장.
   const [editView, setEditView] = useState(false);
+  // D-03 인지부하: 기본은 핵심 3카드만(글랜스). GPU/MIG는 "더 보기"로 펼침(카드 영역 한정).
+  const [showMore, setShowMore] = useState(false);
   const [panels, setPanels] = useState<Record<string, boolean>>(() => {
     try {
       const s = localStorage.getItem("fabrix.dashboard.panels");
@@ -105,17 +102,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
         <span className="crumb">관제 / 대시보드</span>
         <div className="spacer" />
         <span className="updated">업데이트 {updatedAt}</span>
-        <select
-          className="range-select"
-          value={range}
-          onChange={(e) => setRange(e.target.value as TimeRange)}
-        >
-          {RANGES.map((r) => (
-            <option key={r.value} value={r.value}>
-              기간: {r.label}
-            </option>
-          ))}
-        </select>
+        <RangeSelect />
         <button type="button" className="btn-ghost" onClick={() => setEditView((v) => !v)} aria-pressed={editView}>
           {editView ? "편집 완료" : "뷰 편집"}
         </button>
@@ -157,16 +144,15 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
         </div>
       )}
 
-      {!error && loading && !overview && (
-        <div className="state" role="status" aria-live="polite">
-          관제 지표를 집계하는 중입니다…
-        </div>
-      )}
+      {!error && loading && !overview && <SkeletonCards count={4} />}
 
       {overview && series && (
         <>
           {panels.cards && (
-          <div className="cards-4">
+          <>
+          {/* D-01/D-03: 동일 높이 KPI 타일 그리드(auto-fit) — 폭에 따라 3~4열로 자연 줄바꿈,
+              카드 높이가 어긋나지 않는다. GPU/MIG 는 기본 숨김, "더 보기"로 4번째 타일 추가. */}
+          <div className="kpi-grid">
             <StatCard
               title="실시간 트래픽"
               info="vLLM 엔진 실행/대기 요청 수와 성공률"
@@ -189,7 +175,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
               info="TTFT/ITL 분포와 KV prefix 캐시 적중률"
               onRefresh={() => load()}
               metrics={[
-                { label: "TTFT p50", value: overview.quality.ttft_p50_ms, unit: "ms" },
                 { label: "TTFT p95", value: overview.quality.ttft_p95_ms, unit: "ms", tone: overview.quality.ttft_p95_ms > 140 ? "amber" : undefined, spark: sparkTtft, delta: deltaPct(sparkTtft), deltaGood: "down" },
                 { label: "ITL avg", value: overview.quality.itl_avg_ms, unit: "ms" },
                 { label: "캐시 hit", value: pct(overview.quality.cache_hit_rate), bar: overview.quality.cache_hit_rate, barColor: "var(--teal)" },
@@ -204,27 +189,35 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
               metrics={[
                 { label: "차단", value: overview.guardrail.blocked, tone: "red", spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down" },
                 { label: "PII", value: overview.guardrail.pii, tone: "pink" },
-                { label: "Jailbreak", value: overview.guardrail.jailbreak, tone: "red" },
                 { label: "flagged", value: overview.guardrail.flagged, tone: "amber" },
               ]}
             />
-            <StatCard
-              title="GPU / MIG"
-              info="GPU 사용률·KV 캐시·MIG 슬라이스 효율"
-              onRefresh={() => load()}
-              metrics={[
-                { label: "사용률", value: pct(overview.gpu.usage_perc), bar: overview.gpu.usage_perc },
-                { label: "KV 캐시", value: pct(overview.gpu.kv_cache_perc), bar: overview.gpu.kv_cache_perc, barColor: "var(--teal)" },
-                {
-                  label: "MIG 효율",
-                  value: overview.gpu.mig_efficiency.toFixed(2),
-                  tone: overview.gpu.mig_efficiency < 0.7 ? "amber" : "green",
-                  bar: overview.gpu.mig_efficiency,
-                  barColor: overview.gpu.mig_efficiency < 0.7 ? "var(--amber)" : "var(--green)",
-                },
-              ]}
-            />
+            {/* D-03: GPU/MIG는 기본 숨김 — "더 보기"로 펼친다. */}
+            {showMore && (
+              <StatCard
+                title="GPU / MIG"
+                info="GPU 사용률·KV 캐시·MIG 슬라이스 효율"
+                onRefresh={() => load()}
+                metrics={[
+                  { label: "사용률", value: pct(overview.gpu.usage_perc), bar: overview.gpu.usage_perc },
+                  { label: "KV 캐시", value: pct(overview.gpu.kv_cache_perc), bar: overview.gpu.kv_cache_perc, barColor: "var(--teal)" },
+                  {
+                    label: "MIG 효율",
+                    value: overview.gpu.mig_efficiency.toFixed(2),
+                    tone: overview.gpu.mig_efficiency < 0.7 ? "amber" : "green",
+                    bar: overview.gpu.mig_efficiency,
+                    barColor: overview.gpu.mig_efficiency < 0.7 ? "var(--amber)" : "var(--green)",
+                  },
+                ]}
+              />
+            )}
           </div>
+          <div style={{ marginTop: "calc(-1 * var(--sp-2))", marginBottom: "var(--sp-3)" }}>
+            <button type="button" className="btn-ghost" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>
+              {showMore ? "GPU / MIG 접기 ▲" : "GPU / MIG 더 보기 ▼"}
+            </button>
+          </div>
+          </>
           )}
 
           {panels.distribution && (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchCredentials, setCredential } from "../api/client";
 import type { ThirdPartyCred } from "../api/types";
+import { useCap } from "../capabilities";
 
 // 서드파티 자격증명 — HF Model Hub 토큰 · NVIDIA NGC 키 (모델 임포트 다운로드에 사용).
 // Nutanix Enterprise AI "Settings · Third Party Credentials" 패턴. 값은 마스킹 저장(k8s Secret).
@@ -24,6 +25,7 @@ const KINDS = [
 ] as const;
 
 export default function Credentials() {
+  const canWrite = useCap().can("credentials"); // 자격증명 조회·설정(민감) 권한 — observe 에선 false
   const [creds, setCreds] = useState<ThirdPartyCred[]>([]);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +90,9 @@ export default function Credentials() {
 
       {error && <div className="state error" role="alert">{error}</div>}
       {notice && <div className="state" role="status">{notice}</div>}
+      {!canWrite && !loading && (
+        <div className="state" role="status">읽기 전용 프로파일입니다. 서드파티 자격증명 조회·설정은 관리(manage) 권한에서만 가능합니다.</div>
+      )}
       {!available && !loading && (
         <div className="state" role="status">kubectl 미구성으로 자격증명 저장이 비활성입니다. (백엔드 FABRIX_KUBECTL/권한 확인)</div>
       )}
@@ -101,7 +106,7 @@ export default function Credentials() {
             <div className="card cred-card" key={k.kind}>
               <div className="cred-head">
                 <h3>{k.title}</h3>
-                {!editing && (
+                {!editing && canWrite && (
                   <button type="button" className="btn-ghost btn-sm" onClick={() => openEdit(k.kind)} disabled={!available}>
                     ✎ {c?.set ? "수정" : "등록"}
                   </button>

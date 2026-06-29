@@ -15,21 +15,21 @@ import (
 // Langfuse/Databricks 평가 패턴. dev 는 gemma 가 대상/심판 겸용(이상적으론 더 강한 심판 분리).
 
 type evalRequest struct {
-	Model     string `json:"model"`
+	Model      string `json:"model"`
 	JudgeModel string `json:"judge_model"`
-	Prompt    string `json:"prompt"`
-	Criteria  string `json:"criteria"` // 채점 기준(선택)
+	Prompt     string `json:"prompt"`
+	Criteria   string `json:"criteria"` // 채점 기준(선택)
 }
 
 type evalResult struct {
-	Model     string `json:"model"`
-	JudgeModel string `json:"judge_model"`
-	Prompt    string `json:"prompt"`
-	Response  string `json:"response"`
-	Score     int    `json:"score"`     // 1..5
-	Rationale string `json:"rationale"`
-	LatencyMs int64  `json:"latency_ms"`
-	Guard     *domain.GuardVerdict `json:"guard,omitempty"`
+	Model      string               `json:"model"`
+	JudgeModel string               `json:"judge_model"`
+	Prompt     string               `json:"prompt"`
+	Response   string               `json:"response"`
+	Score      int                  `json:"score"` // 1..5
+	Rationale  string               `json:"rationale"`
+	LatencyMs  int64                `json:"latency_ms"`
+	Guard      *domain.GuardVerdict `json:"guard,omitempty"`
 }
 
 var scoreRe = regexp.MustCompile(`[1-5]`)

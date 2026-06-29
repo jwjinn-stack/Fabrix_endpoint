@@ -129,8 +129,8 @@ func (p *Provider) Overview(_ context.Context, rng domain.TimeRange) (domain.Das
 	}
 
 	return domain.DashboardOverview{
-		Range:       rng,
-		GeneratedAt: now.Format(time.RFC3339),
+		Range:        rng,
+		GeneratedAt:  now.Format(time.RFC3339),
 		Traffic:      traffic,
 		Quality:      quality,
 		Guardrail:    guardrail,
@@ -186,7 +186,7 @@ func (p *Provider) Timeseries(_ context.Context, rng domain.TimeRange) (domain.T
 func curve(i, n int, lo, hi, drift, phase float64) float64 {
 	t := float64(i) / float64(maxInt(n-1, 1))
 	base := math.Sin(2*math.Pi*2.5*t + phase + drift)
-	harm := 0.35 * math.Sin(2*math.Pi*6.0*t + phase*1.7)
+	harm := 0.35 * math.Sin(2*math.Pi*6.0*t+phase*1.7)
 	s := (base + harm + 1.35) / 2.7 // 대략 0..1 로 정규화
 	if s < 0 {
 		s = 0

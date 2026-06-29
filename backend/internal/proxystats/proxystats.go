@@ -39,17 +39,17 @@ func (c *Collector) Record(guardMs, upstreamMs int64, blocked bool, model string
 
 // Stats 는 트래픽/프록시 뷰 응답.
 type Stats struct {
-	WindowSec       int                `json:"window_sec"`
-	Total           int                `json:"total"`
-	Blocked         int                `json:"blocked"`
-	Allowed         int                `json:"allowed"`
-	BlockRate       float64            `json:"block_rate"`        // 0..1
-	AvgGuardMs      float64            `json:"avg_guard_ms"`      // 가드레일 처리 평균
-	AvgUpstreamMs   float64            `json:"avg_upstream_ms"`   // 엔진 왕복 평균
-	P95UpstreamMs   float64            `json:"p95_upstream_ms"`
-	OverheadPerc    float64            `json:"overhead_perc"`     // guard/(guard+upstream)
-	ByModel         map[string]int     `json:"by_model"`
-	QPM             float64            `json:"qpm"`               // 분당 요청(윈도우 환산)
+	WindowSec     int            `json:"window_sec"`
+	Total         int            `json:"total"`
+	Blocked       int            `json:"blocked"`
+	Allowed       int            `json:"allowed"`
+	BlockRate     float64        `json:"block_rate"`      // 0..1
+	AvgGuardMs    float64        `json:"avg_guard_ms"`    // 가드레일 처리 평균
+	AvgUpstreamMs float64        `json:"avg_upstream_ms"` // 엔진 왕복 평균
+	P95UpstreamMs float64        `json:"p95_upstream_ms"`
+	OverheadPerc  float64        `json:"overhead_perc"` // guard/(guard+upstream)
+	ByModel       map[string]int `json:"by_model"`
+	QPM           float64        `json:"qpm"` // 분당 요청(윈도우 환산)
 }
 
 // Snapshot 은 최근 windowSec 초의 집계를 반환한다.

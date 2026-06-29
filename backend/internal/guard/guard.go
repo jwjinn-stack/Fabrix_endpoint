@@ -5,15 +5,17 @@
 // 판정 결과는 증적(audit) 으로 적재된다. SR 이 약한 한국어 PII 는 정규식으로 1차 보강한다.
 //
 // SR HTTP API (실측):
-//   POST /api/v1/classify/pii      → {has_pii, entities[{type,value,confidence}], security_recommendation}
-//   POST /api/v1/classify/security → {is_jailbreak, risk_score, recommendation, patterns_detected, confidence}
-//   POST /api/v1/classify/intent   → {classification{category,confidence}, routing_decision}
+//
+//	POST /api/v1/classify/pii      → {has_pii, entities[{type,value,confidence}], security_recommendation}
+//	POST /api/v1/classify/security → {is_jailbreak, risk_score, recommendation, patterns_detected, confidence}
+//	POST /api/v1/classify/intent   → {classification{category,confidence}, routing_decision}
 package guard
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
 // Client 는 Semantic Router classify API 클라이언트 + 정책 평가기.
@@ -40,7 +43,7 @@ func New(base, policyVer string) *Client {
 	}
 	return &Client{
 		base:      strings.TrimRight(base, "/"),
-		http:      &http.Client{Timeout: 5 * time.Second},
+		http:      &http.Client{Timeout: 5 * time.Second, Transport: httpx.Capturing(nil)},
 		policyVer: policyVer,
 		enabled:   base != "",
 		policy:    domain.DefaultPolicy(),
@@ -49,6 +52,17 @@ func New(base, policyVer string) *Client {
 
 // Enabled 는 가드레일 강제 여부.
 func (c *Client) Enabled() bool { return c.enabled }
+
+// Probe 는 Semantic Router 도달성을 확인한다(더미 텍스트 PII 분류, read-only). 진단용.
+func (c *Client) Probe(ctx context.Context) error {
+	if !c.enabled {
+		return errors.New("semantic router 미구성")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var out map[string]any
+	return c.post(ctx, "/api/v1/classify/pii", "ping", &out)
+}
 
 // PolicyVersion 은 현재 정책 버전.
 func (c *Client) PolicyVersion() string { return c.policyVer }
@@ -145,15 +159,15 @@ var krRules = []struct {
 	name string
 	re   *regexp.Regexp
 }{
-	{"rrn_kr", regexp.MustCompile(`\b\d{6}[-\s]?[1-8]\d{6}\b`)},                       // 주민등록번호(내국 1-4·외국 5-8)
-	{"passport_kr", regexp.MustCompile(`\b[MSRODGmsrodg]\d{8}\b`)},                    // 여권번호
-	{"driver_kr", regexp.MustCompile(`\b\d{2}[-\s]?\d{2}[-\s]?\d{6}[-\s]?\d{2}\b`)},   // 운전면허번호
-	{"biznum_kr", regexp.MustCompile(`\b\d{3}-\d{2}-\d{5}\b`)},                        // 사업자등록번호
-	{"corpnum_kr", regexp.MustCompile(`\b\d{6}-\d{7}\b`)},                             // 법인등록번호
-	{"card_kr", regexp.MustCompile(`\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b`)},     // 카드번호(16자리)
-	{"phone_kr", regexp.MustCompile(`\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b`)},        // 휴대폰
-	{"account_kr", regexp.MustCompile(`\b\d{2,6}-\d{2,6}-\d{2,7}\b`)},                 // 계좌번호(loose)
-	{"email", regexp.MustCompile(`\b[\w.%+\-]+@[\w.\-]+\.[A-Za-z]{2,}\b`)},            // 이메일
+	{"rrn_kr", regexp.MustCompile(`\b\d{6}[-\s]?[1-8]\d{6}\b`)},                     // 주민등록번호(내국 1-4·외국 5-8)
+	{"passport_kr", regexp.MustCompile(`\b[MSRODGmsrodg]\d{8}\b`)},                  // 여권번호
+	{"driver_kr", regexp.MustCompile(`\b\d{2}[-\s]?\d{2}[-\s]?\d{6}[-\s]?\d{2}\b`)}, // 운전면허번호
+	{"biznum_kr", regexp.MustCompile(`\b\d{3}-\d{2}-\d{5}\b`)},                      // 사업자등록번호
+	{"corpnum_kr", regexp.MustCompile(`\b\d{6}-\d{7}\b`)},                           // 법인등록번호
+	{"card_kr", regexp.MustCompile(`\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b`)},   // 카드번호(16자리)
+	{"phone_kr", regexp.MustCompile(`\b01[016789][-\s]?\d{3,4}[-\s]?\d{4}\b`)},      // 휴대폰
+	{"account_kr", regexp.MustCompile(`\b\d{2,6}-\d{2,6}-\d{2,7}\b`)},               // 계좌번호(loose)
+	{"email", regexp.MustCompile(`\b[\w.%+\-]+@[\w.\-]+\.[A-Za-z]{2,}\b`)},          // 이메일
 }
 
 func koreanPII(text string) []domain.PIIEntity {

@@ -7,6 +7,8 @@ export const ROUTES: Record<Page, string> = {
   dashboard: "/dashboard",
   usage: "/usage",
   guard: "/guard",
+  traces: "/traces",
+  sessions: "/sessions",
   models: "/models",
   "model-import": "/models/import",
   playground: "/playground",
@@ -17,7 +19,33 @@ export const ROUTES: Record<Page, string> = {
   traffic: "/traffic",
   settings: "/settings",
   credentials: "/settings/credentials",
+  diagnostics: "/diagnostics",
 };
+
+// 화면 ↔ 필요한 capability(기능 플래그). 배포 프로파일(observe/manage)로 메뉴·접근을 게이팅한다.
+// undefined = 항상 허용. 값이 있으면 해당 cap 이 켜져야 노출/접근 가능(backend capability 키와 일치).
+export const PAGE_CAP: Partial<Record<Page, string>> = {
+  dashboard: "dashboard",
+  usage: "dashboard",
+  gpu: "dashboard",
+  traffic: "dashboard",
+  guard: "guard",
+  traces: "traces",
+  sessions: "traces",
+  models: "models",
+  "model-import": "models.write",
+  playground: "playground",
+  eval: "eval",
+  endpoints: "endpoints",
+  keys: "keys",
+  settings: "users",
+  credentials: "credentials",
+};
+
+// capForPage 는 해당 화면 노출/접근에 필요한 cap(없으면 undefined=항상 허용).
+export function capForPage(page: Page): string | undefined {
+  return PAGE_CAP[page];
+}
 
 const PATH_TO_PAGE: Record<string, Page> = Object.fromEntries(
   Object.entries(ROUTES).map(([page, path]) => [path, page as Page]),

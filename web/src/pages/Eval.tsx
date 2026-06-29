@@ -41,6 +41,8 @@ export default function Eval() {
   }, [model, judge, prompt, criteria, busy]);
 
   const scoreColor = (s: number) => (s >= 4 ? "var(--green)" : s >= 2 ? "var(--amber)" : "var(--red)");
+  // O-12: 점수(1-5) → 평문 신뢰도 큐.
+  const scoreCue = (s: number) => (s >= 4.5 ? "매우 일치" : s >= 3.5 ? "대체로 일치" : s >= 2.5 ? "부분 일치" : "근거 부족");
   const avg = results.length ? results.reduce((a, r) => a + r.score, 0) / results.length : 0;
   // 세션 내 평가 추이(회귀 비교) — results 는 최신순, 추이는 과거→현재.
   const trend = [...results].reverse().map((r) => r.score);
@@ -101,6 +103,7 @@ export default function Eval() {
             <h3>{r.model} {r.judge_model !== r.model && <span className="muted">· 심판 {r.judge_model}</span>}</h3>
             <span className="spacer" />
             <span className="eval-score" style={{ color: scoreColor(r.score) }}>{r.score} / 5</span>
+            <span style={{ marginLeft: "var(--sp-2)", fontSize: "var(--fs-xs)", color: scoreColor(r.score), border: `1px solid ${scoreColor(r.score)}`, borderRadius: "var(--radius-sm)", padding: "1px 6px" }}>{scoreCue(r.score)}</span>
           </div>
           <dl className="detail-grid">
             <div className="detail-pair"><dt>프롬프트</dt><dd>{r.prompt}</dd></div>

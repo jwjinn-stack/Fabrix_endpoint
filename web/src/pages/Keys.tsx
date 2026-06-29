@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchKeys, fetchOrg, issueKey, revokeKey } from "../api/client";
 import type { APIKeyView, IssuedKey, OrgApp } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
 const nf = new Intl.NumberFormat("ko-KR");
@@ -33,6 +34,7 @@ function QuotaGauge({ used, limit, alert = 0.8 }: { used: number; limit?: number
 const won = (v: number) => `₩${Math.round(v).toLocaleString("ko-KR")}`;
 
 export default function Keys() {
+  const canWrite = useCap().can("keys.write"); // 키 발급·회수 권한(observe 에선 false)
   const [keys, setKeys] = useState<APIKeyView[]>([]);
   const [apps, setApps] = useState<OrgApp[]>([]);
   const [depts, setDepts] = useState<string[]>([]);
@@ -147,9 +149,11 @@ export default function Keys() {
         <span className="crumb">키·앱 / API 키</span>
         <div className="spacer" />
         <span className="updated">{keys.length}개 키</span>
-        <button type="button" className="btn-primary" onClick={openIssueModal}>
-          + 키 발급
-        </button>
+        {canWrite && (
+          <button type="button" className="btn-primary" onClick={openIssueModal}>
+            + 키 발급
+          </button>
+        )}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
@@ -224,7 +228,7 @@ export default function Keys() {
                   </td>
                   <td className="num">
                     {k.enabled && (
-                      <button type="button" className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); revoke(k.api_key_id); }}>
+                      <button type="button" className="btn-ghost btn-sm" disabled={!canWrite} title={canWrite ? undefined : "읽기 전용 모드"} onClick={(e) => { e.stopPropagation(); revoke(k.api_key_id); }}>
                         회수
                       </button>
                     )}

@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
 // Client 는 Harbor API v2.0 클라이언트.
@@ -25,7 +27,7 @@ type Client struct {
 // New 는 Harbor URL(creds 포함)로 클라이언트를 만든다.
 // 예: http://admin:<pw>@192.168.160.43:30834
 func New(raw string) *Client {
-	c := &Client{http: &http.Client{Timeout: 8 * time.Second}}
+	c := &Client{http: &http.Client{Timeout: 8 * time.Second, Transport: httpx.Capturing(nil)}}
 	if raw == "" {
 		return c
 	}
@@ -44,6 +46,15 @@ func New(raw string) *Client {
 }
 
 func (c *Client) Enabled() bool { return c.enabled }
+
+// Probe 는 Harbor API 도달성을 확인한다(프로젝트 1건 조회, read-only). 진단용.
+func (c *Client) Probe(ctx context.Context) error {
+	if !c.enabled {
+		return fmt.Errorf("harbor 미구성")
+	}
+	var out []struct{}
+	return c.get(ctx, "/api/v2.0/projects?page_size=1", &out)
+}
 
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
@@ -66,21 +77,21 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 
 // Model 은 Harbor 레지스트리의 모델(=repository) 1개.
 type Model struct {
-	Name        string   `json:"name"`         // repo 이름(project 제외)
-	Project     string   `json:"project"`      // 프로젝트
-	FullRef     string   `json:"full_ref"`     // <host>/<project>/<repo>
-	Tags        []string `json:"tags"`         // 최신 아티팩트 태그
-	Artifacts   int      `json:"artifacts"`    // 아티팩트 수
-	Pulls       int64    `json:"pulls"`        // pull 수
-	SizeBytes   int64    `json:"size_bytes"`   // 총 크기
-	UpdatedAt   string   `json:"updated_at"`
+	Name      string   `json:"name"`       // repo 이름(project 제외)
+	Project   string   `json:"project"`    // 프로젝트
+	FullRef   string   `json:"full_ref"`   // <host>/<project>/<repo>
+	Tags      []string `json:"tags"`       // 최신 아티팩트 태그
+	Artifacts int      `json:"artifacts"`  // 아티팩트 수
+	Pulls     int64    `json:"pulls"`      // pull 수
+	SizeBytes int64    `json:"size_bytes"` // 총 크기
+	UpdatedAt string   `json:"updated_at"`
 }
 
 type repoResp struct {
-	Name         string `json:"name"` // "project/repo"
-	ArtifactCount int   `json:"artifact_count"`
-	PullCount    int64  `json:"pull_count"`
-	UpdateTime   string `json:"update_time"`
+	Name          string `json:"name"` // "project/repo"
+	ArtifactCount int    `json:"artifact_count"`
+	PullCount     int64  `json:"pull_count"`
+	UpdateTime    string `json:"update_time"`
 }
 
 type artifactResp struct {

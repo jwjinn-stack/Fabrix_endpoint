@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
 // Provider 는 vmselect PromQL 기반 실데이터 소스.
@@ -34,8 +35,14 @@ type Provider struct {
 func New(vmselectBase string) *Provider {
 	return &Provider{
 		base: vmselectBase,
-		http: &http.Client{Timeout: 8 * time.Second},
+		http: &http.Client{Timeout: 8 * time.Second, Transport: httpx.Capturing(nil)},
 	}
+}
+
+// Probe 는 vmselect 도달성을 확인한다(상수 쿼리 query=1, read-only). 진단용.
+func (p *Provider) Probe(ctx context.Context) error {
+	_, err := p.query(ctx, "1")
+	return err
 }
 
 // ── PromQL 클라이언트 ──
@@ -462,7 +469,7 @@ func (p *Provider) GPU(ctx context.Context) (domain.GPUReport, error) {
 	devices := make([]domain.GPUDevice, 0, len(util))
 	hosts := map[string]bool{}
 	var sumUtil, sumMem, sumPower, sumEff float64
-	idleGap := 0    // VRAM 점유인데 연산 유휴 = 할당 갭
+	idleGap := 0 // VRAM 점유인데 연산 유휴 = 할당 갭
 	migEnabled := false
 	for uuid, u := range util {
 		if u.labels["GPU_I_PROFILE"] != "" || u.labels["GPU_I_ID"] != "" {

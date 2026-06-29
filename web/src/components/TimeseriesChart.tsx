@@ -97,6 +97,35 @@ export default function TimeseriesChart({
 
   const ttftThresholdY = yTtft(ttftThresholdMs);
 
+  // D-10 키보드 줌 — 차트 포커스 시 +/= 줌인(가운데 기준 절반), - 줌아웃(2배), 0/Esc 리셋.
+  // 't' 프리픽스(t 다음 +/-)도 허용. 마우스 드래그줌과 동일한 원본 인덱스 공간에서 동작.
+  const last = points.length - 1;
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const key = e.key;
+    if (key === "0" || key === "Escape") {
+      if (zoom) { e.preventDefault(); setZoom(null); }
+      return;
+    }
+    const a = zoom ? zoom.a : 0;
+    const b = zoom ? zoom.b : last;
+    const center = (a + b) / 2;
+    const span = b - a; // 현재 보이는 폭(인덱스)
+    if (key === "+" || key === "=") {
+      // 줌인: 폭을 절반으로(최소 2포인트는 유지).
+      const half = Math.max(Math.floor(span / 4), 1);
+      const na = Math.max(Math.round(center - half), 0);
+      const nb = Math.min(Math.max(Math.round(center + half), na + 1), last);
+      if (nb - na >= 1 && (na !== a || nb !== b)) { e.preventDefault(); setZoom({ a: na, b: nb }); }
+    } else if (key === "-" || key === "_") {
+      // 줌아웃: 폭을 2배로. 전체를 덮으면 리셋(zoom null).
+      const half = span; // 새 반폭 = 기존 전폭
+      const na = Math.max(Math.round(center - half), 0);
+      const nb = Math.min(Math.round(center + half), last);
+      if (na <= 0 && nb >= last) { e.preventDefault(); setZoom(null); }
+      else if (nb - na >= 1) { e.preventDefault(); setZoom({ a: na, b: nb }); }
+    }
+  };
+
   return (
     <div className="card chart-card">
       <div className="card-head">
@@ -128,14 +157,16 @@ export default function TimeseriesChart({
         width="100%"
         preserveAspectRatio="none"
         role="img"
-        aria-label={`최근 구간 시계열. 데이터 포인트 ${view.length}개. QPS, TTFT p95(ms), 차단 건수 추이. 드래그하여 확대.`}
+        tabIndex={0}
+        aria-label={`최근 구간 시계열. 데이터 포인트 ${view.length}개. QPS, TTFT p95(ms), 차단 건수 추이. 마우스로 드래그하여 확대. 키보드: 포커스 후 +/= 확대, - 축소, 0 또는 Esc 초기화.`}
         style={{ cursor: "crosshair", userSelect: "none" }}
         onMouseDown={onDown}
         onMouseMove={onMove}
         onMouseUp={onUp}
         onMouseLeave={() => setDrag(null)}
+        onKeyDown={onKeyDown}
       >
-        <title>QPS · TTFT p95 · 차단건수 시계열 (드래그하여 확대)</title>
+        <title>QPS · TTFT p95 · 차단건수 시계열 (드래그 또는 +/-/0 키로 확대·축소)</title>
         {/* 가로 그리드 */}
         {[0, 0.25, 0.5, 0.75, 1].map((g) => {
           const y = PAD.top + innerH * g;

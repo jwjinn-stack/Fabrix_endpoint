@@ -2,11 +2,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchModels, playgroundChat } from "../api/client";
 import type { ChatMessage, ChatResponse, ModelInfo } from "../api/types";
 
+// M-01 — 6상태(+idle) 머신. 메시지/요청 생애주기를 enum 으로 명시.
+//   idle → queued → thinking → streaming → complete
+//                                       ↘ stopped → (이어서) streaming / (다시 생성) queued
+//   (queued|thinking|streaming 중 실패) → error → (다시 시도) queued
+type ChatStatus = "idle" | "queued" | "thinking" | "streaming" | "complete" | "error" | "stopped";
+
 interface Turn {
   role: "user" | "assistant";
+  // 화면에 그려지는(타이프라이터로 누적된) 내용.
   content: string;
+  // 어시스턴트 응답의 전체 본문(스트리밍 목표). 사용자 메시지는 content 와 동일.
+  full?: string;
   metrics?: ChatResponse;
+  // 응답에 쓰인 모델 표시명(라벨용).
+  modelLabel?: string;
   blocked?: boolean;
+  status?: ChatStatus;
+  // 실측 TTFT(ms) — 첫 글자가 화면에 그려지는 순간까지.
+  ttft?: number;
+  // error 상태일 때 구체 사유.
+  error?: string;
+  // stopped 상태일 때 "이어서"용으로 보존되는, 응답 생성에 쓰인 history.
+  reqHistory?: ChatMessage[];
 }
 
 function resolveModel(requested: string | undefined, models: ModelInfo[]): string {
@@ -16,7 +34,29 @@ function resolveModel(requested: string | undefined, models: ModelInfo[]): strin
   return candidates[0]?.id ?? "";
 }
 
-// 플레이그라운드 — 카탈로그에서 고른 모델을 즉시 채팅으로 검증 (TPS·토큰·지연 표시).
+// 가드레일 판정을 평문 신뢰도 큐로 변환(M-04). 예: "가드레일: PII 탐지(높음)".
+function guardCue(g: NonNullable<ChatResponse["guard"]>): string | null {
+  const types = g.guard_types ?? [];
+  if (types.length === 0 && g.decision === "allowed") return null;
+  const label = (t: string) => (t === "pii" ? "PII 탐지" : t === "jailbreak" ? "Jailbreak 탐지" : t);
+  const level = (c: number) => (c >= 0.8 ? "높음" : c >= 0.5 ? "중간" : "낮음");
+  const parts: string[] = [];
+  for (const t of types) {
+    if (t === "jailbreak") parts.push(`${label(t)}(${level(g.jb_confidence)})`);
+    else if (t === "pii") {
+      const top = (g.pii_entities ?? []).reduce((m, e) => Math.max(m, e.confidence), 0);
+      parts.push(top > 0 ? `${label(t)}(${level(top)})` : label(t));
+    } else parts.push(label(t));
+  }
+  const decision = g.decision === "blocked" ? "차단" : g.decision === "flagged" ? "주의" : null;
+  const head = decision ? `${decision} · ` : "";
+  return parts.length ? `가드레일: ${head}${parts.join(", ")}` : (decision ? `가드레일: ${head.replace(" · ", "")}` : null);
+}
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+// 플레이그라운드 — 카탈로그에서 고른 모델을 즉시 채팅으로 검증 (TPS·토큰·지연·TTFT 표시).
 export default function Playground({ initialModel }: { initialModel?: string }) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [model, setModel] = useState(initialModel ?? "");
@@ -24,12 +64,23 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
   const [temperature, setTemperature] = useState(0.7);
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  // 진행 중 요청의 상태(전송 버튼/입력 잠금 판단). idle 이면 입력 가능.
+  const [status, setStatus] = useState<ChatStatus>("idle");
   const [showCode, setShowCode] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [compareRows, setCompareRows] = useState<{ model: string; content: string; latency: number; tps: number; ptoks: number; ctoks: number; blocked: boolean; error?: string }[] | null>(null);
+  const [copied, setCopied] = useState<number | null>(null);
+  // 오토스크롤 추종 여부(사용자가 위로 스크롤하면 false). 하단 100px 이내면 true.
+  const [following, setFollowing] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 타이프라이터 RAF/타이머 핸들 — cleanup 용.
+  const rafRef = useRef<number | null>(null);
+  // stop 요청 플래그(stale closure 회피용 ref). 타이프라이터 루프가 참조.
+  const stopRef = useRef(false);
+  // 추종 여부 ref(스크롤 핸들러·타이프라이터 양쪽에서 최신값 필요).
+  const followingRef = useRef(true);
+  useEffect(() => { followingRef.current = following; }, [following]);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -48,31 +99,186 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
     if (next !== model) setModel(next);
   }, [initialModel, model, models]);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
-  }, [turns, busy]);
+  // 언마운트 시 RAF 정리.
+  useEffect(() => () => { if (rafRef.current != null) cancelAnimationFrame(rafRef.current); }, []);
+
+  const atBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  }, []);
+
+  // 추종 중일 때만 하단으로. (M-02 오토스크롤)
+  const scrollToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (el && followingRef.current) el.scrollTo(0, el.scrollHeight);
+  }, []);
+
+  // 새 메시지 추가 시(추종 중) 하단으로.
+  useEffect(() => { scrollToBottom(); }, [turns.length, scrollToBottom]);
+
+  // 사용자 스크롤 → 하단 100px 이내면 추종 재개, 아니면 중단 + "최신으로" 노출.
+  const onScroll = useCallback(() => {
+    setFollowing(atBottom());
+  }, [atBottom]);
+
+  const jumpToLatest = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setFollowing(true);
+  }, []);
+
+  // 타이프라이터 — full 의 [from] 부터 한 프레임에 2~4자씩 누적. 첫 글자 그릴 때 TTFT 확정.
+  // idx: turns 내 어시스턴트 메시지 인덱스. sendStart: 전송 직전 timestamp(TTFT 기준).
+  const runTypewriter = useCallback((idx: number, full: string, from: number, sendStart: number) => {
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    stopRef.current = false;
+
+    // reduced-motion: 즉시 전체 표시 + complete.
+    if (prefersReducedMotion()) {
+      const ttft = Math.max(1, Math.round(performance.now() - sendStart));
+      setTurns((t) => t.map((tn, i) => (i === idx ? { ...tn, content: full, status: "complete", ttft: tn.ttft ?? ttft } : tn)));
+      scrollToBottom();
+      setStatus("idle");
+      return;
+    }
+
+    let pos = from;
+    let firstDrawn = from > 0; // 이어서면 이미 첫 글자는 그려진 상태.
+    let last = 0;
+    const STEP_MS = 16; // 프레임 간 최소 간격.
+
+    const tick = (now: number) => {
+      if (stopRef.current) { rafRef.current = null; return; }
+      if (now - last >= STEP_MS) {
+        last = now;
+        const chunk = 2 + Math.floor(Math.random() * 3); // 2~4자
+        pos = Math.min(full.length, pos + chunk);
+        const slice = full.slice(0, pos);
+        if (!firstDrawn && slice.length > 0) {
+          firstDrawn = true;
+          const ttft = Math.max(1, Math.round(performance.now() - sendStart));
+          setTurns((t) => t.map((tn, i) => (i === idx ? { ...tn, content: slice, ttft } : tn)));
+        } else {
+          setTurns((t) => t.map((tn, i) => (i === idx ? { ...tn, content: slice } : tn)));
+        }
+        scrollToBottom();
+        if (pos >= full.length) {
+          setTurns((t) => t.map((tn, i) => (i === idx ? { ...tn, content: full, status: "complete" } : tn)));
+          setStatus("idle");
+          rafRef.current = null;
+          return;
+        }
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+  }, [scrollToBottom]);
+
+  // 응답을 받아 어시스턴트 turn 을 streaming 으로 만들고 타이프라이터 시작.
+  const beginStream = useCallback((idx: number, r: ChatResponse, history: ChatMessage[], sendStart: number, modelLabel: string) => {
+    const blocked = r.guard?.decision === "blocked";
+    setTurns((t) =>
+      t.map((tn, i) =>
+        i === idx ? { ...tn, full: r.content, content: "", metrics: r, blocked, modelLabel, status: blocked ? "complete" : "streaming", reqHistory: history } : tn,
+      ),
+    );
+    setFollowing(true);
+    // 차단 응답은 짧고 타이핑 의미가 옅으므로 즉시 전체 표시 + complete.
+    if (blocked) {
+      const ttft = Math.max(1, Math.round(performance.now() - sendStart));
+      setTurns((t) => t.map((tn, i) => (i === idx ? { ...tn, content: r.content, ttft } : tn)));
+      setStatus("idle");
+      scrollToBottom();
+      return;
+    }
+    setStatus("streaming");
+    runTypewriter(idx, r.content, 0, sendStart);
+  }, [runTypewriter, scrollToBottom]);
+
+  // 공통 요청 실행: queued → thinking → (응답) streaming. assistantIdx 위치에 플레이스홀더가 이미 있어야 함.
+  const runRequest = useCallback(async (assistantIdx: number, history: ChatMessage[]) => {
+    const sendStart = performance.now();
+    setStatus("queued");
+    setTurns((t) => t.map((tn, i) => (i === assistantIdx ? { ...tn, status: "queued", error: undefined } : tn)));
+    // queued 는 아주 짧게 보여주고 thinking 으로.
+    await new Promise((res) => setTimeout(res, 280));
+    setStatus("thinking");
+    setTurns((t) => t.map((tn, i) => (i === assistantIdx ? { ...tn, status: "thinking" } : tn)));
+    const targetModel = model;
+    const label = models.find((m) => m.id === targetModel)?.display_name ?? targetModel;
+    try {
+      const r = await playgroundChat(targetModel, history, { maxTokens, temperature });
+      beginStream(assistantIdx, r, history, sendStart, label);
+    } catch (e) {
+      const msg = (e as Error).message;
+      setTurns((t) => t.map((tn, i) => (i === assistantIdx ? { ...tn, status: "error", error: msg, modelLabel: label } : tn)));
+      setStatus("idle");
+    }
+  }, [model, models, maxTokens, temperature, beginStream]);
 
   const send = useCallback(async () => {
     const text = input.trim();
-    if (!text || !model || busy) return;
+    if (!text || !model || status !== "idle") return;
     const history: ChatMessage[] = [
       ...turns.map((t) => ({ role: t.role, content: t.content })),
       { role: "user", content: text },
     ];
-    setTurns((t) => [...t, { role: "user", content: text }]);
+    // 인덱스는 turns 길이로 결정론적으로 계산한다. setTurns 업데이터 부수효과로
+    // 잡으면 업데이터가 비동기 실행돼 runRequest 호출 시점엔 아직 미설정(-1)이라
+    // 이후 모든 turn 갱신이 무시돼 "대기 중"에 고착된다.
+    const assistantIdx = turns.length + 1; // [..., user(turns.length), assistant(+1)]
+    setTurns((t) => [
+      ...t,
+      { role: "user" as const, content: text, status: "complete" as const },
+      { role: "assistant" as const, content: "", status: "queued" as const },
+    ]);
     setInput("");
-    setBusy(true);
-    setErr(null);
-    try {
-      const r = await playgroundChat(model, history, { maxTokens, temperature });
-      const blocked = r.guard?.decision === "blocked";
-      setTurns((t) => [...t, { role: "assistant", content: r.content, metrics: r, blocked }]);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }, [input, model, busy, turns, maxTokens, temperature]);
+    await runRequest(assistantIdx, history);
+  }, [input, model, status, turns, runRequest]);
+
+  // M-02 — 중지: 타이프라이터 멈춤 + 부분 출력 보존 + stopped.
+  const stop = useCallback(() => {
+    stopRef.current = true;
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    setTurns((t) => t.map((tn) => (tn.status === "streaming" || tn.status === "queued" || tn.status === "thinking" ? { ...tn, status: "stopped" } : tn)));
+    setStatus("idle");
+  }, []);
+
+  // stopped → 이어서: 보존된 full 의 현재 위치부터 계속.
+  const resume = useCallback((idx: number) => {
+    const tn = turns[idx];
+    if (!tn || tn.full == null) return;
+    setStatus("streaming");
+    setFollowing(true);
+    setTurns((t) => t.map((x, i) => (i === idx ? { ...x, status: "streaming" } : x)));
+    // sendStart 를 현재로 두면 이어서의 TTFT 는 의미 없으므로 기존 ttft 유지(첫 글자 이미 그려짐).
+    runTypewriter(idx, tn.full, tn.content.length, performance.now());
+  }, [turns, runTypewriter]);
+
+  // stopped/complete → 다시 생성: 같은 history 로 재요청(부분 출력 폐기).
+  const regenerate = useCallback((idx: number) => {
+    const tn = turns[idx];
+    const history = tn?.reqHistory;
+    if (!history || status !== "idle") return;
+    setTurns((t) => t.map((x, i) => (i === idx ? { ...x, content: "", full: undefined, metrics: undefined, blocked: false, status: "queued", ttft: undefined, error: undefined } : x)));
+    void runRequest(idx, history);
+  }, [turns, status, runRequest]);
+
+  // error → 다시 시도: 직전 사용자 메시지까지의 history 로 재요청.
+  const retry = useCallback((idx: number) => {
+    if (status !== "idle") return;
+    const history: ChatMessage[] = turns.slice(0, idx).map((t) => ({ role: t.role, content: t.content }));
+    setTurns((t) => t.map((x, i) => (i === idx ? { ...x, status: "queued", error: undefined } : x)));
+    void runRequest(idx, history);
+  }, [turns, status, runRequest]);
+
+  const copyMsg = useCallback((idx: number, text: string) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(idx);
+      setTimeout(() => setCopied((c) => (c === idx ? null : c)), 1400);
+    }).catch(() => {});
+  }, []);
 
   // 멀티모델 비교(#11) — 현재 입력을 채팅 가능한 모든 모델에 동시에 보내 결과를 표로 비교.
   const compare = useCallback(async () => {
@@ -81,7 +287,6 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
     const targets = models.filter((m) => m.status !== "unreachable");
     if (targets.length === 0) return;
     setComparing(true);
-    setErr(null);
     setCompareRows(targets.map((m) => ({ model: m.display_name, content: "", latency: 0, tps: 0, ptoks: 0, ctoks: 0, blocked: false })));
     const msgs: ChatMessage[] = [{ role: "user", content: text }];
     const results = await Promise.all(
@@ -110,13 +315,15 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
     ];
   };
 
+  const streamingNow = status === "queued" || status === "thinking" || status === "streaming";
+
   return (
     <>
       <div className="page-head">
         <h1>플레이그라운드</h1>
         <span className="crumb">모델 / 플레이그라운드</span>
         <div className="spacer" />
-        <button type="button" className="btn-ghost" onClick={() => setTurns([])} disabled={turns.length === 0}>
+        <button type="button" className="btn-ghost" onClick={() => { stop(); setTurns([]); }} disabled={turns.length === 0}>
           대화 초기화
         </button>
       </div>
@@ -149,41 +356,125 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
         </div>
 
         {/* 우: 대화 */}
-        <div className="card pg-chat">
-          <div className="pg-messages" ref={scrollRef}>
+        <div className="card pg-chat" style={{ position: "relative" }}>
+          <div className="pg-messages" ref={scrollRef} onScroll={onScroll}>
             {turns.length === 0 && <div className="empty">메시지를 입력해 모델을 시험해 보세요.</div>}
-            {turns.map((t, i) => (
-              <div key={i} className={`pg-msg ${t.role}`}>
-                <div className={`pg-bubble ${t.blocked ? "pg-blocked" : ""}`}>
-                  {t.blocked && <span className="tag tag-red" style={{ marginBottom: 6 }}>가드레일 차단</span>}
-                  {t.content}
+            {turns.map((t, i) => {
+              if (t.role === "user") {
+                return (
+                  <div key={i} className="pg-msg user">
+                    <div className="pg-bubble">{t.content}</div>
+                  </div>
+                );
+              }
+              // 어시스턴트 메시지 — 상태별 렌더.
+              const st = t.status ?? "complete";
+              const cue = t.metrics?.guard ? guardCue(t.metrics.guard) : null;
+              return (
+                <div key={i} className="pg-msg assistant">
+                  {/* 모델 라벨(M-04) */}
+                  {t.modelLabel && (
+                    <span className="muted" style={{ fontSize: "var(--fs-xs)", marginBottom: 2 }}>{t.modelLabel}</span>
+                  )}
+
+                  {st === "queued" && (
+                    <div className="pg-bubble pg-typing" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span className="pulse-dot" /> 대기 중
+                    </div>
+                  )}
+
+                  {st === "thinking" && (
+                    <div className="pg-bubble pg-typing">생성 준비 중…</div>
+                  )}
+
+                  {st === "error" && (
+                    <div className="pg-bubble" style={{ background: "var(--red-weak)", border: "1px solid var(--red-border)", color: "var(--red)" }}>
+                      <div style={{ marginBottom: 6 }}>응답 생성에 실패했습니다 — {t.error}</div>
+                      <button type="button" className="btn-ghost" onClick={() => retry(i)} disabled={status !== "idle"}>
+                        다시 시도
+                      </button>
+                    </div>
+                  )}
+
+                  {(st === "streaming" || st === "complete" || st === "stopped") && (
+                    <>
+                      <div className={`pg-bubble ${t.blocked ? "pg-blocked" : ""}`}>
+                        {t.blocked && <span className="tag tag-red" style={{ marginBottom: 6 }}>가드레일 차단</span>}
+                        {t.content}
+                        {st === "streaming" && <span className="stream-caret" />}
+                      </div>
+
+                      {/* 평문 신뢰도/판정 큐(M-04) */}
+                      {cue && (
+                        <div className="pg-guard">
+                          <span className={`tag ${t.metrics?.guard?.decision === "blocked" || (t.metrics?.guard?.guard_types ?? []).includes("jailbreak") ? "tag-red" : "tag-pink"}`}>
+                            {cue}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* stopped 복구 액션 */}
+                      {st === "stopped" && (
+                        <div className="pg-guard" style={{ marginTop: 6 }}>
+                          <span className="muted" style={{ fontSize: "var(--fs-xs)" }}>중지됨 · 부분 응답 보존</span>
+                          {t.full != null && t.content.length < t.full.length && (
+                            <button type="button" className="btn-ghost" onClick={() => resume(i)} disabled={status !== "idle"}>이어서</button>
+                          )}
+                          {t.reqHistory && (
+                            <button type="button" className="btn-ghost" onClick={() => regenerate(i)} disabled={status !== "idle"}>다시 생성</button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* complete: 메트릭 칩 + 복사 (M-03 TTFT 실측) */}
+                      {st === "complete" && t.metrics && !t.blocked && (
+                        <div className="pg-metrics">
+                          <span className="pg-mchip"><b>{t.metrics.latency_ms}</b>ms</span>
+                          <span className="pg-mchip"><b>{t.metrics.tokens_per_sec}</b> tok/s</span>
+                          <span className="pg-mchip">입력 <b>{t.metrics.prompt_tokens}</b></span>
+                          <span className="pg-mchip">출력 <b>{t.metrics.completion_tokens}</b></span>
+                          <span className="pg-mchip" title="첫 토큰이 화면에 그려지기까지의 실측 지연(타이프라이터 첫 프레임 기준).">
+                            TTFT <b>{t.ttft != null ? t.ttft : "—"}</b>{t.ttft != null ? "ms" : ""}
+                          </span>
+                          <button
+                            type="button"
+                            className="pg-mchip"
+                            style={{ cursor: "pointer", background: "transparent" }}
+                            onClick={() => copyMsg(i, t.content)}
+                            title="응답 복사"
+                          >
+                            {copied === i ? "복사됨 ✓" : "복사"}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* complete 인데 차단(메트릭 없을 수도) — 복사만 */}
+                      {st === "complete" && t.blocked && (
+                        <div className="pg-metrics">
+                          <button type="button" className="pg-mchip" style={{ cursor: "pointer", background: "transparent" }} onClick={() => copyMsg(i, t.content)} title="응답 복사">
+                            {copied === i ? "복사됨 ✓" : "복사"}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                {t.metrics?.guard && (t.metrics.guard.guard_types?.length ?? 0) > 0 && (
-                  <div className="pg-guard">
-                    {t.metrics.guard.guard_types.map((g) => (
-                      <span key={g} className={`tag ${g === "jailbreak" ? "tag-red" : "tag-pink"}`}>
-                        {g === "pii" ? "PII 탐지" : g === "jailbreak" ? "Jailbreak 탐지" : g}
-                      </span>
-                    ))}
-                    {t.metrics.guard.pii_entities?.length ? (
-                      <span className="muted">{t.metrics.guard.pii_entities.map((e) => e.type).join(", ")}</span>
-                    ) : null}
-                  </div>
-                )}
-                {t.metrics && !t.blocked && (
-                  <div className="pg-metrics" title="비스트리밍 응답이라 TTFT(첫 토큰 지연)는 표시할 수 없습니다 — 스트리밍 도입 후 추가됩니다.">
-                    <span className="pg-mchip"><b>{t.metrics.latency_ms}</b>ms</span>
-                    <span className="pg-mchip"><b>{t.metrics.tokens_per_sec}</b> tok/s</span>
-                    <span className="pg-mchip">입력 <b>{t.metrics.prompt_tokens}</b></span>
-                    <span className="pg-mchip">출력 <b>{t.metrics.completion_tokens}</b></span>
-                    <span className="pg-mchip pg-mchip-muted">TTFT —</span>
-                  </div>
-                )}
-              </div>
-            ))}
-            {busy && <div className="pg-msg assistant"><div className="pg-bubble pg-typing">생성 중…</div></div>}
+              );
+            })}
           </div>
-          {err && <div className="state error" role="alert">{err}</div>}
+
+          {/* "최신으로" — 추종 중단 상태에서만 (M-02) */}
+          {!following && turns.length > 0 && (
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={jumpToLatest}
+              style={{ position: "absolute", bottom: 96, left: "50%", transform: "translateX(-50%)", zIndex: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}
+            >
+              ↓ 최신으로
+            </button>
+          )}
+
           <div className="pg-input">
             <textarea
               value={input}
@@ -197,12 +488,18 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
               placeholder="메시지를 입력하세요 (Enter 전송 · Shift+Enter 줄바꿈)"
               rows={2}
             />
-            <button type="button" className="btn-ghost" onClick={compare} disabled={comparing || !input.trim()} title="모든 모델에 동시 전송 비교">
+            <button type="button" className="btn-ghost" onClick={compare} disabled={comparing || streamingNow || !input.trim()} title="모든 모델에 동시 전송 비교">
               {comparing ? "비교 중…" : "모델 비교"}
             </button>
-            <button type="button" className="btn-primary" onClick={send} disabled={busy || !input.trim() || !model}>
-              전송
-            </button>
+            {streamingNow ? (
+              <button type="button" className="btn-primary" onClick={stop} title="생성 중지 — 부분 출력은 보존됩니다">
+                중지
+              </button>
+            ) : (
+              <button type="button" className="btn-primary" onClick={send} disabled={!input.trim() || !model}>
+                전송
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -232,7 +529,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
                 ))}
               </tbody>
             </table>
-            <div className="modal-note">동일 프롬프트를 모든 도달 가능 모델에 동시 전송한 비교(Bedrock Compare 패턴). TTFT(첫 토큰 지연)는 스트리밍 도입 후 추가됩니다.</div>
+            <div className="modal-note">동일 프롬프트를 모든 도달 가능 모델에 동시 전송한 비교(Bedrock Compare 패턴). 단발 비교는 비스트리밍 호출이라 TTFT 는 채팅 응답에서만 표기됩니다.</div>
           </div>
         </div>
       )}

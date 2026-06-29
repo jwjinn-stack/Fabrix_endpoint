@@ -3,6 +3,70 @@ import { createUser, deleteUser, fetchUsers, updateUser } from "../api/client";
 import type { User } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
+import ReconfigurePanel from "../components/ReconfigurePanel";
+import { useCap } from "../capabilities";
+import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
+
+// 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
+function BrandColorCard() {
+  const { brand, setBrand } = useBrand();
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>외관 · 브랜드 색상</h3>
+        <span className="info" title="강조색(버튼·링크·차트·선택 상태)을 고객사 표준 색상으로 전환합니다. 이 브라우저에 저장됩니다.">ⓘ</span>
+      </div>
+      <p className="policy-hint" style={{ marginTop: 0 }}>
+        고객사 표준 색상에 맞춰 전체 UI 강조색이 즉시 바뀝니다. 라이트·다크 모드 공통으로 적용되며 이 브라우저에 저장됩니다.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-3)", alignItems: "stretch" }}>
+        {BRAND_PRESETS.map((p) => {
+          const active = brand.id === p.id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setBrand(p)}
+              aria-pressed={active}
+              title={p.name}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                border: `1px solid ${active ? "var(--primary)" : "var(--border-strong)"}`,
+                boxShadow: active ? "0 0 0 2px var(--primary-weak)" : "none",
+                borderRadius: 8, padding: "7px 12px", background: "var(--surface)", font: "inherit", fontSize: "var(--fs-sm)",
+              }}
+            >
+              <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", background: p.primary, border: "1px solid rgba(0,0,0,0.1)", flex: "none" }} />
+              <span style={{ color: "var(--text)" }}>{p.name}</span>
+              {active && <span aria-hidden="true" style={{ color: "var(--primary)", fontWeight: 700 }}>✓</span>}
+            </button>
+          );
+        })}
+        {/* 커스텀 HEX — 임의 색에서 strong/weak/lite 자동 파생 */}
+        <label
+          title="임의 색상 지정"
+          style={{
+            display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+            border: `1px solid ${brand.id === "custom" ? "var(--primary)" : "var(--border-strong)"}`,
+            boxShadow: brand.id === "custom" ? "0 0 0 2px var(--primary-weak)" : "none",
+            borderRadius: 8, padding: "7px 12px", background: "var(--surface)", fontSize: "var(--fs-sm)",
+          }}
+        >
+          <input
+            type="color"
+            value={brand.primary}
+            onChange={(e) => setBrand(deriveBrand(e.target.value))}
+            aria-label="커스텀 브랜드 색상"
+            style={{ width: 22, height: 22, padding: 0, border: "none", background: "none", cursor: "pointer" }}
+          />
+          <span style={{ color: "var(--text)" }}>커스텀</span>
+          {brand.id === "custom" && <code style={{ fontSize: "var(--fs-xs)" }}>{brand.primary}</code>}
+        </label>
+      </div>
+      <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: 8 }}>링크 예시</a></div>
+    </div>
+  );
+}
 
 const ROLE_LABEL: Record<string, string> = { admin: "관리자(Admin)", user: "일반(User)", super: "슈퍼(Super)" };
 const ROLE_TONE: Record<string, BadgeTone> = { admin: "red", super: "pink", user: "green" };
@@ -23,6 +87,8 @@ const PERMS: { label: string; admin: boolean; super: boolean; user: boolean }[] 
 
 // 설정/관리 — RBAC/Users·부서 매핑 (문서 2-13). Nutanix Admin·Backend.AI Credentials.
 export default function Settings() {
+  const canWrite = useCap().can("users.write"); // 사용자 추가·역할 변경·삭제 권한
+  const canConfig = useCap().can("credentials"); // 연동 설정 재구성(민감) — manage 전용
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<string[]>(["admin", "user", "super"]);
   const [error, setError] = useState<string | null>(null);
@@ -81,11 +147,13 @@ export default function Settings() {
         <span className="crumb">설정 / RBAC · Users</span>
         <div className="spacer" />
         <span className="updated">{users.length}명</span>
-        <button type="button" className="btn-primary" onClick={() => setModal(true)}>+ 사용자 추가</button>
+        {canWrite && <button type="button" className="btn-primary" onClick={() => setModal(true)}>+ 사용자 추가</button>}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
       {!error && loading && users.length === 0 && <div className="state" role="status">사용자를 불러오는 중…</div>}
+
+      {canConfig && <ReconfigurePanel />}
 
       <div className="card">
         <div className="card-head">
@@ -105,14 +173,18 @@ export default function Settings() {
                   <td>{u.name}</td>
                   <td>{u.email}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <select className="range-select" value={u.role} onChange={(e) => changeRole(u, e.target.value)}>
-                      {roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}
-                    </select>
+                    {canWrite ? (
+                      <select className="range-select" value={u.role} onChange={(e) => changeRole(u, e.target.value)}>
+                        {roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r] ?? r}</option>)}
+                      </select>
+                    ) : (
+                      roleTag(u.role)
+                    )}
                   </td>
                   <td>{u.dept_id || <span className="muted">—</span>}</td>
                   <td>{u.status === "active" ? <Badge tone="green" dot>활성</Badge> : <Badge tone="neutral" dot>비활성</Badge>}</td>
                   <td className="num">
-                    <button type="button" className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); remove(u.user_id); }}>삭제</button>
+                    {canWrite && <button type="button" className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); remove(u.user_id); }}>삭제</button>}
                   </td>
                 </tr>
               ))}
@@ -148,6 +220,8 @@ export default function Settings() {
         </table>
         <div className="policy-hint">모든 권한 토글·역할 변경은 감사 이벤트로 캡처됩니다. 상향 권한 부여 차단(자신보다 높은 역할 부여 불가)은 현재 사용자 컨텍스트 연동 후 활성화됩니다.</div>
       </div>
+
+      <BrandColorCard />
 
       <SlidePanel
         open={!!detail}

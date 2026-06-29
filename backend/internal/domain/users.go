@@ -7,9 +7,9 @@ type User struct {
 	UserID    string `json:"user_id"`
 	Email     string `json:"email"`
 	Name      string `json:"name"`
-	Role      string `json:"role"`    // admin | user | super
+	Role      string `json:"role"` // admin | user | super
 	DeptID    string `json:"dept_id"`
-	Status    string `json:"status"`  // active | disabled
+	Status    string `json:"status"` // active | disabled
 	CreatedAt string `json:"created_at"`
 }
 

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { UsageTrendPoint } from "../api/types";
 
 // P4-4 사용량 추세 + forecast 구간 — 과거 실측 라인 + 선형회귀 외삽(점선 + 불확실 밴드).
@@ -30,9 +31,11 @@ function fmt(n: number): string {
 export default function UsageTrendChart({
   points,
   metric = "requests",
+  headerRight,
 }: {
   points: UsageTrendPoint[];
   metric?: "requests" | "tokens";
+  headerRight?: ReactNode;
 }) {
   if (points.length < 3) {
     return (
@@ -75,13 +78,14 @@ export default function UsageTrendChart({
 
   return (
     <div className="card chart-card">
-      <div className="card-head">
+      <div className="card-head" style={{ flexWrap: "wrap", rowGap: "var(--sp-2)" }}>
         <h3>사용량 추세 · forecast ({metric === "tokens" ? "토큰" : "요청"})</h3>
         <span className="info" title="과거 실측(실선)에 최소제곱 선형회귀를 적합해 미래 구간을 외삽(점선). 음영은 95% 예측 밴드(잔차 표준편차).">ⓘ</span>
-        <span className="spacer" />
         <span className="updated">
           추세 {trendUp ? "▲ 증가" : m < 0 ? "▼ 감소" : "＝ 평탄"} · 예상 {fmt(projected)}
         </span>
+        <span className="spacer" />
+        {headerRight}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="none" role="img" aria-label="사용량 추세 및 forecast">
         {[0, 0.5, 1].map((g) => {

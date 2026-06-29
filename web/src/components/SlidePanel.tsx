@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 // 마스터-디테일 우측 슬라이드 패널 — 목록 행 클릭 → 페이지 이동 없이 상세.
 // Datadog/Splunk/Langfuse 공통 동선(상용SW-화면UIUX-리서치 P4-0).
-// 중앙 모달(DetailModal)과 병행: 목록 드릴다운은 SlidePanel, 단발 확인은 DetailModal.
+// 전 화면의 목록 드릴다운 상세는 이 패널로 통일한다(O-13: 중앙 DetailModal 폐기).
 export default function SlidePanel({
   open,
   title,

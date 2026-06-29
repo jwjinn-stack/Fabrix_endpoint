@@ -13,6 +13,9 @@
 .env.local
 *.local
 
+# Scratch / temp (Artifact 소스 등 일회성 파일)
+/scratchpad/
+
 # Editor / OS
 .DS_Store
 .idea/

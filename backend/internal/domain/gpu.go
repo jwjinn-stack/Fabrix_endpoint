@@ -8,24 +8,24 @@ type GPUDevice struct {
 	Index         string  `json:"gpu"`
 	UUID          string  `json:"uuid"`
 	Model         string  `json:"model"`
-	UtilPerc      float64 `json:"util_perc"`       // 0..1 (DCGM GPU_UTIL/100)
+	UtilPerc      float64 `json:"util_perc"` // 0..1 (DCGM GPU_UTIL/100)
 	MemUsedMB     float64 `json:"mem_used_mb"`
 	MemTotalMB    float64 `json:"mem_total_mb"`
-	MemPerc       float64 `json:"mem_perc"`        // 0..1
+	MemPerc       float64 `json:"mem_perc"` // 0..1
 	TempC         float64 `json:"temp_c"`
 	PowerW        float64 `json:"power_w"`
-	SMActive      float64 `json:"sm_active"`       // 0..1 (DCGM_FI_PROF_SM_ACTIVE)
-	TensorActive  float64 `json:"tensor_active"`   // 0..1 (PIPE_TENSOR_ACTIVE)
-	MIGEfficiency float64 `json:"mig_efficiency"`  // 0..1 (GR_ENGINE_ACTIVE — 3-4 효율 스코어)
+	SMActive      float64 `json:"sm_active"`      // 0..1 (DCGM_FI_PROF_SM_ACTIVE)
+	TensorActive  float64 `json:"tensor_active"`  // 0..1 (PIPE_TENSOR_ACTIVE)
+	MIGEfficiency float64 `json:"mig_efficiency"` // 0..1 (GR_ENGINE_ACTIVE — 3-4 효율 스코어)
 }
 
 // GPUSummary — 상단 요약.
 type GPUSummary struct {
 	TotalGPUs    int     `json:"total_gpus"`
-	AvgUtil      float64 `json:"avg_util"`     // 0..1
-	AvgMem       float64 `json:"avg_mem"`      // 0..1
+	AvgUtil      float64 `json:"avg_util"` // 0..1
+	AvgMem       float64 `json:"avg_mem"`  // 0..1
 	TotalPower   float64 `json:"total_power_w"`
-	AvgMIGEff    float64 `json:"avg_mig_eff"`  // 0..1
+	AvgMIGEff    float64 `json:"avg_mig_eff"` // 0..1
 	Hosts        int     `json:"hosts"`
 	IdleAllocGap int     `json:"idle_alloc_gap"` // VRAM 점유(>=50%)인데 util<10% = 유휴 할당 갭 GPU 수 (Run:ai)
 	MIGEnabled   bool    `json:"mig_enabled"`    // MIG 파티션 활성 여부(GPU_I_PROFILE 라벨 유무)
@@ -34,8 +34,8 @@ type GPUSummary struct {
 // GPUPoint — per-GPU 드릴다운 시계열 한 점.
 type GPUPoint struct {
 	Ts     string  `json:"ts"`
-	Util   float64 `json:"util"`    // 0..1
-	Mem    float64 `json:"mem"`     // 0..1
+	Util   float64 `json:"util"` // 0..1
+	Mem    float64 `json:"mem"`  // 0..1
 	TempC  float64 `json:"temp_c"`
 	PowerW float64 `json:"power_w"`
 }
