@@ -10,6 +10,7 @@ import EventHistogram from "../components/EventHistogram";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { useCap } from "../capabilities";
 import InfoTip from "../components/InfoTip";
+import ExportButton from "../components/ExportButton";
 import { humanizeError } from "../utils/errors";
 
 const RANGES: { value: TimeRange; label: string }[] = [
@@ -160,6 +161,23 @@ export default function Guard() {
                 <option key={r.value} value={r.value}>기간: {r.label}</option>
               ))}
             </select>
+            <ExportButton
+              filename={`fabrix-guard-audit-${range}`}
+              rows={rows}
+              columns={[
+                { key: "event_id", header: "event_id", get: (r) => r.event_id },
+                { key: "ts", header: "ts", get: (r) => r.ts },
+                { key: "trace_id", header: "trace_id", get: (r) => r.trace_id },
+                { key: "user_ref", header: "user_ref", get: (r) => r.user_ref },
+                { key: "dept_id", header: "dept_id", get: (r) => r.dept_id },
+                { key: "app_id", header: "app_id", get: (r) => r.app_id },
+                { key: "model", header: "model", get: (r) => r.model },
+                { key: "decision", header: "decision", get: (r) => r.decision },
+                { key: "guard_types", header: "guard_types", get: (r) => (r.guard_types ?? []).join("|") },
+                { key: "pii_subtypes", header: "pii_subtypes", get: (r) => (r.pii_subtypes ?? []).join("|") },
+                { key: "jb_confidence", header: "jb_confidence", get: (r) => r.jb_confidence },
+              ]}
+            />
             <button type="button" className="refresh-btn" onClick={() => load()} aria-label="증적 새로고침">
               <span className="spin" aria-hidden="true">⟳</span>
               새로고침

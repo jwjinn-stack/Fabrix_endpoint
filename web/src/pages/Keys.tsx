@@ -7,6 +7,7 @@ import Modal from "../components/Modal";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import SummaryStrip from "../components/SummaryStrip";
 import { SkeletonRows } from "../components/Skeleton";
+import ExportButton from "../components/ExportButton";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
 
@@ -167,6 +168,22 @@ export default function Keys() {
         <div className="spacer" />
         <span className="updated">{keys.length}개 키</span>
         <DensityToggle density={density} onChange={setDensity} />
+        <ExportButton
+          filename="fabrix-keys"
+          rows={keys}
+          columns={[
+            { key: "api_key_id", header: "api_key_id", get: (k) => k.api_key_id },
+            { key: "name", header: "name", get: (k) => k.name },
+            { key: "app_id", header: "app_id", get: (k) => k.app_id },
+            { key: "dept_id", header: "dept_id", get: (k) => k.dept_id },
+            { key: "model_scope", header: "model_scope", get: (k) => k.model_scope },
+            { key: "enabled", header: "enabled", get: (k) => k.enabled },
+            { key: "quota_rpm", header: "quota_rpm", get: (k) => k.quota_rpm ?? "" },
+            { key: "quota_tpd", header: "quota_tpd", get: (k) => k.quota_tpd ?? "" },
+            { key: "requests", header: "requests", get: (k) => k.requests },
+            { key: "created_at", header: "created_at", get: (k) => k.created_at },
+          ]}
+        />
         {canWrite && (
           <button type="button" className="btn-primary" onClick={openIssueModal}>
             + 키 발급

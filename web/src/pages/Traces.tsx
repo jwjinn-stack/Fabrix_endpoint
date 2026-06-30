@@ -5,6 +5,7 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import ExportButton from "../components/ExportButton";
 import { queryParam } from "../router";
 import { humanizeError } from "../utils/errors";
 
@@ -129,6 +130,25 @@ export default function Traces() {
         <select className="range-select" value={range} onChange={(e) => setRange(e.target.value as TimeRange)}>
           {RANGES.map((r) => <option key={r.value} value={r.value}>기간: {r.label}</option>)}
         </select>
+        <ExportButton
+          filename={`fabrix-traces-${range}`}
+          rows={traces}
+          columns={[
+            { key: "trace_id", header: "trace_id", get: (t) => t.trace_id },
+            { key: "ts", header: "ts", get: (t) => t.ts },
+            { key: "model", header: "model", get: (t) => t.model },
+            { key: "app_id", header: "app_id", get: (t) => t.app_id },
+            { key: "dept_id", header: "dept_id", get: (t) => t.dept_id },
+            { key: "api_key_id", header: "api_key_id", get: (t) => t.api_key_id },
+            { key: "decision", header: "decision", get: (t) => t.decision },
+            { key: "status", header: "status", get: (t) => t.status },
+            { key: "total_ms", header: "total_ms", get: (t) => t.total_ms },
+            { key: "ttft_ms", header: "ttft_ms", get: (t) => t.ttft_ms },
+            { key: "prompt_tokens", header: "prompt_tokens", get: (t) => t.prompt_tokens },
+            { key: "completion_tokens", header: "completion_tokens", get: (t) => t.completion_tokens },
+            { key: "total_cost_krw", header: "total_cost_krw", get: (t) => t.total_cost_krw },
+          ]}
+        />
         <button type="button" className={`refresh-btn ${loading ? "is-loading" : ""}`} onClick={() => load()} disabled={loading} aria-label="트레이스 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>새로고침
         </button>

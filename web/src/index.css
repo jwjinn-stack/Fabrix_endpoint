@@ -385,6 +385,22 @@ body {
 }
 /* 데이터 신선도 stale 배지(IMP-21) — 색 비의존(아이콘+텍스트) */
 .freshness-stale { color: var(--amber); font-weight: 600; }
+/* 내보내기 메뉴(IMP-23) — 네이티브 <details> 디스클로저 */
+.export-menu { position: relative; display: inline-block; }
+.export-menu > summary { list-style: none; cursor: pointer; }
+.export-menu > summary::-webkit-details-marker { display: none; }
+.export-menu > summary[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.export-menu-pop {
+  position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 30;
+  display: flex; flex-direction: column; min-width: 110px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); overflow: hidden;
+}
+.export-menu-pop button {
+  text-align: left; padding: var(--sp-2) var(--sp-3); background: none; border: 0;
+  cursor: pointer; font: inherit; color: var(--text);
+}
+.export-menu-pop button:hover { background: var(--surface-2); }
 .range-select {
   background: var(--surface);
   border: 1px solid var(--border-strong);

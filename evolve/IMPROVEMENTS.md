@@ -28,7 +28,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-20 | ux | StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감 | medium | S | high | done | 2026-06-30 |
 | IMP-21 | ux | 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가 | medium | S | high | done | 2026-06-30 |
 | IMP-22 | ux | 생성·편집 폼이 인라인 검증·aria-invalid 없이 조용히 차단 — 죽은 상호작용(WCAG 3.3.1/3.3.3) | medium | M | high | grounded | 2026-06-30 |
-| IMP-23 | compete | 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음 | medium | M | high | grounded | 2026-06-30 |
+| IMP-23 | compete | 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음 | medium | M | high | done | 2026-06-30 |
 | IMP-24 | compete | 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가 | medium | M | high | grounded | 2026-06-30 |
 | IMP-25 | aesthetic | 차트 시각언어가 화면마다 손수 SVG로 제각각 — 호버 크로스헤어/툴팁 readout 부재로 Grafana/Datadog 대비 빈약 | medium | L | high | grounded | 2026-06-30 |
 | IMP-26 | code | 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출 | low | S | medium | done | 2026-06-30 |
@@ -266,6 +266,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 경쟁 갭 실재 + 리더 동작과 일치. Langfuse: "Most tables support batch-exports"(CSV+JSON) + "All filters applied to the table will be applied to the export" — 가설의 필터/기간 반영과 정확히 일치; trace 는 JSON/JSONL(span 보존). Datadog: 모든 Logs Explorer 가 timeseries/top list/table 을 CSV 다운로드(행캡 예: 100k), RUM/Product Analytics/Logs 전반 반복 = export 는 모든 표 표면 표준. Helicone: sessions/requests 1급 export. 따라서 Usage 단독은 진짜 갭. 정제: (1) export 감사로그·접근제어는 Langfuse 문서에 없음 → FABRIX 차별점으로 유지, (2) Datadog 처럼 행 cap/stream + truncation 라벨, (3) Traces 는 JSON 우선·CSV 차선, (4) 적용 필터+기간을 헤더/사이드카 메타로 stamp(감사 재현).
 - **Sources**: https://langfuse.com/docs/api-and-data-platform/features/export-from-ui , https://docs.datadoghq.com/logs/explorer/export/ , https://docs.helicone.ai/features/sessions
 - **Deep-dive suggestion**: 없음 (출처 충분, 구현 직행 — IMP-24 필터-URL 작업과 묶으면 '활성 필터 반영' 일관). 주의: 가드/키 PII 반출은 민감 — profile 게이팅·감사로그는 사람 검토 권장.
+- **Result** (2026-06-30, done · security-light: clean): 공용 `utils/export.ts`(toCSV 이스케이프·BOM CSV·JSON) + 접근가능 `ExportButton`(네이티브 `<details>`). Traces·Guard증적·Keys 에 적용. 단위테스트 3건(총 20 green). 세션 등 잔여 표는 동일 패턴 follow-up. tsc·lint·test·build green. spec: `specs/2026-06-30/IMP-23-data-export.md`.
 
 ### IMP-24 — 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가
 - **Type**: compete (sev=medium, effort=M)
