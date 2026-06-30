@@ -8,6 +8,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import ExportButton from "../components/ExportButton";
+import StatMini from "../components/StatMini";
 import ViewBar from "../components/ViewBar";
 import { useUrlState, decodeState, strField, enumField, rangeField } from "../urlState";
 import { useCap } from "../capabilities";
@@ -187,10 +188,10 @@ export default function Traces({ onNavigate }: { onNavigate?: NavFn }) {
       </div>
 
       <div className="cards-4">
-        <div className="card stat-mini"><div className="sm-label">트레이스</div><div className="sm-val">{stats.count}<span className="sm-unit">건</span></div><div className="sm-sub">표본 (기간 {RANGES.find((r) => r.value === range)?.label})</div></div>
-        <div className="card stat-mini"><div className="sm-label">TTFT p95</div><div className="sm-val">{stats.ttft}<span className="sm-unit">ms</span></div><div className="sm-sub">첫 토큰 지연 95퍼센타일</div></div>
-        <div className="card stat-mini"><div className="sm-label">E2E p95</div><div className="sm-val">{fmtMs(stats.e2e)}</div><div className="sm-sub">요청 종단 지연 95퍼센타일</div></div>
-        <div className="card stat-mini"><div className="sm-label">차단 / 에러</div><div className="sm-val" style={{ color: stats.blocked || stats.errored ? "var(--red)" : "var(--green)" }}>{stats.blocked}<span className="sm-unit">/ {stats.errored}</span></div><div className="sm-sub">가드레일 차단 / 엔진 에러</div></div>
+        <StatMini label="트레이스" value={stats.count} unit="건" sub={`표본 (기간 ${RANGES.find((r) => r.value === range)?.label})`} />
+        <StatMini label="TTFT p95" value={stats.ttft} unit="ms" sub="첫 토큰 지연 95퍼센타일" />
+        <StatMini label="E2E p95" value={fmtMs(stats.e2e)} sub="요청 종단 지연 95퍼센타일" />
+        <StatMini label="차단 / 에러" value={stats.blocked} unit={`/ ${stats.errored}`} sub="가드레일 차단 / 엔진 에러" tone={stats.blocked || stats.errored ? "red" : "green"} />
       </div>
 
       <div className="card">

@@ -8,6 +8,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import ViewBar from "../components/ViewBar";
+import StatMini from "../components/StatMini";
 import { useUrlState, decodeState, strField, rangeField } from "../urlState";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
@@ -107,10 +108,10 @@ export default function Sessions() {
       </div>
 
       <div className="cards-4">
-        <div className="card stat-mini"><div className="sm-label">세션</div><div className="sm-val">{stats.count}<span className="sm-unit">개</span></div><div className="sm-sub">sessionId 로 묶인 멀티턴 대화</div></div>
-        <div className="card stat-mini"><div className="sm-label">평균 턴</div><div className="sm-val">{stats.avgTurns}</div><div className="sm-sub">세션당 평균 요청 수</div></div>
-        <div className="card stat-mini"><div className="sm-label">총 비용</div><div className="sm-val">₩{stats.cost.toLocaleString()}</div><div className="sm-sub">세션 누적 추정 비용</div></div>
-        <div className="card stat-mini"><div className="sm-label">차단 포함 세션</div><div className="sm-val" style={{ color: stats.blocked ? "var(--red)" : "var(--green)" }}>{stats.blocked}</div><div className="sm-sub">가드레일 차단이 1건 이상</div></div>
+        <StatMini label="세션" value={stats.count} unit="개" sub="sessionId 로 묶인 멀티턴 대화" />
+        <StatMini label="평균 턴" value={stats.avgTurns} sub="세션당 평균 요청 수" />
+        <StatMini label="총 비용" value={`₩${stats.cost.toLocaleString()}`} sub="세션 누적 추정 비용" />
+        <StatMini label="차단 포함 세션" value={stats.blocked} sub="가드레일 차단이 1건 이상" tone={stats.blocked ? "red" : "green"} />
       </div>
 
       <div className="card">

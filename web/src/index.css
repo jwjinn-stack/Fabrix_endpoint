@@ -1814,11 +1814,35 @@ dialog.slide-panel::backdrop { background: rgba(16, 24, 40, 0.28); }
 
 /* ══════════════════ 추론 트레이스 (신규) ══════════════════ */
 /* 미니 통계 카드 (KPI baseline 표기 일관화에도 재사용) */
-.stat-mini { padding: var(--sp-4); }
-.sm-label { font-size: var(--fs-sm); color: var(--text-dim); font-weight: 600; }
-.sm-val { font-size: var(--fs-metric); font-weight: 700; color: var(--text); line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.sm-unit { font-size: var(--fs-sm); color: var(--text-faint); font-weight: 600; margin-left: 4px; }
-.sm-sub { font-size: var(--fs-xs); color: var(--text-faint); margin-top: 4px; }
+/* IMP-44: stat-mini 통합 — 임계 좌측바 + 인라인 델타 + 우하단 미니 스파크라인. */
+.stat-mini { position: relative; padding: var(--sp-4); overflow: hidden; }
+/* 임계 도달 톤: 카드 좌측에 색 바(데이터값 색은 인라인 style 로 보강). */
+.stat-mini::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: transparent; border-top-left-radius: inherit; border-bottom-left-radius: inherit;
+}
+.stat-mini.tone-green::before { background: var(--green); }
+.stat-mini.tone-red::before { background: var(--red); }
+.stat-mini.tone-amber::before { background: var(--amber); }
+.sm-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
+.sm-val {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px;
+  font-size: var(--fs-metric); font-weight: 700; color: var(--text); line-height: 1.1;
+  margin-top: 4px; font-variant-numeric: tabular-nums;
+}
+.sm-unit { font-size: var(--fs-sm); color: var(--text-faint); font-weight: 600; margin-left: 2px; }
+.sm-sub { font-size: var(--fs-xs); color: var(--text-faint); margin-top: 4px; max-width: calc(100% - 64px); }
+/* 우하단 미니 스파크라인 — 본문과 겹치지 않게 코너에 격하. */
+.sm-spark { position: absolute; right: var(--sp-4); bottom: var(--sp-3); opacity: 0.85; pointer-events: none; }
+/* 델타 배지 — StatCard 의 .metric .num .delta 와 동일 시각언어. */
+.sm-val .delta {
+  font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  margin-left: var(--sp-1); white-space: nowrap; padding: 1px 6px; border-radius: 999px;
+  line-height: 1.5; align-self: center;
+}
+.sm-val .delta.good { color: var(--green); background: var(--green-weak); }
+.sm-val .delta.bad { color: var(--red); background: var(--red-weak); }
+.sm-val .delta.flat { color: var(--text-faint); background: var(--brand-gray-weak); font-weight: 600; }
 
 /* 필터 바 (트레이스·Analytics 공용) */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); margin-bottom: var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border); }
