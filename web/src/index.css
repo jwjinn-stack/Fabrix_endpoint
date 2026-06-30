@@ -62,8 +62,9 @@
   --radius-sm: 6px;
   --sidebar-w: 212px;
   --topbar-h: 52px;
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --shadow-card-hover: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 12px rgba(16, 24, 40, 0.08);
+  /* IMP-27: 평상시에도 또렷이 읽히는 1단 깊이(미세 키 라이트 + 엠비언트). 라이트 톤 유지. */
+  --shadow-card: 0 1px 1px rgba(16, 24, 40, 0.04), 0 2px 4px rgba(16, 24, 40, 0.07);
+  --shadow-card-hover: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 20px rgba(16, 24, 40, 0.12);
   --ease: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
     "Pretendard", Roboto, "Noto Sans KR", sans-serif;
@@ -92,8 +93,8 @@
   --pink-weak: #2e1422;
   --track: #232831;
   --grid-line: #232831;
-  --shadow-card: 0 1px 2px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-card-hover: 0 1px 2px rgba(0,0,0,0.35), 0 6px 16px rgba(0,0,0,0.5);
+  --shadow-card: 0 1px 1px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.45);
+  --shadow-card-hover: 0 1px 2px rgba(0,0,0,0.4), 0 10px 24px rgba(0,0,0,0.55);
   color-scheme: dark;
 }
 
@@ -457,11 +458,13 @@ body {
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
   padding: var(--sp-4);
-  transition: box-shadow var(--ease), border-color var(--ease);
+  transition: box-shadow var(--ease), border-color var(--ease), transform var(--ease);
 }
+/* IMP-27: hover 시 또렷한 lift — 깊이 대비가 느껴지게(절제된 1px). reduced-motion 은 위에서 전역 처리. */
 .card:hover {
   box-shadow: var(--shadow-card-hover);
   border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 .card-head {
   display: flex;
@@ -537,26 +540,55 @@ body {
 .metric {
   min-width: 64px;
 }
+/* IMP-27: 스파크라인 보유 메트릭 — 하단 풀블리드 배경 추세를 깔 공간 확보. */
+.metric.has-spark {
+  position: relative;
+  padding-bottom: 18px;
+}
+.metric .metric-body {
+  position: relative;
+  z-index: 1;
+}
+/* 하단에 옅게 깔리는 추세(라벨/숫자와 흐름 분리). 풀블리드 폭 + 낮은 불투명도. */
+.metric .metric-spark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 22px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+.metric .metric-spark .sparkline {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  display: block;
+}
 .metric .num {
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 750;
   font-size: var(--fs-metric);
   line-height: var(--lh-tight);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   color: var(--text);
   display: flex;
   align-items: baseline;
   gap: var(--sp-1);
 }
+/* IMP-27: 단위 디엠퍼사이즈 — 빅넘버와 명확히 구분(작게/연하게/얇게). */
 .metric .num .unit {
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0;
   color: var(--text-faint);
 }
+/* IMP-27: 라벨 — 약한 letter-spacing 으로 빅넘버와 분리되되 한글 가독 유지. */
 .metric .lbl {
   margin-top: var(--sp-1);
   font-size: var(--fs-xs);
+  letter-spacing: 0.01em;
   color: var(--text-dim);
 }
 .metric .usage {
@@ -856,16 +888,34 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   font-size: var(--fs-sm);
   border-bottom: 1px solid var(--border-strong);
 }
+/* IMP-35: 스티키 thead — .vrow-viewport 세로 스크롤 시 헤더 상단 고정.
+   배경/하단 보더로 본문 위에 또렷이 떠 보이게. sticky-first 1열 z-index 와 정합(아래). */
+.usage-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  /* sticky 셀은 border-bottom 이 스크롤 시 사라질 수 있어 box-shadow 로 하단선 보강 */
+  box-shadow: inset 0 -1px 0 var(--border-strong);
+}
 .usage-table td.num,
 .usage-table th.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+/* IMP-35: 절제된 zebra — 짝수행 극미세 틴트. hover/선택/클릭 행이 항상 우선. */
+.usage-table tbody tr:nth-child(even of :not(.vrow-spacer)) {
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
 }
 .usage-table tbody tr:hover {
   background: var(--surface-2);
 }
 .usage-table tbody tr:last-child td {
   border-bottom: none;
+}
+/* IMP-35: 정렬 활성 헤더 셀 배경 강조(IMP-3 button 화살표와 정합). */
+.usage-table thead th.sortable.active {
+  background: var(--primary-weak);
 }
 
 /* 가로 스크롤 컨테이너 — 컬럼 많은 테이블(키 등)이 카드를 넘칠 때 페이지 본문 대신 테이블만 스크롤 */
@@ -912,8 +962,13 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
   background: var(--surface);
   z-index: 1;
 }
-.usage-table.sticky-first thead th:first-child { z-index: 2; }
+/* 헤더-1열 교차 셀은 둘 다 위로 — 세로/가로 스크롤 모두에서 가장 위(IMP-35 sticky thead 정합). */
+.usage-table.sticky-first thead th:first-child { z-index: 3; }
 .usage-table.sticky-first tbody tr:hover td:first-child { background: var(--surface-2); }
+/* zebra 짝수행의 고정 1열도 동일 틴트로 맞춤(고정 셀 background 가 덮지 않게). */
+.usage-table.sticky-first tbody tr:nth-child(even of :not(.vrow-spacer)) td:first-child {
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+}
 
 /* ── 공용 버튼 ── */
 .btn-primary {
@@ -1459,11 +1514,22 @@ dialog.drawer[open] { display: flex; }
    P4-0 공통 컴포넌트 — 라이트+오렌지, 위험/주의만 강조
    ============================================================ */
 
-/* KPI 변화율 화살표(StatCard delta) */
-.metric .num .delta { font-size: var(--fs-xs); font-weight: 600; margin-left: var(--sp-1); white-space: nowrap; }
-.metric .num .delta.good { color: var(--green); }
-.metric .num .delta.bad { color: var(--red); }
-.metric .num .delta.flat { color: var(--text-faint); font-weight: 500; }
+/* KPI 변화율 — IMP-27: 작은 pill 로 분리(틴트 배경 + 라운드). 빅넘버 옆에서 줄바꿈 없이. */
+.metric .num .delta {
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  margin-left: var(--sp-1);
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 999px;
+  line-height: 1.5;
+  align-self: center;
+}
+.metric .num .delta.good { color: var(--green); background: var(--green-weak); }
+.metric .num .delta.bad { color: var(--red); background: var(--red-weak); }
+.metric .num .delta.flat { color: var(--text-faint); background: var(--brand-gray-weak); font-weight: 600; }
 
 /* 미니 스파크라인 */
 .sparkline { display: block; margin: 2px 0 1px; width: 100%; max-width: 96px; height: 22px; }
