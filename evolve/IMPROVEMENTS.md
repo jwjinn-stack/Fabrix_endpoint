@@ -17,7 +17,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded | 2026-06-30 |
 | IMP-10 | code | 전역 React ErrorBoundary 부재 — 한 페이지의 렌더 throw가 관제 콘솔 전체를 백스크린 | high | S | high | done | 2026-06-30 |
 | IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | done | 2026-06-30 |
-| IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | grounded | 2026-06-30 |
+| IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | done | 2026-06-30 |
 | IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | done | 2026-06-30 |
 | IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
 | IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded | 2026-06-30 |
@@ -159,6 +159,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 코드 검증으로 8곳 정확 확인: Endpoints.tsx(L425/592/663), Settings.tsx(L289), Keys.tsx(L304), ModelImport.tsx(L91), Playground.tsx(L532/562). 이들 .modal div에 role=dialog/aria-modal 없음, Escape keydown·포커스 트랩·열릴 때 포커스 이동·닫을 때 opener 복원·배경 스크롤 잠금 전무(index.css L1062 .modal-overlay 는 onClick 백드롭만). 키 발급 모달은 1회성 비밀을 다이얼로그 시맨틱 없이 노출 — WCAG 2.4.3/4.1.2 위험 실재. 반례로 SlidePanel/ConfirmDialog 는 role=dialog/aria-modal+Escape+focus-on-open 보유(다만 이들조차 포커스 트랩·닫을 때 복원은 누락 — 동일 결함이 프리미티브에도 존재). 2026 권위 소스(MDN/APG/실무 가이드)는 hand-rolled 대신 네이티브 `<dialog>`.showModal() 을 더 적은 코드·더 강한 접근성으로 권고 → React 19+TS+Vite 의존성 0 정책에 정확히 부합.
 - **Sources**: https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/ , https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog , https://jaredcunha.com/blog/html-dialog-getting-accessibility-and-ux-right
 - **Deep-dive suggestion**: 없음 (출처·정제 충분, 구현 직행 — IMP-4 의 접근성 작업·SlidePanel 재구현과 묶으면 효율적)
+- **Result** (2026-06-30, done · security-light: clean): 네이티브 `<dialog>.showModal()` 기반 무의존 `Modal` 프리미티브 신설(aria-modal 암묵·배경 inert·Escape·top-layer·포커스 진입/복원 + aria-labelledby·body 스크롤 잠금·백드롭 클릭). 8개 `.modal-overlay` 전부 이전(Settings·Keys·ModelImport·Endpoints×3·Playground×2). 시각 QA(browse, 실백엔드): Settings/Keys 모달 open·labelledby·포커스 진입·Escape 닫힘·body overflow=hidden 확인. ConfirmDialog/SlidePanel 재구현은 follow-up. tsc·lint·test·build green. spec: `specs/2026-06-30/IMP-12-accessible-dialog.md`.
 
 ### IMP-13 — 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입
 - **Type**: oss (sev=medium, effort=M)

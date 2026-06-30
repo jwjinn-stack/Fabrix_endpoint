@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchModels, playgroundChat } from "../api/client";
 import type { ChatMessage, ChatResponse, ModelInfo } from "../api/types";
+import Modal from "../components/Modal";
 
 // M-01 — 6상태(+idle) 머신. 메시지/요청 생애주기를 enum 으로 명시.
 //   idle → queued → thinking → streaming → complete
@@ -529,12 +530,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
 
       {/* 멀티모델 비교 결과 */}
       {compareRows && (
-        <div className="modal-overlay" onClick={() => setCompareRows(null)}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>모델 비교 결과</h3>
-              <button type="button" className="icon" aria-label="닫기" onClick={() => setCompareRows(null)}>✕</button>
-            </div>
+        <Modal open onClose={() => setCompareRows(null)} title="모델 비교 결과" className="modal-wide">
             <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className="usage-table">
               <thead>
@@ -555,18 +551,12 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
             </table>
             </div>
             <div className="modal-note">동일 프롬프트를 모든 도달 가능 모델에 동시 전송한 비교(Bedrock Compare 패턴). 단발 비교는 비스트리밍 호출이라 TTFT 는 채팅 응답에서만 표기됩니다.</div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* View code 스니펫 */}
       {showCode && (
-        <div className="modal-overlay" onClick={() => setShowCode(false)}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>코드로 호출 — {model}</h3>
-              <button type="button" className="icon" aria-label="닫기" onClick={() => setShowCode(false)}>✕</button>
-            </div>
+        <Modal open onClose={() => setShowCode(false)} title={<>코드로 호출 — {model}</>} className="modal-wide">
             {codeSnippets().map((s) => (
               <div key={s.lang} className="code-block">
                 <div className="code-lang">{s.lang}</div>
@@ -574,8 +564,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
               </div>
             ))}
             <div className="modal-note">x-api-key-id 헤더로 키 쿼터·귀속이 적용됩니다. 엔드포인트는 환경에 맞게 교체하세요.</div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );

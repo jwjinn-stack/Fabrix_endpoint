@@ -3,6 +3,7 @@ import { fetchKeys, fetchOrg, issueKey, revokeKey } from "../api/client";
 import type { APIKeyView, IssuedKey, OrgApp } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Modal from "../components/Modal";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import SummaryStrip from "../components/SummaryStrip";
 import { useCap } from "../capabilities";
@@ -301,9 +302,7 @@ export default function Keys() {
 
       {/* 키 발급 모달 (Nutanix Create API Key) */}
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>API 키 발급</h3>
+        <Modal open onClose={() => setModal(false)} title="API 키 발급">
             <label className="pg-field">
               <span>앱 귀속 *</span>
               <select className="range-select" value={appMode === "custom" ? CUSTOM : form.app_id} onChange={(e) => onAppChange(e.target.value)}>
@@ -377,8 +376,7 @@ export default function Keys() {
                 {busy ? "발급 중…" : "발급"}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <ConfirmDialog

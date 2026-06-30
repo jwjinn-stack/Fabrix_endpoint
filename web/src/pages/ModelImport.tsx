@@ -3,6 +3,7 @@ import { fetchCredentials, harborImport } from "../api/client";
 import type { ImportResult, ThirdPartyCred } from "../api/types";
 import type { NavFn } from "../router";
 import { useCap } from "../capabilities";
+import Modal from "../components/Modal";
 
 // 모델 임포트 — NGC/HuggingFace/업로드 소스에서 모델을 Harbor 레지스트리로 가져온다.
 // Nutanix Enterprise AI "Import Model" 패턴. HF 다운로드는 [설정 > 서드파티 자격증명]의 토큰을 사용.
@@ -88,10 +89,7 @@ export default function ModelImport({ onNavigate }: { onNavigate: NavFn }) {
       </div>
 
       {imp && src && (
-        <div className="modal-overlay" onClick={() => setImp(null)}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h3>모델 임포트 — {src.title}</h3><button type="button" className="icon" aria-label="닫기" onClick={() => setImp(null)}>✕</button></div>
-
+        <Modal open onClose={() => setImp(null)} title={`모델 임포트 — ${src.title}`} className="modal-wide">
             {impBusy && <div className="import-progress" role="status" aria-label="처리 중"><span /></div>}
 
             {src.cred && !credSet(src.cred) && (
@@ -138,8 +136,7 @@ export default function ModelImport({ onNavigate }: { onNavigate: NavFn }) {
                 ? "직접 업로드는 개발 환경에서 CLI(huggingface-cli + oras)로 Harbor 에 push 합니다. 미리보기로 명령을 확인하세요."
                 : "임포트 잡은 모델을 다운로드→패키징→Harbor push 합니다. 다운로드는 설정된 토큰을 사용합니다. 완료 후 [모델 목록]에 표시됩니다."}
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );

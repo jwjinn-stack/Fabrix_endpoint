@@ -4,6 +4,7 @@ import type { User } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Modal from "../components/Modal";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
@@ -291,9 +292,7 @@ export default function Settings() {
       </SlidePanel>
 
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h3>사용자 추가</h3><button type="button" className="icon" aria-label="닫기" onClick={() => setModal(false)}>✕</button></div>
+        <Modal open onClose={() => setModal(false)} title="사용자 추가">
             <label className="pg-field"><span>이메일 *</span>
               <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@maymust.com" /></label>
             <label className="pg-field"><span>이름 *</span>
@@ -310,8 +309,7 @@ export default function Settings() {
               <button type="button" className="btn-ghost" onClick={() => setModal(false)}>취소</button>
               <button type="button" className="btn-primary" onClick={submit} disabled={busy || !form.email.trim() || !form.name.trim()}>{busy ? "추가 중…" : "추가"}</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <ConfirmDialog
