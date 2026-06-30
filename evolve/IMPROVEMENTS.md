@@ -7,7 +7,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | ID | Type | Title | Severity | Effort | Confidence | Status |
 |----|------|-------|----------|--------|------------|--------|
 | IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | grounded |
-| IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | grounded |
+| IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done |
 | IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | grounded |
 | IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | grounded |
 | IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
@@ -35,6 +35,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (코드로 확인, not separately researched — low ambiguity) — server.go:110 가 `if can(...)` 블록 밖, Dashboard 라우트는 :113 의 `if can(capability.Dashboard)` 안. mcp.go:157 가 `s.dashboard.Overview(ctx, rng)` 직접 호출하여 Dashboard cap 무관하게 동일 데이터 반환.
 - **Sources**: (코드 검증 — 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (구현 직행 가능; 가장 높은 가성비)
+- **Result** (2026-06-30, done): server.go 의 `POST /api/v1/mcp` 등록을 `if can(capability.Dashboard)` 블록 안으로 이동. `mcp_test.go` 추가 — Dashboard cap OFF→404(미등록=차단), ON→200+tools 회귀 가드(통과). spec: `specs/2026-06-30/IMP-2-mcp-capability-gate.md`. branch `feature/evolve-20260630-dashboard-mcp`.
 
 ### IMP-3 — 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1)
 - **Type**: ux (sev=medium, effort=S)
