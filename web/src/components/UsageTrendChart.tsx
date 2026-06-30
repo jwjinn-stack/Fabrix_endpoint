@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { UsageTrendPoint } from "../api/types";
 import InfoTip from "./InfoTip";
+import { AxisText, HGrid, SERIES } from "./chart";
 
 // P4-4 사용량 추세 + forecast 구간 — 과거 실측 라인 + 선형회귀 외삽(점선 + 불확실 밴드).
 // 의존성 없이 SVG. metric=요청수 또는 토큰.
@@ -89,24 +90,23 @@ export default function UsageTrendChart({
         {headerRight}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" preserveAspectRatio="none" role="img" aria-label="사용량 추세 및 forecast">
-        {[0, 0.5, 1].map((g) => {
-          const yy = PAD.top + innerH * g;
-          return (
-            <g key={g}>
-              <line x1={PAD.left} y1={yy} x2={W - PAD.right} y2={yy} stroke="var(--grid-line)" strokeWidth={1} />
-              <text x={PAD.left - 6} y={yy + 3} fontSize={10} fill="var(--text-faint)" textAnchor="end">{fmt(allMax * (1 - g))}</text>
-            </g>
-          );
-        })}
+        <HGrid
+          ratios={[0, 0.5, 1]}
+          padLeft={PAD.left}
+          right={W - PAD.right}
+          top={PAD.top}
+          innerH={innerH}
+          leftLabel={(g) => fmt(allMax * (1 - g))}
+        />
         {/* forecast 시작 경계선 */}
         <line x1={x(points.length - 1)} y1={PAD.top} x2={x(points.length - 1)} y2={PAD.top + innerH} stroke="var(--border-strong)" strokeWidth={1} strokeDasharray="2 3" />
-        <text x={x(points.length - 1) + 4} y={PAD.top + 10} fontSize={9} fill="var(--text-faint)">현재</text>
+        <AxisText x={x(points.length - 1) + 4} y={PAD.top + 10}>현재</AxisText>
         {/* 예측 밴드 */}
-        {sd > 0 && <polygon points={bandPoly} fill="var(--primary)" opacity={0.1} />}
+        {sd > 0 && <polygon points={bandPoly} fill={SERIES.primary} opacity={0.1} />}
         {/* 과거 실측 */}
-        <path d={histLine} fill="none" stroke="var(--primary)" strokeWidth={1.8} />
+        <path d={histLine} fill="none" stroke={SERIES.primary} strokeWidth={1.8} />
         {/* forecast 점선 */}
-        <path d={fcastLine} fill="none" stroke="var(--primary)" strokeWidth={1.6} strokeDasharray="5 4" opacity={0.8} />
+        <path d={fcastLine} fill="none" stroke={SERIES.primary} strokeWidth={1.6} strokeDasharray="5 4" opacity={0.8} />
       </svg>
     </div>
   );

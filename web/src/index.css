@@ -657,6 +657,50 @@ body {
   vertical-align: middle;
 }
 
+/* IMP-25 공용 차트 프리미티브 — 축 텍스트는 토큰 폰트(--fs-xs)/색(--text-dim, WCAG 4.5:1). */
+.chart-axis-text {
+  font-size: var(--fs-xs);
+  fill: var(--text-dim);
+}
+/* 호버 크로스헤어 + Grafana 식 readout 박스 */
+.chart-tooltip {
+  font-size: var(--fs-xs);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text);
+  line-height: 1.5;
+  display: inline-block;
+  white-space: nowrap;
+}
+.chart-tooltip-title {
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.chart-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.chart-tooltip-key {
+  color: var(--text-dim);
+}
+.chart-tooltip-key .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.chart-tooltip-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* ── 알람 ── */
 .alarms {
   display: flex;

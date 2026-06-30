@@ -1,8 +1,11 @@
+import { SERIES } from "./chart";
+
 // 미니 스파크라인 — KPI 카드 안에 추세를 한 줄로. 의존성 없이 SVG.
 // Datadog Query Value 위젯의 배경 스파크라인 패턴(상용SW-화면UIUX-리서치 P4-0).
+// IMP-25: 색 기본값을 공용 차트 팔레트(SERIES.primary)에 정렬.
 export default function Sparkline({
   values,
-  color = "var(--primary)",
+  color = SERIES.primary,
   width = 72,
   height = 22,
   area = true,

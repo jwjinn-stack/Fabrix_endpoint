@@ -1,8 +1,10 @@
 import { useRef, useState } from "react";
 import type { TimePoint } from "../api/types";
+import { AxisText, ChartTooltip, Crosshair, HGrid, Legend, SERIES, useChartHover } from "./chart";
 
 // 4-1 하단 겹쳐보기 차트: QPS 라인(좌축) · TTFT p95 라인(우축 ms) · 차단 막대.
 // P4-0: avg/current/max 범례 + 드래그-투-줌 + TTFT 임계선(SLO). 의존성 없이 SVG.
+// IMP-25: 공용 chart/ 프리미티브로 축 토큰화 + Grafana 식 호버 크로스헤어/readout.
 const W = 1000;
 const H = 240;
 const PAD = { top: 16, right: 48, bottom: 24, left: 40 };
@@ -38,13 +40,16 @@ export default function TimeseriesChart({
   const [zoom, setZoom] = useState<{ a: number; b: number } | null>(null);
   const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
 
-  if (points.length === 0) return null;
-
   const view = zoom ? points.slice(zoom.a, zoom.b + 1) : points;
-  if (view.length === 0) return null;
 
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
+
+  // 호버/포커스 훅(드래그줌과 동일 좌표공간; view 길이에 맞춤).
+  const hover = useChartHover({ svgRef, count: view.length, viewW: W, padLeft: PAD.left, innerW });
+
+  if (points.length === 0) return null;
+  if (view.length === 0) return null;
 
   const qpsStat = stat(view.map((p) => p.qps));
   const ttftStat = stat(view.map((p) => p.ttft_p95_ms));
@@ -64,23 +69,19 @@ export default function TimeseriesChart({
   const barW = Math.max(innerW / view.length - 1.5, 1.5);
   const labelStep = Math.ceil(view.length / 6);
 
-  // 마우스 x(px) → view 내 데이터 인덱스.
-  const idxFromEvent = (clientX: number): number => {
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return 0;
-    const frac = (clientX - rect.left) / rect.width; // 0..1 (전체 svg 폭)
-    const px = frac * W;
-    const i = Math.round(((px - PAD.left) / innerW) * (view.length - 1));
-    return Math.min(Math.max(i, 0), view.length - 1);
-  };
+  // 마우스 x(px) → view 내 데이터 인덱스(드래그줌용 — hover 훅과 동일 계산).
+  const idxFromEvent = (clientX: number): number => hover.indexFromClientX(clientX);
 
   const onDown = (e: React.MouseEvent) => {
     const i = idxFromEvent(e.clientX);
     setDrag({ a: i, b: i });
   };
   const onMove = (e: React.MouseEvent) => {
-    if (!drag) return;
-    setDrag({ ...drag, b: idxFromEvent(e.clientX) });
+    if (drag) {
+      setDrag({ ...drag, b: idxFromEvent(e.clientX) });
+      return; // 드래그 중에는 selection 우선(readout 숨김)
+    }
+    hover.onMouseMove(e);
   };
   const onUp = () => {
     if (drag) {
@@ -97,11 +98,25 @@ export default function TimeseriesChart({
 
   const ttftThresholdY = yTtft(ttftThresholdMs);
 
+  // idle hover/focus 시 readout 노출(드래그 중에는 숨김).
+  const activeIndex = drag ? null : hover.activeIndex;
+  const activePoint = activeIndex != null ? view[activeIndex] : null;
+
   // D-10 키보드 줌 — 차트 포커스 시 +/= 줌인(가운데 기준 절반), - 줌아웃(2배), 0/Esc 리셋.
-  // 't' 프리픽스(t 다음 +/-)도 허용. 마우스 드래그줌과 동일한 원본 인덱스 공간에서 동작.
+  // IMP-25: ArrowLeft/Right 로 크로스헤어 이동.
   const last = points.length - 1;
   const onKeyDown = (e: React.KeyboardEvent) => {
     const key = e.key;
+    if (key === "ArrowLeft") {
+      e.preventDefault();
+      hover.moveBy(-1);
+      return;
+    }
+    if (key === "ArrowRight") {
+      e.preventDefault();
+      hover.moveBy(1);
+      return;
+    }
     if (key === "0" || key === "Escape") {
       if (zoom) { e.preventDefault(); setZoom(null); }
       return;
@@ -137,20 +152,19 @@ export default function TimeseriesChart({
           </button>
         )}
       </div>
-      <div className="chart-legend">
-        <span>
-          <span className="dot" style={{ background: "var(--primary)" }} />
-          QPS (좌) · 평균 {fmtAxis(qpsStat.avg, qpsMax)} / 현재 {fmtAxis(qpsStat.cur, qpsMax)} / 최대 {fmtAxis(qpsStat.max, qpsMax)}
-        </span>
-        <span>
-          <span className="dot" style={{ background: "var(--teal)" }} />
-          TTFT p95 ms (우) · 평균 {Math.round(ttftStat.avg)} / 현재 {Math.round(ttftStat.cur)} / 최대 {Math.round(ttftStat.max)}
-        </span>
-        <span>
-          <span className="dot" style={{ background: "var(--red)" }} />
-          차단 합계 {blockedTotal}
-        </span>
-      </div>
+      <Legend
+        items={[
+          {
+            color: SERIES.primary,
+            label: `QPS (좌) · 평균 ${fmtAxis(qpsStat.avg, qpsMax)} / 현재 ${fmtAxis(qpsStat.cur, qpsMax)} / 최대 ${fmtAxis(qpsStat.max, qpsMax)}`,
+          },
+          {
+            color: SERIES.teal,
+            label: `TTFT p95 ms (우) · 평균 ${Math.round(ttftStat.avg)} / 현재 ${Math.round(ttftStat.cur)} / 최대 ${Math.round(ttftStat.max)}`,
+          },
+          { color: SERIES.red, label: `차단 합계 ${blockedTotal}` },
+        ]}
+      />
       <svg
         ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
@@ -158,30 +172,24 @@ export default function TimeseriesChart({
         preserveAspectRatio="none"
         role="img"
         tabIndex={0}
-        aria-label={`최근 구간 시계열. 데이터 포인트 ${view.length}개. QPS, TTFT p95(ms), 차단 건수 추이. 마우스로 드래그하여 확대. 키보드: 포커스 후 +/= 확대, - 축소, 0 또는 Esc 초기화.`}
+        aria-label={`최근 구간 시계열. 데이터 포인트 ${view.length}개. QPS, TTFT p95(ms), 차단 건수 추이. 마우스로 드래그하여 확대. 키보드: 포커스 후 +/= 확대, - 축소, 0 또는 Esc 초기화, ←/→ 로 값 읽기 이동.`}
         style={{ cursor: "crosshair", userSelect: "none" }}
         onMouseDown={onDown}
         onMouseMove={onMove}
         onMouseUp={onUp}
-        onMouseLeave={() => setDrag(null)}
+        onMouseLeave={() => { setDrag(null); hover.onMouseLeave(); }}
         onKeyDown={onKeyDown}
       >
-        <title>QPS · TTFT p95 · 차단건수 시계열 (드래그 또는 +/-/0 키로 확대·축소)</title>
-        {/* 가로 그리드 */}
-        {[0, 0.25, 0.5, 0.75, 1].map((g) => {
-          const y = PAD.top + innerH * g;
-          return (
-            <g key={g}>
-              <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="var(--grid-line)" strokeWidth={1} />
-              <text x={PAD.left - 6} y={y + 3} fontSize={10} fill="var(--text-faint)" textAnchor="end">
-                {fmtAxis(qpsMax * (1 - g), qpsMax)}
-              </text>
-              <text x={W - PAD.right + 6} y={y + 3} fontSize={10} fill="var(--text-faint)" textAnchor="start">
-                {Math.round(ttftMax * (1 - g))}
-              </text>
-            </g>
-          );
-        })}
+        <title>QPS · TTFT p95 · 차단건수 시계열 (드래그 또는 +/-/0 키로 확대·축소, ←/→ 로 값 읽기)</title>
+        {/* 가로 그리드 + 좌(QPS)/우(TTFT) 축라벨 — 공용 토큰 프리미티브 */}
+        <HGrid
+          padLeft={PAD.left}
+          right={W - PAD.right}
+          top={PAD.top}
+          innerH={innerH}
+          leftLabel={(g) => fmtAxis(qpsMax * (1 - g), qpsMax)}
+          rightLabel={(g) => Math.round(ttftMax * (1 - g))}
+        />
 
         {/* TTFT SLO 임계선 */}
         {ttftThresholdMs > 0 && ttftThresholdY > PAD.top && (
@@ -196,9 +204,9 @@ export default function TimeseriesChart({
               strokeDasharray="4 3"
               opacity={0.6}
             />
-            <text x={W - PAD.right} y={ttftThresholdY - 4} fontSize={9} fill="var(--red)" textAnchor="end">
+            <AxisText x={W - PAD.right} y={ttftThresholdY - 4} anchor="end">
               TTFT SLO {ttftThresholdMs}ms
-            </text>
+            </AxisText>
           </g>
         )}
 
@@ -218,9 +226,9 @@ export default function TimeseriesChart({
         )}
 
         {/* TTFT 라인 */}
-        <path d={line((p) => p.ttft_p95_ms, yTtft)} fill="none" stroke="var(--teal)" strokeWidth={1.6} />
+        <path d={line((p) => p.ttft_p95_ms, yTtft)} fill="none" stroke={SERIES.teal} strokeWidth={1.6} />
         {/* QPS 라인 */}
-        <path d={line((p) => p.qps, yQps)} fill="none" stroke="var(--primary)" strokeWidth={1.8} />
+        <path d={line((p) => p.qps, yQps)} fill="none" stroke={SERIES.primary} strokeWidth={1.8} />
 
         {/* 드래그 선택 영역 */}
         {drag && Math.abs(drag.b - drag.a) >= 1 && (
@@ -239,14 +247,45 @@ export default function TimeseriesChart({
         {/* x축 라벨 */}
         {view.map((p, i) =>
           i % labelStep === 0 ? (
-            <text key={i} x={x(i)} y={H - 6} fontSize={10} fill="var(--text-faint)" textAnchor="middle">
+            <AxisText key={i} x={x(i)} y={H - 6} anchor="middle">
               {new Date(p.ts).toLocaleTimeString("ko-KR", {
                 hour: "2-digit",
                 minute: "2-digit",
                 hour12: false,
               })}
-            </text>
+            </AxisText>
           ) : null,
+        )}
+
+        {/* 호버/포커스 크로스헤어 + readout(드래그 중 숨김) */}
+        {activePoint && activeIndex != null && (
+          <>
+            <Crosshair
+              x={x(activeIndex)}
+              top={PAD.top}
+              innerH={innerH}
+              markers={[
+                { y: yQps(activePoint.qps), color: SERIES.primary },
+                { y: yTtft(activePoint.ttft_p95_ms), color: SERIES.teal },
+              ]}
+            />
+            <ChartTooltip
+              x={x(activeIndex)}
+              viewW={W}
+              top={PAD.top}
+              innerH={innerH}
+              title={new Date(activePoint.ts).toLocaleTimeString("ko-KR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              })}
+              rows={[
+                { label: "QPS", value: fmtAxis(activePoint.qps, qpsMax), color: SERIES.primary },
+                { label: "TTFT p95", value: `${Math.round(activePoint.ttft_p95_ms)}ms`, color: SERIES.teal },
+                { label: "차단", value: String(activePoint.blocked), color: SERIES.red },
+              ]}
+            />
+          </>
         )}
       </svg>
     </div>
