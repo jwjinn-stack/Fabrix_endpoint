@@ -1,6 +1,21 @@
 # FABRIX Endpoint — 개발/QA 세션 인계 (Living)
 
-> 다시 시작할 때 이 문서를 먼저 읽는다. 최종 2026-06-19 · 버전 **v0.16.0**.
+> 다시 시작할 때 이 문서를 먼저 읽는다. 최종 2026-06-28 · 버전 **v0.18.0**.
+
+## ★ Round P6 — 브랜드 색상 테마 + P3 (2026-06-28, 프론트엔드 전용)
+> **신규 기능**: 고객사 표준 색상에 맞춰 전체 강조색을 바꾸는 **브랜드 테마**. `web/src/theme.tsx`(ThemeProvider/useBrand/applyBrand/deriveBrand) + **설정 화면 "외관 · 브랜드 색상" 카드**(프리셋 5종+커스텀 HEX+미리보기). `--primary`/`-strong`/`-weak`/`-lite` 를 documentElement 인라인 오버라이드(라이트·다크 공통)·localStorage 영속. **기본=스틸블루(#4a86b8)** 유지, 고객사 요청 시 설정에서 전환. App.tsx 에 `<ThemeProvider>` 배선.
+> **P3**: O-10 PipelineWaterfall 워터폴↔트리 토글 / O-13 미사용 DetailModal 컴포넌트 삭제(전 화면 SlidePanel 통일).
+> **QA(CDP)**: 오렌지 프리셋 클릭 → `--primary` #4a86b8→#fb6e00, 전 UI 즉시 전환, 화면 이동 후 유지, 스틸 복귀 OK. Traffic 파이프라인 트리 토글 OK. tsc 클린·console error 0.
+> **🟠 후속(P3 보류, 백엔드/데이터 필요)**: O-04 disagg/agg 라우팅 비교(mock route="local-vllm", 패턴 데이터 없음) · D-09 GPU 요약 spark(시계열 배열 없음) · D-05 사용량 필터 역연동(저가치) · 실 SSE 스트리밍. **전제 A 해소**: 색상은 이제 설정에서 전환 가능(기본 스틸블루).
+
+## ★ Round P5 — UI/UX 트렌드 적용 (2026-06-28, 프론트엔드 전용·백엔드 무변경)
+> **근거**: [docs/UIUX/](UIUX/) — `agent-바이브코딩-UIUX-트렌드-2026.md`(2026 트렌드 리서치) + `UIUX-개선-추적표.md`(코드 갭 1:1 추적). 추적표 §6 에 항목별 결과.
+> **무엇**: 2026 Agent/대시보드 UX 트렌드를 실제 화면에 적용. **mock 모드 CDP 시각 QA 평균 9.2, 전 14화면 console error 0, tsc 클린.**
+> **신규 파일**: `web/src/timeRange.tsx`(전역 시간범위 Context+RangeSelect, G-05). **신규 CSS 유틸**(index.css): `stream-caret`·`pulse-dot`·`seg-toggle`·`inline-search`·`disclose-btn`·`bento`(12컬럼 span)·`diag-tiles`·`cmdk-close`.
+> **변경 화면**: Dashboard(벤토+더보기+공유기간) · Usage(공유기간) · Traces(타임라인↔트리 토글·스팬검색·점진공개) · **Sessions(세션 리플레이 ◀▶▶|+스크럽+자동진행)** · Diagnostics(상태 벤토타일+복구안내) · Eval(평문 신뢰도 큐) · **Playground(스트리밍 6상태+중지+TTFT실측+모델라벨+신뢰도큐)** · Guard(증적상세 복구액션+평문신뢰도) · Traffic(윈도우 셀렉터) · Credentials/ModelImport(역할 게이팅) · CommandPalette(닫기 버튼) · TimeseriesChart(키보드 줌).
+> **🐞 수정(QA loop)**: ① Playground 응답 "대기 중" 고착 — `assistantIdx`를 setTurns 업데이터 부수효과로 잡아 React 비동기 실행 탓 `-1` → turns 길이 결정론적 계산으로 수정. ② Dashboard hero `row-2` 하단 여백 → span-6 단일행 정리.
+> **검증 방식**: vite mock 단독(`npm run dev`, VITE_MOCK 미설정=mock) + CDP 9222. 상호작용 트리거(type/click/eval)로 스트리밍·리플레이 자동진행("1/6→3/6")·토글·검색·더보기·키보드줌·복구액션 전부 실동작 확인. **shots**: scratchpad/qa-shots/.
+> **🟠 후속(P3·백엔드/후속)**: D-09 GPU 요약 spark(시계열 배열 필요) · O-04 disagg·agg 라우팅 비교(백엔드 route 필드) · O-10 PipelineWaterfall tree 토글 · O-13 DetailModal 제거 검토 · 실 SSE 스트리밍(현재 프론트 타이프라이터 시뮬, 상태머신은 재사용 가능). **전제 A**: 색상 정체성(메모리=오렌지 vs 실코드=스틸블루 #4a86b8) 확정 필요 — 현재 코드 현실(스틸블루) 유지.
 
 ## ★ Round P4-🟠 — 백엔드 데이터 보강 9항목 (2026-06-19, v0.16.0)
 > **무엇**: v0.14.0에서 잔여였던 P4 🟠(백엔드 보강 필요) 항목 9개를 전부 실데이터로 구현. **QA 평균 9.3, console error 0.** go build·test·tsc 통과.

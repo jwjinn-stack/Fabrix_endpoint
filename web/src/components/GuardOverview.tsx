@@ -7,10 +7,10 @@ const nf = new Intl.NumberFormat("ko-KR");
 // 가드레일이 "무엇을·왜" 하는지 설명하는 개요 — Semantic Router(Intent-Aware + Security) 슬라이드를
 // 제품 구현으로. 파이프라인 + 능력별 설명 + 동작 방식 + 최근 차단 사례.
 const CAPS = [
-  { key: "pii", title: "PII 탐지", icon: "◑", desc: "주민번호·계좌·여권·카드·이메일 등 개인식별정보가 모델에 도달하기 전에 탐지합니다. SR ModernBERT 분류 + 한국어 정규식(탐지율 100% PoC)으로 보강.", color: "var(--pink)" },
-  { key: "jailbreak", title: "Jailbreak / 프롬프트 가드", icon: "⚠", desc: "모델 안전장치를 우회하거나 유해 행동을 유도하는 시도(탈옥·시스템 프롬프트 추출)를 prompt-guard로 식별합니다.", color: "var(--red)" },
-  { key: "secrets", title: "Secrets / 크리덴셜", icon: "🔑", desc: "AWS 키·Bearer 토큰·private key·발급 API 키(fbx_) 등 비밀정보가 프롬프트에 섞여 유출되는 것을 차단합니다.", color: "var(--amber)" },
-  { key: "intent", title: "Intent 라우팅(설계)", icon: "◆", desc: "질의 의도를 분류해 민감·사내 데이터는 내부 모델로, 일반 지식 질의는 외부 API로 보내는 라우팅 신호를 제공합니다.", color: "var(--teal)" },
+  { key: "pii", title: "PII 탐지", desc: "주민번호·계좌·여권·카드·이메일 등 개인식별정보가 모델에 도달하기 전에 탐지합니다. SR ModernBERT 분류 + 한국어 정규식(탐지율 100% PoC)으로 보강.", color: "var(--pink)" },
+  { key: "jailbreak", title: "Jailbreak / 프롬프트 가드", desc: "모델 안전장치를 우회하거나 유해 행동을 유도하는 시도(탈옥·시스템 프롬프트 추출)를 prompt-guard로 식별합니다.", color: "var(--red)" },
+  { key: "secrets", title: "Secrets / 크리덴셜", desc: "AWS 키·Bearer 토큰·private key·발급 API 키(fbx_) 등 비밀정보가 프롬프트에 섞여 유출되는 것을 차단합니다.", color: "var(--amber)" },
+  { key: "intent", title: "Intent 라우팅(설계)", desc: "질의 의도를 분류해 민감·사내 데이터는 내부 모델로, 일반 지식 질의는 외부 API로 보내는 라우팅 신호를 제공합니다.", color: "var(--teal)" },
 ] as const;
 
 const STEPS = [
@@ -88,7 +88,7 @@ export default function GuardOverview() {
         {CAPS.map((c) => (
           <div className="card cap-card" key={c.key}>
             <div className="cap-head">
-              <span className="cap-icon" style={{ color: c.color }} aria-hidden="true">{c.icon}</span>
+              <span className="cap-dot" style={{ background: c.color }} aria-hidden="true" />
               <h3>{c.title}</h3>
               <span className="spacer" />
               {ruleOn(c.key) ? <span className="tag tag-green">활성</span> : <span className="tag">꺼짐</span>}

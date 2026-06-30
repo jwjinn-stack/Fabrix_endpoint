@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 // 마스터-디테일 우측 슬라이드 패널 — 목록 행 클릭 → 페이지 이동 없이 상세.
 // Datadog/Splunk/Langfuse 공통 동선(상용SW-화면UIUX-리서치 P4-0).
-// 중앙 모달(DetailModal)과 병행: 목록 드릴다운은 SlidePanel, 단발 확인은 DetailModal.
+// 전 화면의 목록 드릴다운 상세는 이 패널로 통일한다(O-13: 중앙 DetailModal 폐기).
 export default function SlidePanel({
   open,
   title,
@@ -21,8 +21,11 @@ export default function SlidePanel({
   footer?: ReactNode;
   width?: number;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!open) return;
+    // 열릴 때 패널로 첫 포커스 이동 — 키보드/스크린리더가 상세 내용으로 진입.
+    panelRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
@@ -34,8 +37,10 @@ export default function SlidePanel({
   return (
     <div className="slide-overlay" onClick={onClose} role="presentation">
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         className="slide-panel"
-        style={{ width }}
+        style={{ width, outline: "none" }}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

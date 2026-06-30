@@ -15,8 +15,8 @@ type TrafficCard struct {
 type QualityCard struct {
 	TTFTp50ms    float64 `json:"ttft_p50_ms"`
 	TTFTp95ms    float64 `json:"ttft_p95_ms"`
-	ITLavgMs     float64 `json:"itl_avg_ms"`      // time_per_output_token
-	CacheHitRate float64 `json:"cache_hit_rate"`  // vllm:gpu_prefix_cache_hit_rate, 0..1
+	ITLavgMs     float64 `json:"itl_avg_ms"`     // time_per_output_token
+	CacheHitRate float64 `json:"cache_hit_rate"` // vllm:gpu_prefix_cache_hit_rate, 0..1
 }
 
 // GuardrailCard — 가드레일 요약 (출처: 증적 파이프라인 Part 2).
@@ -124,8 +124,8 @@ type Alarm struct {
 
 // DashboardOverview — GET /api/v1/dashboard/overview 응답 (문서 4-1 한 화면).
 type DashboardOverview struct {
-	Range       TimeRange     `json:"range"`
-	GeneratedAt string        `json:"generated_at"` // RFC3339 UTC (표시단에서 Asia/Seoul 변환)
+	Range        TimeRange        `json:"range"`
+	GeneratedAt  string           `json:"generated_at"` // RFC3339 UTC (표시단에서 Asia/Seoul 변환)
 	Traffic      TrafficCard      `json:"traffic"`
 	Quality      QualityCard      `json:"quality"`
 	Guardrail    GuardrailCard    `json:"guardrail"`

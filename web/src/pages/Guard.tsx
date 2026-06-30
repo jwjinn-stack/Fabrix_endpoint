@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchGuardAudit, fetchGuardStatus, type GuardStatus } from "../api/client";
-import type { GuardAuditReport, GuardAuditRow, TimeRange } from "../api/types";
+import { fetchGuardAudit, fetchGuardContent, fetchGuardStatus, type GuardStatus } from "../api/client";
+import type { GuardAuditReport, GuardAuditRow, GuardContent, TimeRange } from "../api/types";
 import StatCard from "../components/StatCard";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton";
 import GuardPolicyPanel from "../components/GuardPolicy";
+import MaskingPolicyPanel from "../components/MaskingPolicy";
 import GuardOverview from "../components/GuardOverview";
 import EventHistogram from "../components/EventHistogram";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import { useCap } from "../capabilities";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -58,17 +61,46 @@ function fmtTime(ts: string) {
   return d.toLocaleString("ko-KR", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+// M-06 신뢰도 평문 큐 — 0~1 수치를 평문 등급으로(높음/보통/낮음).
+function confidenceTier(c: number): string {
+  if (c >= 0.8) return "높음";
+  if (c >= 0.5) return "보통";
+  return "낮음";
+}
+
+// PII 하위유형 코드를 한국어 평문으로. 미정의 코드는 원문 그대로.
+const PII_LABELS: Record<string, string> = {
+  rrn: "주민등록번호", ssn: "주민등록번호", phone: "전화번호", email: "이메일",
+  card: "카드번호", credit_card: "카드번호", account: "계좌번호", name: "이름",
+  address: "주소", passport: "여권번호", driver_license: "운전면허번호",
+};
+function piiLabel(code: string): string {
+  return PII_LABELS[code] ?? code;
+}
+
 // 가드레일 증적 뷰 (문서 4-3) — Semantic Router 판정 → ClickHouse guard_audit.
 // 요약 카드 + 필터 + 증적 테이블 + 상세 모달(trace_id·정책버전·PII 유형).
 export default function Guard() {
+  const canPolicy = useCap().can("guard.write"); // 정책 변경(PUT) 권한 — observe 에선 정책 탭 숨김
   const [range, setRange] = useState<TimeRange>("24h");
   const [decision, setDecision] = useState("all");
   const [type, setType] = useState("all");
-  const [tab, setTab] = useState<"overview" | "audit" | "policy">("overview");
+  const [tab, setTab] = useState<"overview" | "audit" | "policy" | "masking">("overview");
   const [report, setReport] = useState<GuardAuditReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<GuardAuditRow | null>(null);
+  // 차단 프롬프트 원문 (Langfuse) — 민감 데이터라 명시적 조회.
+  const [content, setContent] = useState<GuardContent | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentErr, setContentErr] = useState<string | null>(null);
+  const loadContent = useCallback((traceId: string) => {
+    setContentLoading(true); setContent(null); setContentErr(null);
+    fetchGuardContent(traceId)
+      .then(setContent)
+      .catch((e) => setContentErr((e as Error).message))
+      .finally(() => setContentLoading(false));
+  }, []);
   const [status, setStatus] = useState<GuardStatus | null>(null);
 
   useEffect(() => {
@@ -107,7 +139,7 @@ export default function Guard() {
     <>
       <div className="page-head">
         <h1>가드레일</h1>
-        <span className="crumb">가드레일 / {tab === "audit" ? "증적" : tab === "policy" ? "정책" : "개요"}</span>
+        <span className="crumb">가드레일 / {tab === "audit" ? "증적" : tab === "policy" ? "정책" : tab === "masking" ? "마스킹" : "개요"}</span>
         <div className="spacer" />
         {tab === "audit" && (
           <>
@@ -137,11 +169,17 @@ export default function Guard() {
       <div className="modality-tabs" role="tablist" aria-label="가드레일 보기">
         <button type="button" role="tab" aria-selected={tab === "overview"} className={`modality-tab ${tab === "overview" ? "active" : ""}`} onClick={() => setTab("overview")}>개요</button>
         <button type="button" role="tab" aria-selected={tab === "audit"} className={`modality-tab ${tab === "audit" ? "active" : ""}`} onClick={() => setTab("audit")}>증적</button>
-        <button type="button" role="tab" aria-selected={tab === "policy"} className={`modality-tab ${tab === "policy" ? "active" : ""}`} onClick={() => setTab("policy")}>정책</button>
+        {canPolicy && (
+          <button type="button" role="tab" aria-selected={tab === "policy"} className={`modality-tab ${tab === "policy" ? "active" : ""}`} onClick={() => setTab("policy")}>정책</button>
+        )}
+        {canPolicy && (
+          <button type="button" role="tab" aria-selected={tab === "masking"} className={`modality-tab ${tab === "masking" ? "active" : ""}`} onClick={() => setTab("masking")}>마스킹</button>
+        )}
       </div>
 
       {tab === "overview" && <GuardOverview />}
-      {tab === "policy" && <GuardPolicyPanel />}
+      {tab === "policy" && canPolicy && <GuardPolicyPanel />}
+      {tab === "masking" && canPolicy && <MaskingPolicyPanel />}
 
       {tab === "audit" && error && (
         <div className="state error" role="alert">증적을 불러오지 못했습니다. ({error})</div>
@@ -218,17 +256,68 @@ export default function Guard() {
       )}
 
       {tab === "audit" && !error && loading && !report && (
-        <div className="state" role="status">증적을 조회하는 중입니다…</div>
+        <>
+          <SkeletonCards count={4} />
+          <div className="card" style={{ marginTop: "var(--sp-4)" }}>
+            <SkeletonRows rows={8} cols={6} />
+          </div>
+        </>
       )}
 
       <SlidePanel
         open={!!detail}
         title="증적 상세"
         subtitle={detail ? fmtTime(detail.ts) : undefined}
-        onClose={() => setDetail(null)}
+        onClose={() => { setDetail(null); setContent(null); setContentErr(null); }}
       >
         {detail && (
           <>
+            {/* M-06 신뢰도/PII 평문 큐 — 수치만이 아니라 사람이 읽을 판정 요약 */}
+            <div className="guard-verdict" style={{ background: "var(--surface, #fff)", border: "1px solid var(--border)", borderRadius: 10, padding: "var(--sp-3, 12px)", marginBottom: "var(--sp-3, 12px)", display: "grid", gap: 6, fontSize: 13 }}>
+              {detail.guard_types?.includes("jailbreak") && (
+                <div>
+                  <b>Jailbreak 신뢰도:</b>{" "}
+                  {detail.jb_confidence > 0
+                    ? `${(detail.jb_confidence * 100).toFixed(1)}% (${confidenceTier(detail.jb_confidence)})`
+                    : "수치 없음"}
+                </div>
+              )}
+              {detail.guard_types?.includes("pii") && (
+                <div>
+                  <b>PII 탐지:</b>{" "}
+                  {detail.pii_subtypes?.length
+                    ? detail.pii_subtypes.map(piiLabel).join(", ")
+                    : "유형 미상"}
+                </div>
+              )}
+              {/* 규칙 → 이유 → 통과 조건 (가드레일 핵심: 왜 막혔고 무엇을 바꾸면 통과되는지) */}
+              <div>
+                <b>발동 규칙:</b>{" "}
+                {detail.guard_types?.length
+                  ? detail.guard_types.map((t) => (t === "pii" ? "PII 정책" : t === "jailbreak" ? "Jailbreak 차단 정책" : t === "secrets" ? "시크릿 차단 정책" : `${t} 정책`)).join(", ")
+                  : "해당 없음"}
+                {detail.policy_version ? ` · 정책 ${detail.policy_version}` : ""}
+              </div>
+              <div style={{ color: "var(--text-dim)" }}>
+                {detail.decision === "blocked"
+                  ? "이 요청은 가드레일에서 차단되었습니다."
+                  : detail.decision === "flagged"
+                    ? "통과했으나 표시(flagged)된 요청입니다."
+                    : "정상 통과한 요청입니다."}
+              </div>
+              {detail.decision !== "allowed" && (
+                <div style={{ color: "var(--text-dim)" }}>
+                  <b style={{ color: "var(--text)" }}>통과 조건:</b>{" "}
+                  {detail.guard_types?.includes("pii")
+                    ? "해당 PII 유형을 마스킹으로 처리하거나 예외 등록하면 통과됩니다."
+                    : detail.guard_types?.includes("jailbreak")
+                      ? "정책을 ‘표시(flag)’로 낮추거나 해당 패턴을 예외 등록하면 통과됩니다."
+                      : "정책에서 해당 패턴을 예외 처리하면 통과됩니다."}
+                  {canPolicy ? " 아래 ‘정책 조정’에서 변경할 수 있습니다." : ""}
+                </div>
+              )}
+            </div>
+
             <DetailRow label="동작">{decisionBadge(detail.decision)}</DetailRow>
             <DetailRow label="유형">{typeBadges(detail.guard_types)}</DetailRow>
             <DetailRow label="PII 유형">{detail.pii_subtypes?.length ? detail.pii_subtypes.join(", ") : "—"}</DetailRow>
@@ -242,7 +331,68 @@ export default function Guard() {
             <DetailRow label="판정 지연">{detail.latency_ms > 0 ? `${detail.latency_ms}ms` : "—"}</DetailRow>
             <DetailRow label="정책 버전">{detail.policy_version}</DetailRow>
             <DetailRow label="event_id"><code>{detail.event_id}</code></DetailRow>
-            <p className="slide-note">원문 프롬프트와 PII 값은 보존하지 않습니다(비식별·마스킹). 불변 원본은 WORM 보존.</p>
+            <p className="slide-note">FABRIX 증적(ClickHouse)은 원문·PII 를 비식별·마스킹 보존합니다. 불변 원본은 WORM 보존.</p>
+
+            {/* M-05 복구/후속 액션 — manage 프로파일(guard.write) 한정. 증적 자체는 읽기 전용 유지, "다음 행동"만 제시 */}
+            {canPolicy && (
+              <div className="guard-actions" style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2, 8px)", marginTop: "var(--sp-3, 12px)" }}>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => { setDetail(null); setContent(null); setContentErr(null); setTab("policy"); }}
+                >
+                  이 패턴 정책에서 보기 →
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  onClick={() => { setDetail(null); setContent(null); setContentErr(null); setTab(detail.guard_types?.includes("pii") ? "masking" : "policy"); }}
+                >
+                  예외 추가 / 정책 조정 →
+                </button>
+              </div>
+            )}
+
+            {/* 차단 프롬프트 원문 — Langfuse GUARDRAIL observation 에서 조회 */}
+            {detail.decision !== "allowed" && (
+              <div className="guard-content">
+                <div className="gc-head">
+                  <span>차단 프롬프트 원문 <span className="gc-src">Langfuse</span></span>
+                  {!content && !contentLoading && (
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => loadContent(detail.trace_id)}>원문 불러오기 →</button>
+                  )}
+                </div>
+                {contentLoading && <div className="state" role="status" style={{ margin: 0 }}>Langfuse 에서 조회 중…</div>}
+                {contentErr && <div className="state error" role="alert" style={{ margin: 0 }}>조회 실패 ({contentErr})</div>}
+                {!content && !contentLoading && !contentErr && (
+                  <p className="gc-hint">증적에는 마스킹본만 있습니다. 원문은 Langfuse GUARDRAIL observation 의 input 에서 가져옵니다(마스킹 정책 적용 시 일부 가려질 수 있음).</p>
+                )}
+                {content && (
+                  <>
+                    {content.captured ? (
+                      <pre className="gc-input">{content.input}</pre>
+                    ) : (
+                      <div className="gc-uncaptured" role="status">
+                        <b>원문 미보존</b> — 이 요청은 Langfuse <code>observation.input</code> 에 입력 원문이 계측되지 않았습니다.
+                        Semantic Router 는 판정 메타데이터(유형·사유)만 남기고 원문을 보존하지 않으므로, 원문을 보려면 앱/프록시가 입력을 Langfuse 에 계측해야 합니다.
+                      </div>
+                    )}
+                    {/* 판정 메타데이터는 Semantic Router 헤더/OTel 로 항상 확보됨 */}
+                    <div className="gc-meta">
+                      <span className={`tag ${content.output.blocked ? "tag-red" : "tag-amber"}`}>{content.output.blocked ? "차단됨" : "표시됨"}</span>
+                      <span className="gc-reason">{content.output.reason}</span>
+                      <span className="gc-cat">category: <code>{content.output.category}</code></span>
+                      {content.masked && <span className="tag tag-amber">일부 마스킹{detail.pii_subtypes?.length ? `: ${detail.pii_subtypes.map(piiLabel).join(", ")}` : ""}</span>}
+                    </div>
+                    <p className="gc-hint">
+                      {content.captured
+                        ? <>출처: Langfuse trace <code>{content.trace_id}</code> · source={content.source}. 마스킹 미설정 시 원문 그대로 표시됩니다.</>
+                        : <>판정 메타는 Semantic Router 가 항상 기록하지만, 원문 텍스트 보존은 별도 계측이 필요합니다(구현가능성-검증 §2-3).</>}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </SlidePanel>

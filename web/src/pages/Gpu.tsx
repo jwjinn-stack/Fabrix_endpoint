@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchGPU, fetchGPUTimeseries } from "../api/client";
 import type { GPUDevice, GPUReport, GPUTimeseries } from "../api/types";
 import StatCard from "../components/StatCard";
+import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Sparkline from "../components/Sparkline";
 import GpuLedGrid from "../components/GpuLedGrid";
@@ -76,6 +77,10 @@ export default function Gpu() {
 
   const s = rep?.summary;
   const devices = rep?.devices ?? [];
+  // 평균/최고 온도 — 디바이스 실측에서 산출(요약에 별도 필드 없음). 기준선: ≥80 주의, ≥87 위험.
+  const avgTemp = devices.length ? Math.round(devices.reduce((a, d) => a + d.temp_c, 0) / devices.length) : 0;
+  const maxTemp = devices.length ? Math.max(...devices.map((d) => d.temp_c)) : 0;
+  const tempTone = maxTemp >= 87 ? "red" : maxTemp >= 80 ? "amber" : "green";
 
   return (
     <>
@@ -90,7 +95,7 @@ export default function Gpu() {
       </div>
 
       {error && <div className="state error" role="alert">GPU 지표를 불러오지 못했습니다. ({error})</div>}
-      {!error && loading && !rep && <div className="state" role="status">GPU 지표를 수집하는 중…</div>}
+      {!error && loading && !rep && <SkeletonCards count={6} />}
 
       {s && (
         <div className="cards-6">
@@ -103,6 +108,14 @@ export default function Gpu() {
             title="유휴 할당 갭"
             info="VRAM 50%+ 점유 중인데 util<10% = 모델이 올라갔지만 연산하지 않는 GPU. 자원 낭비 신호(Run:ai idle allocation gap)."
             metrics={[{ label: "GPU 수", value: nf.format(s.idle_alloc_gap), unit: `/ ${s.total_gpus}`, tone: s.idle_alloc_gap > 0 ? "amber" : "green" }]}
+          />
+          <StatCard
+            title="온도"
+            info="디바이스 실측 평균/최고. 기준: 80°C 이상 주의, 87°C 이상 위험."
+            metrics={[
+              { label: "평균", value: avgTemp, unit: "°C" },
+              { label: "최고", value: maxTemp, unit: "°C", tone: tempTone },
+            ]}
           />
         </div>
       )}

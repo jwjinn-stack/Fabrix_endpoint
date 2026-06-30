@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchOverview, fetchUsage, fetchUsageTrend } from "../api/client";
-import type { DashboardOverview, TimeRange, UsageReport, UsageRow, UsageTrend } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { DashboardOverview, MetricsBreakdownRow, UsageReport, UsageRow, UsageTrend } from "../api/types";
+import type { NavFn } from "../router";
+import DimensionBreakdown from "../components/DimensionBreakdown";
 import StatCard from "../components/StatCard";
+import { SkeletonCards, SkeletonRows } from "../components/Skeleton";
 import StackedShareBar from "../components/StackedShareBar";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import UsageTrendChart from "../components/UsageTrendChart";
 import LatencyPanel from "../components/LatencyPanel";
 import RankCard from "../components/RankCard";
+import { RangeSelect, useTimeRange } from "../timeRange";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-
-const RANGES: { value: TimeRange; label: string }[] = [
-  { value: "1h", label: "최근 1시간" },
-  { value: "6h", label: "최근 6시간" },
-  { value: "24h", label: "최근 24시간" },
-  { value: "7d", label: "최근 7일" },
-];
 
 const GROUPS: { value: string; label: string; col: string }[] = [
   { value: "model", label: "모델별", col: "모델" },
@@ -41,15 +37,16 @@ function rowKey(r: UsageRow, group: string): string {
 }
 
 function toCSV(report: UsageReport, group: string): string {
-  const head = [GROUPS.find((g) => g.value === group)?.col ?? "key", "requests", "prompt_tokens", "completion_tokens"];
+  const head = [GROUPS.find((g) => g.value === group)?.col ?? "key", "requests", "prompt_tokens", "completion_tokens", "est_cost_krw"];
   const lines = report.rows.map((r) =>
-    [rowKey(r, group), r.requests, r.prompt_tokens, r.completion_tokens].join(","),
+    [rowKey(r, group), r.requests, r.prompt_tokens, r.completion_tokens, r.est_cost_krw ?? 0].join(","),
   );
   return [head.join(","), ...lines].join("\n");
 }
 
-export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }) {
-  const [range, setRange] = useState<TimeRange>("24h");
+export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
+  // 기간은 전역 컨텍스트 공유(G-05) — 관제·트레이스 화면과 동일 선택 유지.
+  const { range } = useTimeRange();
   const [group, setGroup] = useState("model");
   const [report, setReport] = useState<UsageReport | null>(null);
   const [trend, setTrend] = useState<UsageTrend | null>(null);
@@ -102,6 +99,21 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
   const totalReq = rows.reduce((s, r) => s + r.requests, 0);
   const totalIn = rows.reduce((s, r) => s + r.prompt_tokens, 0);
   const totalOut = rows.reduce((s, r) => s + r.completion_tokens, 0);
+  const totalCost = rows.reduce((s, r) => s + (r.est_cost_krw ?? 0), 0);
+  // 가장 비싼 항목 Top — 비용 책임 추적(Datadog "Most Expensive" 패턴).
+  const topCost = [...rows].sort((a, b) => (b.est_cost_krw ?? 0) - (a.est_cost_krw ?? 0))[0];
+  // 추세 기준선(delta) — 추세 시계열 전반/후반 평균 비교. 실제 데이터가 있는 요청·토큰에만 적용.
+  const trendDelta = (pick: (p: { requests: number; tokens: number }) => number): number | undefined => {
+    const pts = trend?.points ?? [];
+    if (pts.length < 4) return undefined;
+    const h = Math.floor(pts.length / 2);
+    const prev = pts.slice(0, h).reduce((s, p) => s + pick(p), 0) / h;
+    const cur = pts.slice(h).reduce((s, p) => s + pick(p), 0) / (pts.length - h);
+    if (prev === 0) return cur === 0 ? 0 : undefined;
+    return ((cur - prev) / prev) * 100;
+  };
+  const reqDelta = trendDelta((p) => p.requests);
+  const tokDelta = trendDelta((p) => p.tokens);
   const isModel = group === "model";
   const groupMeta = GROUPS.find((g) => g.value === group)!;
 
@@ -118,13 +130,7 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
             </option>
           ))}
         </select>
-        <select className="range-select" value={range} onChange={(e) => setRange(e.target.value as TimeRange)} aria-label="기간">
-          {RANGES.map((r) => (
-            <option key={r.value} value={r.value}>
-              기간: {r.label}
-            </option>
-          ))}
-        </select>
+        <RangeSelect />
         <button type="button" className="refresh-btn" onClick={exportCSV} disabled={!report || rows.length === 0}>
           CSV 내보내기
         </button>
@@ -136,18 +142,26 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
         </div>
       )}
       {!error && loading && !report && (
-        <div className="state" role="status" aria-live="polite">
-          사용량을 집계하는 중입니다…
-        </div>
+        <>
+          <SkeletonCards count={4} />
+          <div className="card" style={{ marginTop: "var(--sp-4)" }}>
+            <SkeletonRows rows={6} cols={5} />
+          </div>
+        </>
       )}
 
       {report && rows.length > 0 && (
         <>
-          <div className="cards-3">
-            <StatCard title="총 요청" info={`${groupMeta.label} 합산`} metrics={[{ label: "requests", value: nf.format(totalReq) }]} />
-            <StatCard title="총 토큰" info="입력 + 출력 토큰" metrics={[
+          <div className="cards-4">
+            <StatCard title="총 요청" info={`${groupMeta.label} 합산 · 변화율은 기간 내 전반 대비 후반`} metrics={[{ label: "requests", value: nf.format(totalReq), delta: reqDelta, deltaGood: "up" }]} />
+            <StatCard title="총 토큰" info="입력 + 출력 토큰 · 변화율은 기간 내 전반 대비 후반" metrics={[
               { label: "입력", value: compact(totalIn), tone: "teal" },
               { label: "출력", value: compact(totalOut), tone: "amber" },
+              { label: "합계 추세", value: compact(totalIn + totalOut), delta: tokDelta, deltaGood: "up" },
+            ]} />
+            <StatCard title="추정 비용" info="토큰 × 모델 단가 (자가호스팅 추정)" metrics={[
+              { label: "합계", value: `₩${compact(totalCost)}` },
+              ...(topCost ? [{ label: `최고 ${rowKey(topCost, group)}`, value: `₩${compact(topCost.est_cost_krw ?? 0)}` }] : []),
             ]} />
             <StatCard title={`활성 ${groupMeta.col}`} info="집계 구간에 사용량이 있는 항목 수" metrics={[{ label: groupMeta.col, value: rows.length }]} />
           </div>
@@ -161,15 +175,28 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
         </>
       )}
 
-      {/* P4-4 사용량 추세 + forecast */}
+      {/* L2 성능 차원 분해 — model/endpoint/namespace 로 groupby, 행 클릭 → 트레이스 drill-through. */}
+      <DimensionBreakdown
+        range={range}
+        title="성능 차원 분해 (L2)"
+        drillableDims={["model"]}
+        onDrill={(row: MetricsBreakdownRow, dim: string) =>
+          onNavigate?.("traces", { range, ...(dim === "model" ? { model: row.key } : {}) })
+        }
+      />
+
+      {/* P4-4 사용량 추세 + forecast — 토글을 차트 헤더 흐름에 넣어 제목과 겹치지 않게(반응형). */}
       {trend && trend.points.length >= 3 && (
-        <div className="usage-trend-wrap">
-          <div className="seg-toggle trend-metric-toggle" role="tablist" aria-label="추세 지표 전환">
-            <button type="button" role="tab" aria-selected={trendMetric === "requests"} className={trendMetric === "requests" ? "on" : ""} onClick={() => setTrendMetric("requests")}>요청</button>
-            <button type="button" role="tab" aria-selected={trendMetric === "tokens"} className={trendMetric === "tokens" ? "on" : ""} onClick={() => setTrendMetric("tokens")}>토큰</button>
-          </div>
-          <UsageTrendChart points={trend.points} metric={trendMetric} />
-        </div>
+        <UsageTrendChart
+          points={trend.points}
+          metric={trendMetric}
+          headerRight={
+            <div className="seg-toggle" role="tablist" aria-label="추세 지표 전환">
+              <button type="button" role="tab" aria-selected={trendMetric === "requests"} className={trendMetric === "requests" ? "active" : ""} onClick={() => setTrendMetric("requests")}>요청</button>
+              <button type="button" role="tab" aria-selected={trendMetric === "tokens"} className={trendMetric === "tokens" ? "active" : ""} onClick={() => setTrendMetric("tokens")}>토큰</button>
+            </div>
+          }
+        />
       )}
 
       {/* 추론 성능·토큰·랭킹 (관제에서 이전 — 기간 기준 분석) */}
@@ -189,7 +216,7 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
               ]}
             />
           </div>
-          {(overview.tokens.prompt_tokens > 0 || overview.tokens.completion_tokens > 0) && (
+          {(overview.tokens.prompt_tokens + overview.tokens.completion_tokens) > 100 && (
             <div className="card">
               <StackedShareBar
                 title={`토큰 분해 (기간 누적) · 입력 ${overview.tokens.prompt_tokens.toLocaleString("ko-KR")} / 출력 ${overview.tokens.completion_tokens.toLocaleString("ko-KR")}`}
@@ -244,6 +271,7 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
                   <th className="num">요청</th>
                   <th className="num">입력 토큰</th>
                   <th className="num">출력 토큰</th>
+                  <th className="num">추정 비용</th>
                   {isModel && <th className="num">TTFT p95</th>}
                   {isModel && <th className="num">ITL avg</th>}
                 </tr>
@@ -255,6 +283,7 @@ export default function Usage({ onNavigate }: { onNavigate?: (p: Page) => void }
                     <td className="num">{nf.format(r.requests)}</td>
                     <td className="num">{compact(r.prompt_tokens)}</td>
                     <td className="num">{compact(r.completion_tokens)}</td>
+                    <td className="num">₩{compact(r.est_cost_krw ?? 0)}</td>
                     {isModel && <td className="num">{r.ttft_p95_ms}ms</td>}
                     {isModel && <td className="num">{r.itl_avg_ms}ms</td>}
                   </tr>

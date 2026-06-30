@@ -50,6 +50,12 @@ func (s *Store) migrate(ctx context.Context) {
 		status     TEXT NOT NULL DEFAULT 'active',  -- active | disabled
 		created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 	)`)
+	// 마스킹 정책(게이트웨이 글루가 폴링) — 단일 행(id=1) JSONB. (비파괴)
+	_, _ = s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS masking_policy (
+		id         INT PRIMARY KEY,
+		policy     JSONB NOT NULL,
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`)
 	// 앱 소유 부서(조직·귀속) — app 테이블에 dept_id 보강(비파괴).
 	// 주의: 앱 DB 롤이 api_key/app 테이블 owner 가 아니면 ALTER 가 권한 거부(42501)될 수 있다.
 	// dept_id 는 이미 적용돼 있어 IF NOT EXISTS 가 no-op. 신규 컬럼은 owner 마이그레이션으로 적용 권장.
@@ -71,6 +77,13 @@ func (s *Store) migrate(ctx context.Context) {
 
 // Close 는 풀을 닫는다.
 func (s *Store) Close() { s.pool.Close() }
+
+// Probe 는 PostgreSQL 연결 가용성을 확인한다(Ping, read-only). 진단용.
+func (s *Store) Probe(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return s.pool.Ping(ctx)
+}
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
 

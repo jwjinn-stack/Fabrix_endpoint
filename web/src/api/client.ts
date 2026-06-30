@@ -1,5 +1,10 @@
 import type {
   APIKeyView,
+  Capabilities,
+  ConfigStatus,
+  ConfigView,
+  DiagReport,
+  DiagStatus,
   ChatMessage,
   ChatResponse,
   DashboardOverview,
@@ -11,8 +16,13 @@ import type {
   GPUReport,
   GPUTimeseries,
   GuardAuditReport,
+  GuardContent,
   GuardPolicy,
   GuardVerdict,
+  MaskingPolicy,
+  MetricDimension,
+  MetricMeta,
+  MetricsBreakdown,
   HarborModel,
   HarborStatus,
   ImportResult,
@@ -24,6 +34,10 @@ import type {
   ThirdPartyCred,
   TimeRange,
   Timeseries,
+  SessionDetail,
+  SessionListReport,
+  TraceDetail,
+  TraceListReport,
   UsageReport,
   UsageTrend,
   User,
@@ -55,6 +69,58 @@ async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await res.json()) as T;
 }
 
+// 배포 프로파일·기능 집합. 부팅 시 1회 받아 NAV·버튼·접근을 토글한다.
+export function fetchCapabilities(signal?: AbortSignal): Promise<Capabilities> {
+  return getJSON<Capabilities>(`/capabilities`, signal);
+}
+
+// 외부 의존성 능동 프로브 결과(연동 상태). 실사이트 연동·디버깅용.
+// verbose=true 면 클라이언트별 심층 진단(Details, 추가 왕복)까지 수집한다.
+export function fetchDiagnostics(signal?: AbortSignal, verbose = false): Promise<DiagReport> {
+  return getJSON<DiagReport>(verbose ? `/diagnostics?verbose=1` : `/diagnostics`, signal);
+}
+
+// 셀프-reconfigure(A1) — 편집 가능 연동 설정 조회.
+export function fetchConfig(signal?: AbortSignal): Promise<ConfigView> {
+  return getJSON<ConfigView>(`/config`, signal);
+}
+
+// 재구성 진행 상태(롤아웃) 폴링.
+export function fetchConfigStatus(signal?: AbortSignal): Promise<ConfigStatus> {
+  return getJSON<ConfigStatus>(`/config/status`, signal);
+}
+
+// 단일 의존성 라이브 재프로브("지금 테스트") — read-only, 양 프로파일 공통.
+export function probeOne(name: string, signal?: AbortSignal): Promise<DiagStatus> {
+  return getJSON<DiagStatus>(`/diagnostics/${encodeURIComponent(name)}`, signal);
+}
+
+// 설정 저장 → ConfigMap patch + rollout restart(비동기 202). 검증 실패 시 e.fields 에 항목별 사유.
+export async function saveConfig(
+  fields: Record<string, string>,
+): Promise<{ phase: string; message: string; changed?: string[] }> {
+  const res = await fetch(apiPath(`/config`), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) {
+    let detail = "";
+    let fieldErrs: Record<string, string> | undefined;
+    try {
+      const b = (await res.json()) as { error?: string; fields?: Record<string, string> };
+      detail = b.error ? `: ${b.error}` : "";
+      fieldErrs = b.fields;
+    } catch {
+      /* ignore */
+    }
+    const e = new Error(`API ${res.status}${detail}`) as Error & { fields?: Record<string, string> };
+    if (fieldErrs) e.fields = fieldErrs;
+    throw e;
+  }
+  return (await res.json()) as { phase: string; message: string; changed?: string[] };
+}
+
 export function fetchOverview(range: TimeRange, signal?: AbortSignal): Promise<DashboardOverview> {
   return getJSON<DashboardOverview>(`/dashboard/overview?range=${range}`, signal);
 }
@@ -66,6 +132,25 @@ export function fetchTimeseries(range: TimeRange, signal?: AbortSignal): Promise
 export function fetchUsage(range: TimeRange, groupBy = "model", signal?: AbortSignal): Promise<UsageReport> {
   const q = new URLSearchParams({ range, group_by: groupBy });
   return getJSON<UsageReport>(`/usage?${q.toString()}`, signal);
+}
+
+// 메트릭 차원 groupby(L2). dim ∈ /metrics/dimensions 의 key(model|endpoint|namespace).
+export function fetchMetricsBreakdown(range: TimeRange, dim = "model", signal?: AbortSignal): Promise<MetricsBreakdown> {
+  const q = new URLSearchParams({ range, dim });
+  return getJSON<MetricsBreakdown>(`/metrics/breakdown?${q.toString()}`, signal);
+}
+
+// 메트릭 차원/카탈로그는 거의 정적 → 모듈 레벨 캐시로 마운트마다 재요청 방지(IMP-8).
+let _dimsCache: Promise<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }> | null = null;
+export function fetchMetricDimensions(_signal?: AbortSignal): Promise<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }> {
+  if (!_dimsCache) {
+    // 정적 카탈로그라 1회만 받아 캐시. 실패 시 캐시 비워 재시도 허용(abort 는 불필요).
+    _dimsCache = getJSON<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }>(`/metrics/dimensions`).catch((e) => {
+      _dimsCache = null;
+      throw e;
+    });
+  }
+  return _dimsCache;
 }
 
 export function fetchUsageTrend(range: TimeRange, signal?: AbortSignal): Promise<UsageTrend> {
@@ -106,6 +191,30 @@ export function fetchGuardStatus(signal?: AbortSignal): Promise<GuardStatus> {
 
 export function fetchGuardPolicy(signal?: AbortSignal): Promise<GuardPolicy> {
   return getJSON<GuardPolicy>(`/guard/policy`, signal);
+}
+
+// 차단 프롬프트 원문 — Langfuse GUARDRAIL observation 에서 lazy 조회(민감 데이터라 명시적 호출).
+export function fetchGuardContent(traceId: string, signal?: AbortSignal): Promise<GuardContent> {
+  return getJSON<GuardContent>(`/guard/content?trace_id=${encodeURIComponent(traceId)}`, signal);
+}
+
+// 마스킹 정책 — 게이트웨이 글루가 폴링해 ingestion 전 적용. 설정 화면에서 편집.
+export function fetchMaskingPolicy(signal?: AbortSignal): Promise<MaskingPolicy> {
+  return getJSON<MaskingPolicy>(`/masking/policy`, signal);
+}
+
+export async function setMaskingPolicy(policy: MaskingPolicy): Promise<MaskingPolicy> {
+  const res = await fetch(`${BASE}/masking/policy`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(policy),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as MaskingPolicy;
 }
 
 export async function setGuardPolicy(policy: GuardPolicy): Promise<GuardPolicy> {
@@ -222,6 +331,33 @@ export function fetchProxyStats(window = 300, signal?: AbortSignal): Promise<Pro
 
 export function fetchEnginePipeline(signal?: AbortSignal): Promise<EnginePipeline> {
   return getJSON<EnginePipeline>(`/proxy/pipeline`, signal);
+}
+
+export function fetchTraces(
+  range: TimeRange,
+  filters?: { decision?: string; status?: string; model?: string; app?: string },
+  signal?: AbortSignal,
+): Promise<TraceListReport> {
+  const q = new URLSearchParams({ range });
+  for (const k of ["decision", "status", "model", "app"] as const) {
+    const v = filters?.[k];
+    if (v && v !== "all") q.set(k, v);
+  }
+  return getJSON<TraceListReport>(`/traces?${q.toString()}`, signal);
+}
+
+export function fetchTrace(traceId: string, signal?: AbortSignal): Promise<TraceDetail> {
+  return getJSON<TraceDetail>(`/traces/${encodeURIComponent(traceId)}`, signal);
+}
+
+export function fetchSessions(range: TimeRange, app?: string, signal?: AbortSignal): Promise<SessionListReport> {
+  const q = new URLSearchParams({ range });
+  if (app && app !== "all") q.set("app", app);
+  return getJSON<SessionListReport>(`/sessions?${q.toString()}`, signal);
+}
+
+export function fetchSession(sessionId: string, signal?: AbortSignal): Promise<SessionDetail> {
+  return getJSON<SessionDetail>(`/sessions/${encodeURIComponent(sessionId)}`, signal);
 }
 
 export function fetchCredentials(signal?: AbortSignal): Promise<{ credentials: ThirdPartyCred[]; available: boolean }> {

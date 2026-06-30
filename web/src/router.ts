@@ -7,6 +7,8 @@ export const ROUTES: Record<Page, string> = {
   dashboard: "/dashboard",
   usage: "/usage",
   guard: "/guard",
+  traces: "/traces",
+  sessions: "/sessions",
   models: "/models",
   "model-import": "/models/import",
   playground: "/playground",
@@ -17,7 +19,33 @@ export const ROUTES: Record<Page, string> = {
   traffic: "/traffic",
   settings: "/settings",
   credentials: "/settings/credentials",
+  diagnostics: "/diagnostics",
 };
+
+// 화면 ↔ 필요한 capability(기능 플래그). 배포 프로파일(observe/manage)로 메뉴·접근을 게이팅한다.
+// undefined = 항상 허용. 값이 있으면 해당 cap 이 켜져야 노출/접근 가능(backend capability 키와 일치).
+export const PAGE_CAP: Partial<Record<Page, string>> = {
+  dashboard: "dashboard",
+  usage: "dashboard",
+  gpu: "dashboard",
+  traffic: "dashboard",
+  guard: "guard",
+  traces: "traces",
+  sessions: "traces",
+  models: "models",
+  "model-import": "models.write",
+  playground: "playground",
+  eval: "eval",
+  endpoints: "endpoints",
+  keys: "keys",
+  settings: "users",
+  credentials: "credentials",
+};
+
+// capForPage 는 해당 화면 노출/접근에 필요한 cap(없으면 undefined=항상 허용).
+export function capForPage(page: Page): string | undefined {
+  return PAGE_CAP[page];
+}
 
 const PATH_TO_PAGE: Record<string, Page> = Object.fromEntries(
   Object.entries(ROUTES).map(([page, path]) => [path, page as Page]),
@@ -42,8 +70,24 @@ export function pathForPage(page: Page, params?: Record<string, string | undefin
   return qs ? `${base}?${qs}` : base;
 }
 
-// 현재 URL 의 query 파라미터 1개 읽기(플레이그라운드 model 등).
+// 현재 URL 의 query 파라미터 1개 읽기(플레이그라운드 model, drill-through 필터 등).
 export function queryParam(name: string): string | undefined {
   if (typeof window === "undefined") return undefined;
   return new URLSearchParams(window.location.search).get(name) ?? undefined;
 }
+
+// NavParams — 화면 간 drill-through 시 운반하는 필터 컨텍스트(공통 차원 기반).
+// L1→L2→L3 이동에서 model/endpoint/namespace·시간·decision 을 URL 쿼리로 넘겨
+// 도착 화면이 동일 컨텍스트로 좁혀 보이게 한다(deep-link 가능).
+export type NavParams = {
+  model?: string; // playground 모델 / 차원=model 선택값
+  dim?: string; // groupby 차원: model|endpoint|namespace
+  key?: string; // 선택된 차원 값(그룹)
+  range?: string; // 시간 범위 코드(1h/6h/24h/7d)
+  decision?: string; // allowed|flagged|blocked
+  from?: string; // 시간窓 시작(RFC3339) — metric→trace 조인
+  to?: string; // 시간窓 끝
+};
+
+// NavFn — 모든 화면이 공유하는 네비게이션 시그니처(필터 컨텍스트 운반).
+export type NavFn = (page: Page, params?: NavParams) => void;

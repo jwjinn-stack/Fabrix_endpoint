@@ -41,6 +41,8 @@ export default function Eval() {
   }, [model, judge, prompt, criteria, busy]);
 
   const scoreColor = (s: number) => (s >= 4 ? "var(--green)" : s >= 2 ? "var(--amber)" : "var(--red)");
+  // O-12: 점수(1-5) → 평문 신뢰도 큐.
+  const scoreCue = (s: number) => (s >= 4.5 ? "매우 일치" : s >= 3.5 ? "대체로 일치" : s >= 2.5 ? "부분 일치" : "근거 부족");
   const avg = results.length ? results.reduce((a, r) => a + r.score, 0) / results.length : 0;
   // 세션 내 평가 추이(회귀 비교) — results 는 최신순, 추이는 과거→현재.
   const trend = [...results].reverse().map((r) => r.score);
@@ -95,21 +97,42 @@ export default function Eval() {
         </button>
       </div>
 
-      {results.map((r, i) => (
+      {results.length === 0 && !busy && (
+        <div className="card eval-guide">
+          <div className="empty" style={{ textAlign: "left", lineHeight: 1.6 }}>
+            <b>LLM-as-judge 평가</b><br />
+            대상 모델의 응답을 심판 모델이 1~5점으로 채점합니다. 모델 교체·양자화 전후 같은 프롬프트를 반복 실행해 점수 회귀를 확인하세요. 결과는 이 영역에 누적되고, 2건 이상이면 추이 차트가 나타납니다.
+          </div>
+        </div>
+      )}
+
+      {results.map((r, i) => {
+        const blocked = r.guard?.decision === "blocked";
+        return (
         <div className="card" key={i}>
           <div className="card-head">
             <h3>{r.model} {r.judge_model !== r.model && <span className="muted">· 심판 {r.judge_model}</span>}</h3>
+            {/* 확정(메트릭) vs 확률(AI 심판) 구분 — 점수는 LLM 판정이라 참고치임을 명시 */}
+            <span className="tag" title="LLM-as-judge 채점 — 결정론적 측정이 아닌 확률적 판정(참고치)">AI 심판</span>
             <span className="spacer" />
-            <span className="eval-score" style={{ color: scoreColor(r.score) }}>{r.score} / 5</span>
+            {blocked ? (
+              <span className="tag tag-red">평가 불가 · 응답 차단</span>
+            ) : (
+              <>
+                <span className="eval-score" style={{ color: scoreColor(r.score) }}>{r.score} / 5</span>
+                <span style={{ marginLeft: "var(--sp-2)", fontSize: "var(--fs-xs)", color: scoreColor(r.score), border: `1px solid ${scoreColor(r.score)}`, borderRadius: "var(--radius-sm)", padding: "1px 6px" }}>{scoreCue(r.score)}</span>
+              </>
+            )}
           </div>
           <dl className="detail-grid">
             <div className="detail-pair"><dt>프롬프트</dt><dd>{r.prompt}</dd></div>
-            <div className="detail-pair"><dt>응답</dt><dd>{r.guard?.decision === "blocked" ? <span className="tag tag-red">가드레일 차단</span> : r.response}</dd></div>
+            <div className="detail-pair"><dt>응답</dt><dd>{blocked ? <span className="tag tag-red">가드레일 차단</span> : r.response}</dd></div>
             <div className="detail-pair"><dt>채점 근거</dt><dd>{r.rationale}</dd></div>
             <div className="detail-pair"><dt>지연</dt><dd>{r.latency_ms}ms</dd></div>
           </dl>
         </div>
-      ))}
+        );
+      })}
     </>
   );
 }

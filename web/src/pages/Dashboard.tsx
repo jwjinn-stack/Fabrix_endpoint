@@ -1,25 +1,59 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchOverview, fetchTimeseries } from "../api/client";
-import type { DashboardOverview, TimeRange, Timeseries } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { DashboardOverview, Timeseries } from "../api/types";
+import type { NavFn } from "../router";
 import StatCard from "../components/StatCard";
 import BarList from "../components/BarList";
 import type { BarItem } from "../components/BarList";
 import TimeseriesChart from "../components/TimeseriesChart";
 import Alarms from "../components/Alarms";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
-
-const RANGES: { value: TimeRange; label: string }[] = [
-  { value: "1h", label: "최근 1시간" },
-  { value: "6h", label: "최근 6시간" },
-  { value: "24h", label: "최근 24시간" },
-  { value: "7d", label: "최근 7일" },
-];
+import { SkeletonCards } from "../components/Skeleton";
+import { RANGES, RangeSelect, useTimeRange } from "../timeRange";
 
 const REFRESH_MS = 15_000;
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const pct1 = (v: number) => `${(v * 100).toFixed(1)}%`;
+
+// ── 골든 시그널 "지금 정상?" 요약 ──
+// 관제 1순위 질문에 한눈에 답한다: 트래픽·에러·지연·포화 4신호 + 종합 상태등(green/amber/red).
+type SigTone = "green" | "amber" | "red";
+const TONE_RANK: Record<SigTone, number> = { green: 0, amber: 1, red: 2 };
+const STATUS_LABEL: Record<SigTone, string> = { green: "정상", amber: "주의", red: "위험" };
+// 임계: 값이 warn 이상이면 주의, crit 이상이면 위험(높을수록 나쁜 지표 기준).
+function sigTone(v: number, warn: number, crit: number): SigTone {
+  return v >= crit ? "red" : v >= warn ? "amber" : "green";
+}
+
+function HealthBanner({ overview }: { overview: DashboardOverview }) {
+  const errRate = (1 - overview.traffic.success_rate) * 100; // %
+  const signals: { k: string; v: string; tone: SigTone }[] = [
+    { k: "트래픽", v: `${overview.traffic.qps.toFixed(1)} QPS`, tone: "green" },
+    { k: "에러율", v: `${errRate.toFixed(2)}%`, tone: sigTone(errRate, 1, 5) },
+    { k: "지연 p95", v: `${overview.quality.ttft_p95_ms}ms`, tone: sigTone(overview.quality.ttft_p95_ms, 140, 250) },
+    { k: "GPU 포화", v: pct(overview.gpu.usage_perc), tone: sigTone(overview.gpu.usage_perc * 100, 85, 95) },
+  ];
+  const overall = signals.reduce<SigTone>((w, s) => (TONE_RANK[s.tone] > TONE_RANK[w] ? s.tone : w), "green");
+  return (
+    <div className={`health-banner ${overall}`} role="status" aria-live="polite">
+      <span className={`health-status ${overall}`}>
+        <span className="health-dot" aria-hidden="true" />
+        {STATUS_LABEL[overall]}
+      </span>
+      <span className="health-title">지금 시스템 상태</span>
+      <div className="health-signals">
+        {signals.map((s) => (
+          <span key={s.k} className={`health-sig ${s.tone}`}>
+            <span className="health-sig-dot" aria-hidden="true" />
+            <span className="health-sig-k">{s.k}</span>
+            <b>{s.v}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const mean = (a: number[]) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
 // 전기간 대비 변화율(%): 시계열을 전반/후반으로 나눠 평균 비교. 데이터 부족하면 미표시.
@@ -32,9 +66,9 @@ function deltaPct(vals: number[]): number | undefined {
   return ((cur - prev) / prev) * 100;
 }
 
-export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => void }) {
-  // 기본 24h — 열자마자 누적 데이터(가드레일·사용량)가 보이도록(idle 1h 는 0만 보임).
-  const [range, setRange] = useState<TimeRange>("24h");
+export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
+  // 기간은 전역 컨텍스트 공유 — 사용량·트레이스 화면과 동일 선택이 유지된다(G-05).
+  const { range } = useTimeRange();
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [series, setSeries] = useState<Timeseries | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +76,8 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
   const [refreshing, setRefreshing] = useState(false);
   // 관제뷰 빌더(#16) — 패널 표시 토글, localStorage 저장.
   const [editView, setEditView] = useState(false);
+  // D-03 인지부하: 기본은 핵심 3카드만(글랜스). GPU/MIG는 "더 보기"로 펼침(카드 영역 한정).
+  const [showMore, setShowMore] = useState(false);
   const [panels, setPanels] = useState<Record<string, boolean>>(() => {
     try {
       const s = localStorage.getItem("fabrix.dashboard.panels");
@@ -105,17 +141,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
         <span className="crumb">관제 / 대시보드</span>
         <div className="spacer" />
         <span className="updated">업데이트 {updatedAt}</span>
-        <select
-          className="range-select"
-          value={range}
-          onChange={(e) => setRange(e.target.value as TimeRange)}
-        >
-          {RANGES.map((r) => (
-            <option key={r.value} value={r.value}>
-              기간: {r.label}
-            </option>
-          ))}
-        </select>
+        <RangeSelect />
         <button type="button" className="btn-ghost" onClick={() => setEditView((v) => !v)} aria-pressed={editView}>
           {editView ? "편집 완료" : "뷰 편집"}
         </button>
@@ -157,19 +183,21 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
         </div>
       )}
 
-      {!error && loading && !overview && (
-        <div className="state" role="status" aria-live="polite">
-          관제 지표를 집계하는 중입니다…
-        </div>
-      )}
+      {!error && loading && !overview && <SkeletonCards count={4} />}
 
       {overview && series && (
         <>
+          <HealthBanner overview={overview} />
           {panels.cards && (
-          <div className="cards-4">
+          <>
+          {/* D-01/D-03: 동일 높이 KPI 타일 그리드(auto-fit) — 폭에 따라 3~4열로 자연 줄바꿈,
+              카드 높이가 어긋나지 않는다. GPU/MIG 는 기본 숨김, "더 보기"로 4번째 타일 추가. */}
+          <div className="kpi-grid">
             <StatCard
               title="실시간 트래픽"
               info="vLLM 엔진 실행/대기 요청 수와 성공률"
+              link="트래픽 상세 →"
+              onLink={() => onNavigate?.("traffic")}
               onRefresh={() => load()}
               metrics={[
                 { label: "QPS", value: overview.traffic.qps.toFixed(1), spark: sparkQps, delta: deltaPct(sparkQps), deltaGood: "up" },
@@ -187,9 +215,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
             <StatCard
               title="응답 품질"
               info="TTFT/ITL 분포와 KV prefix 캐시 적중률"
+              link="차원 분해 →"
+              onLink={() => onNavigate?.("usage")}
               onRefresh={() => load()}
               metrics={[
-                { label: "TTFT p50", value: overview.quality.ttft_p50_ms, unit: "ms" },
                 { label: "TTFT p95", value: overview.quality.ttft_p95_ms, unit: "ms", tone: overview.quality.ttft_p95_ms > 140 ? "amber" : undefined, spark: sparkTtft, delta: deltaPct(sparkTtft), deltaGood: "down" },
                 { label: "ITL avg", value: overview.quality.itl_avg_ms, unit: "ms" },
                 { label: "캐시 hit", value: pct(overview.quality.cache_hit_rate), bar: overview.quality.cache_hit_rate, barColor: "var(--teal)" },
@@ -202,29 +231,39 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (p: Page) => vo
               onLink={() => onNavigate?.("guard")}
               onRefresh={() => load()}
               metrics={[
-                { label: "차단", value: overview.guardrail.blocked, tone: "red", spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down" },
+                { label: "차단", value: overview.guardrail.blocked, tone: overview.guardrail.blocked > 0 ? "red" : undefined, spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down" },
                 { label: "PII", value: overview.guardrail.pii, tone: "pink" },
-                { label: "Jailbreak", value: overview.guardrail.jailbreak, tone: "red" },
                 { label: "flagged", value: overview.guardrail.flagged, tone: "amber" },
               ]}
             />
-            <StatCard
-              title="GPU / MIG"
-              info="GPU 사용률·KV 캐시·MIG 슬라이스 효율"
-              onRefresh={() => load()}
-              metrics={[
-                { label: "사용률", value: pct(overview.gpu.usage_perc), bar: overview.gpu.usage_perc },
-                { label: "KV 캐시", value: pct(overview.gpu.kv_cache_perc), bar: overview.gpu.kv_cache_perc, barColor: "var(--teal)" },
-                {
-                  label: "MIG 효율",
-                  value: overview.gpu.mig_efficiency.toFixed(2),
-                  tone: overview.gpu.mig_efficiency < 0.7 ? "amber" : "green",
-                  bar: overview.gpu.mig_efficiency,
-                  barColor: overview.gpu.mig_efficiency < 0.7 ? "var(--amber)" : "var(--green)",
-                },
-              ]}
-            />
+            {/* D-03: GPU/MIG는 기본 숨김 — "더 보기"로 펼친다. */}
+            {showMore && (
+              <StatCard
+                title="GPU / MIG"
+                info="GPU 사용률·KV 캐시·MIG 슬라이스 효율"
+                link="GPU 상세 →"
+                onLink={() => onNavigate?.("gpu")}
+                onRefresh={() => load()}
+                metrics={[
+                  { label: "사용률", value: pct(overview.gpu.usage_perc), bar: overview.gpu.usage_perc },
+                  { label: "KV 캐시", value: pct(overview.gpu.kv_cache_perc), bar: overview.gpu.kv_cache_perc, barColor: "var(--teal)" },
+                  {
+                    label: "MIG 효율",
+                    value: overview.gpu.mig_efficiency.toFixed(2),
+                    tone: overview.gpu.mig_efficiency < 0.7 ? "amber" : "green",
+                    bar: overview.gpu.mig_efficiency,
+                    barColor: overview.gpu.mig_efficiency < 0.7 ? "var(--amber)" : "var(--green)",
+                  },
+                ]}
+              />
+            )}
           </div>
+          <div style={{ marginTop: "calc(-1 * var(--sp-2))", marginBottom: "var(--sp-3)" }}>
+            <button type="button" className="btn-ghost" onClick={() => setShowMore((v) => !v)} aria-expanded={showMore}>
+              {showMore ? "GPU / MIG 접기 ▲" : "GPU / MIG 더 보기 ▼"}
+            </button>
+          </div>
+          </>
           )}
 
           {panels.distribution && (

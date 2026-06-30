@@ -6,13 +6,15 @@ export interface ShareItem {
   value: number;
 }
 
+// 단일 색 명도 램프 — --primary 를 surface 와 섞어 단계 생성(액센트 변경 시 자동 반영).
+// 카테고리에 의미색(amber=경고·pink=PII)을 섞지 않아 "데이터답게" 차분히 읽힌다.
 const PALETTE = [
   "var(--primary)",
-  "var(--teal)",
-  "var(--blue)",
-  "var(--amber)",
-  "var(--pink)",
-  "var(--primary-lite)",
+  "color-mix(in srgb, var(--primary) 78%, var(--surface))",
+  "color-mix(in srgb, var(--primary) 60%, var(--surface))",
+  "color-mix(in srgb, var(--primary) 45%, var(--surface))",
+  "color-mix(in srgb, var(--primary) 33%, var(--surface))",
+  "color-mix(in srgb, var(--primary) 24%, var(--surface))",
 ];
 
 export default function StackedShareBar({

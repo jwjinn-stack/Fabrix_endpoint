@@ -15,16 +15,16 @@ const (
 
 // ModelInfo — 카탈로그 카드 1개.
 type ModelInfo struct {
-	ID            string    `json:"id"`             // OpenAI model id
+	ID            string    `json:"id"` // OpenAI model id
 	DisplayName   string    `json:"display_name"`
-	Provider      string    `json:"provider"`       // google / qwen / baai ...
+	Provider      string    `json:"provider"` // google / qwen / baai ...
 	Type          ModelType `json:"type"`
 	ContextWindow int       `json:"context_window"` // 토큰
 	Serving       string    `json:"serving"`        // dynamo-agg | vllm
 	Namespace     string    `json:"namespace"`
 	Workload      string    `json:"workload,omitempty"` // k8s 워크로드명(readiness 조회 키)
-	Status        string    `json:"status"`         // ready | unknown | unreachable
-	Playground    bool      `json:"playground"`     // 채팅 플레이그라운드 가능 여부
+	Status        string    `json:"status"`             // ready | unknown | unreachable
+	Playground    bool      `json:"playground"`         // 채팅 플레이그라운드 가능 여부
 }
 
 // ModelCatalog — GET /api/v1/models 응답.

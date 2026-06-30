@@ -50,6 +50,24 @@ func New(kubectlPath, defaultNS string) *Client {
 // Enabled 는 CR 조작 가능 여부.
 func (c *Client) Enabled() bool { return c.enabled }
 
+// Probe 는 쿠버 API 서버 도달성을 확인한다(GET /healthz, read-only). 진단용.
+// enabled(=kubectl 바이너리 존재)와 달리 실제 클러스터 연결을 검증한다.
+// nonResourceURL /healthz 접근 권한이 없으면 에러가 그대로 노출된다(RBAC 점검 신호).
+func (c *Client) Probe(ctx context.Context) error {
+	if !c.enabled {
+		return fmt.Errorf("kubectl 미구성")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.kubectl, "get", "--raw=/healthz")
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s: %s", err, strings.TrimSpace(errb.String()))
+	}
+	return nil
+}
+
 func (c *Client) run(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -64,6 +82,87 @@ func (c *Client) run(ctx context.Context, stdin string, args ...string) ([]byte,
 		return out.Bytes(), fmt.Errorf("%s: %s", err, strings.TrimSpace(errb.String()))
 	}
 	return out.Bytes(), nil
+}
+
+// ── 셀프-reconfigure (A1) — 자기 ConfigMap patch + 자기 Deployment rollout restart.
+// 화면에서 연동 설정을 고치면 새 설정으로 무중단 재기동(readiness 통과 시에만 옛 파드 교체).
+
+// PatchConfigMap 은 ConfigMap.data 를 병합 패치한다(기존 키 유지, 준 키만 갱신).
+func (c *Client) PatchConfigMap(ctx context.Context, ns, name string, data map[string]string) error {
+	if !c.enabled {
+		return fmt.Errorf("kubectl 미구성")
+	}
+	patch, err := json.Marshal(map[string]any{"data": data})
+	if err != nil {
+		return err
+	}
+	_, err = c.run(ctx, "", "patch", "configmap", name, "-n", ns, "--type", "merge", "-p", string(patch))
+	return err
+}
+
+// RolloutRestart 는 Deployment 를 롤링 재기동한다(restartedAt 어노테이션 → 새 ReplicaSet).
+// envFrom ConfigMap 변경은 재기동 때만 반영되므로 patch 후 반드시 호출한다.
+func (c *Client) RolloutRestart(ctx context.Context, ns, deployment string) error {
+	if !c.enabled {
+		return fmt.Errorf("kubectl 미구성")
+	}
+	_, err := c.run(ctx, "", "rollout", "restart", "deployment/"+deployment, "-n", ns)
+	return err
+}
+
+// RolloutState 는 진행 중 재기동 상태(화면 폴링용).
+type RolloutState struct {
+	Phase    string `json:"phase"` // reconfiguring | ready | failed
+	Message  string `json:"message"`
+	Replicas int    `json:"replicas"`
+	Ready    int    `json:"ready"`
+	Updated  int    `json:"updated"`
+}
+
+// RolloutStatus 는 Deployment 의 진행 상태를 읽는다(observedGeneration·readyReplicas 기반).
+func (c *Client) RolloutStatus(ctx context.Context, ns, deployment string) (RolloutState, error) {
+	if !c.enabled {
+		return RolloutState{}, fmt.Errorf("kubectl 미구성")
+	}
+	out, err := c.run(ctx, "", "get", "deployment", deployment, "-n", ns, "-o", "json")
+	if err != nil {
+		return RolloutState{}, err
+	}
+	var d struct {
+		Metadata struct {
+			Generation int `json:"generation"`
+		} `json:"metadata"`
+		Spec struct {
+			Replicas int `json:"replicas"`
+		} `json:"spec"`
+		Status struct {
+			ObservedGeneration  int `json:"observedGeneration"`
+			Replicas            int `json:"replicas"`
+			ReadyReplicas       int `json:"readyReplicas"`
+			UpdatedReplicas     int `json:"updatedReplicas"`
+			UnavailableReplicas int `json:"unavailableReplicas"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(out, &d); err != nil {
+		return RolloutState{}, err
+	}
+	st := RolloutState{
+		Replicas: d.Spec.Replicas,
+		Ready:    d.Status.ReadyReplicas,
+		Updated:  d.Status.UpdatedReplicas,
+	}
+	// 롤아웃 완료 = 관측세대 일치 + 갱신/준비 레플리카가 목표치 도달 + 미가용 0.
+	done := d.Status.ObservedGeneration >= d.Metadata.Generation &&
+		d.Status.UpdatedReplicas >= d.Spec.Replicas &&
+		d.Status.ReadyReplicas >= d.Spec.Replicas &&
+		d.Status.UnavailableReplicas == 0
+	if done {
+		st.Phase, st.Message = "ready", "새 설정으로 재기동 완료"
+	} else {
+		st.Phase = "reconfiguring"
+		st.Message = fmt.Sprintf("재기동 중 (%d/%d 준비)", d.Status.ReadyReplicas, d.Spec.Replicas)
+	}
+	return st, nil
 }
 
 // Endpoint 는 엔드포인트(=DynamoGraphDeployment) 요약.

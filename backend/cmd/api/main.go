@@ -11,15 +11,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/audit"
+	"github.com/maymust/fabrix-endpoint/internal/capability"
 	"github.com/maymust/fabrix-endpoint/internal/catalog"
 	"github.com/maymust/fabrix-endpoint/internal/config"
 	"github.com/maymust/fabrix-endpoint/internal/guard"
 	"github.com/maymust/fabrix-endpoint/internal/harbor"
 	"github.com/maymust/fabrix-endpoint/internal/k8s"
+	"github.com/maymust/fabrix-endpoint/internal/langfuse"
 	"github.com/maymust/fabrix-endpoint/internal/provider"
 	"github.com/maymust/fabrix-endpoint/internal/store"
 	"github.com/maymust/fabrix-endpoint/internal/usage"
@@ -32,6 +35,18 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 
 	cfg := config.Load()
+
+	// 배포 프로파일 → 기능 집합 해석. observe(읽기 전용 관제, 예: 삼성증권) | manage(풀버전).
+	// 라우트는 이 집합에 따라 조건부 등록된다(server.Handler). FABRIX_FEATURES 로 고객사별 미세조정.
+	caps := capability.Resolve(cfg.Profile, cfg.Features)
+	enabled := make([]string, 0, len(caps))
+	for c, on := range caps {
+		if on {
+			enabled = append(enabled, c)
+		}
+	}
+	sort.Strings(enabled)
+	slog.Info("배포 프로파일", "profile", cfg.Profile, "readonly", caps.Readonly(), "features", cfg.Features, "enabled", enabled)
 
 	// 데이터 소스 선택. mock(기본) | live(VictoriaMetrics/vmselect 실데이터).
 	var dashboard provider.Dashboard
@@ -91,9 +106,17 @@ func main() {
 		}
 	}
 
+	// Langfuse 정합(트레이스/세션/가드레일 원문). 미설정 시 synthetic 폴백 — 서버 없이 동작.
+	lf := langfuse.New(cfg.LangfuseHost, cfg.LangfusePublicKey, cfg.LangfuseSecretKey)
+	if lf.Configured() {
+		slog.Info("Langfuse 연동됨", "host", cfg.LangfuseHost)
+	} else {
+		slog.Info("Langfuse 미설정 — 트레이스/세션/원문은 synthetic 으로 동작")
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(cfg, dashboard, cat, st, gc, as, us, kc, hc).Handler(),
+		Handler:           server.New(cfg, caps, dashboard, cat, st, gc, as, us, kc, hc, lf).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

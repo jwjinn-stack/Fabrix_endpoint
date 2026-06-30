@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
 // NewEventID 는 RFC4122 UUIDv4 문자열을 생성한다(ClickHouse UUID 컬럼용).
@@ -63,7 +64,7 @@ func (s *Sink) WORMStats(ctx context.Context) (int, string) {
 // 백그라운드 flusher 를 시작한다. raw 가 비면 비활성(증적 기능만 off).
 func New(raw, salt string) *Sink {
 	s := &Sink{
-		http: &http.Client{Timeout: 8 * time.Second},
+		http: &http.Client{Timeout: 8 * time.Second, Transport: httpx.Capturing(nil)},
 		salt: salt,
 		ch:   make(chan domain.GuardAuditRow, 1024),
 	}
@@ -89,6 +90,24 @@ func New(raw, salt string) *Sink {
 
 // Enabled 는 증적 적재 가능 여부.
 func (s *Sink) Enabled() bool { return s.enabled }
+
+// Probe 는 ClickHouse 도달성을 확인한다(SELECT 1, read-only). 진단용.
+func (s *Sink) Probe(ctx context.Context) error {
+	if !s.enabled {
+		return fmt.Errorf("clickhouse 미구성")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return s.exec(ctx, "SELECT 1", nil)
+}
+
+// ProbeWORM 은 WORM(MinIO Object Lock) 버킷 도달성을 확인한다(read-only). 진단용.
+func (s *Sink) ProbeWORM(ctx context.Context) error {
+	if s.worm == nil || !s.worm.Enabled() {
+		return fmt.Errorf("worm 미구성")
+	}
+	return s.worm.Probe(ctx)
+}
 
 // loop 는 버퍼에서 행을 모아 배치 적재한다(최대 100건 / 1초).
 func (s *Sink) loop() {

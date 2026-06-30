@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchCredentials, harborImport } from "../api/client";
 import type { ImportResult, ThirdPartyCred } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { NavFn } from "../router";
+import { useCap } from "../capabilities";
 
 // 모델 임포트 — NGC/HuggingFace/업로드 소스에서 모델을 Harbor 레지스트리로 가져온다.
 // Nutanix Enterprise AI "Import Model" 패턴. HF 다운로드는 [설정 > 서드파티 자격증명]의 토큰을 사용.
@@ -11,7 +12,8 @@ const SOURCES = [
   { value: "upload", title: "직접 업로드", icon: "↥", desc: "호환 포맷 모델을 파일/버킷에서 직접 업로드(개발: CLI push).", ph: "예: ./qwen2.5-0.5b", cred: "" },
 ] as const;
 
-export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, model?: string) => void }) {
+export default function ModelImport({ onNavigate }: { onNavigate: NavFn }) {
+  const canImport = useCap().can("models.write"); // 모델 임포트 권한 — observe 에선 false(읽기 전용)
   const [creds, setCreds] = useState<ThirdPartyCred[]>([]);
   const [imp, setImp] = useState<null | string>(null);
   const [impForm, setImpForm] = useState({ model_id: "", project: "models" });
@@ -58,6 +60,10 @@ export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, mode
         <button type="button" className="btn-ghost" onClick={() => onNavigate("models")}>← 모델 목록</button>
       </div>
 
+      {!canImport && (
+        <div className="state" role="status">읽기 전용 프로파일입니다. 모델 임포트는 관리(manage) 권한에서만 실행할 수 있습니다.</div>
+      )}
+
       <div className="import-intro">
         <p>NVIDIA NGC · Hugging Face 에서 검증된 모델을 가져오거나, 파일/버킷에서 직접 업로드합니다. 가져온 모델은 <b>Harbor 레지스트리</b>에 저장되어 Dynamo 가 서빙합니다.</p>
         <div className="cred-chips">
@@ -74,7 +80,9 @@ export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, mode
             <h3>{s.title}</h3>
             <p>{s.desc}</p>
             {s.cred && !credSet(s.cred) && <span className="chip warn" style={{ alignSelf: "flex-start" }}>토큰 필요</span>}
-            <button type="button" className="btn-primary" onClick={() => openImport(s.value)}>가져오기</button>
+            {canImport && (
+              <button type="button" className="btn-primary" onClick={() => openImport(s.value)}>가져오기</button>
+            )}
           </div>
         ))}
       </div>
@@ -83,6 +91,8 @@ export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, mode
         <div className="modal-overlay" onClick={() => setImp(null)}>
           <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head"><h3>모델 임포트 — {src.title}</h3><button type="button" className="icon" aria-label="닫기" onClick={() => setImp(null)}>✕</button></div>
+
+            {impBusy && <div className="import-progress" role="status" aria-label="처리 중"><span /></div>}
 
             {src.cred && !credSet(src.cred) && (
               <div className="state" role="status">
@@ -115,9 +125,11 @@ export default function ModelImport({ onNavigate }: { onNavigate: (p: Page, mode
               ) : (
                 <>
                   <button type="button" className="btn-ghost" onClick={doPreview} disabled={impBusy || !impForm.model_id.trim()}>미리보기</button>
-                  <button type="button" className="btn-primary" onClick={doApply} disabled={impBusy || !impForm.model_id.trim() || src.value === "upload"}>
-                    {impBusy ? "처리 중…" : "임포트 잡 실행"}
-                  </button>
+                  {canImport && (
+                    <button type="button" className="btn-primary" onClick={doApply} disabled={impBusy || !impForm.model_id.trim() || src.value === "upload"}>
+                      {impBusy ? "처리 중…" : "임포트 잡 실행"}
+                    </button>
+                  )}
                 </>
               )}
             </div>

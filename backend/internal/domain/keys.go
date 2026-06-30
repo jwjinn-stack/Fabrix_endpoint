@@ -27,13 +27,13 @@ type IssuedKey struct {
 
 // APIKeyView — 키 목록 1행 (마스킹 표시 + 쿼터 + 사용량 귀속).
 type APIKeyView struct {
-	APIKeyID   string  `json:"api_key_id"`
-	AppID      string  `json:"app_id"`
-	AppName    string  `json:"app_name"`
-	DeptID     string  `json:"dept_id"`
-	Name       string  `json:"name"`
-	ModelScope string  `json:"model_scope"`
-	KeyPrefix  string  `json:"key_prefix"`
+	APIKeyID       string   `json:"api_key_id"`
+	AppID          string   `json:"app_id"`
+	AppName        string   `json:"app_name"`
+	DeptID         string   `json:"dept_id"`
+	Name           string   `json:"name"`
+	ModelScope     string   `json:"model_scope"`
+	KeyPrefix      string   `json:"key_prefix"`
 	QuotaRPM       *int     `json:"quota_rpm,omitempty"`
 	QuotaTPD       *int64   `json:"quota_tpd,omitempty"`
 	AlertThreshold *float64 `json:"alert_threshold,omitempty"` // 0..1

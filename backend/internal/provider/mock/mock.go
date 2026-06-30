@@ -129,8 +129,8 @@ func (p *Provider) Overview(_ context.Context, rng domain.TimeRange) (domain.Das
 	}
 
 	return domain.DashboardOverview{
-		Range:       rng,
-		GeneratedAt: now.Format(time.RFC3339),
+		Range:        rng,
+		GeneratedAt:  now.Format(time.RFC3339),
 		Traffic:      traffic,
 		Quality:      quality,
 		Guardrail:    guardrail,
@@ -186,7 +186,7 @@ func (p *Provider) Timeseries(_ context.Context, rng domain.TimeRange) (domain.T
 func curve(i, n int, lo, hi, drift, phase float64) float64 {
 	t := float64(i) / float64(maxInt(n-1, 1))
 	base := math.Sin(2*math.Pi*2.5*t + phase + drift)
-	harm := 0.35 * math.Sin(2*math.Pi*6.0*t + phase*1.7)
+	harm := 0.35 * math.Sin(2*math.Pi*6.0*t+phase*1.7)
 	s := (base + harm + 1.35) / 2.7 // 대략 0..1 로 정규화
 	if s < 0 {
 		s = 0
@@ -218,6 +218,67 @@ func (p *Provider) Usage(_ context.Context, rng domain.TimeRange) (domain.UsageR
 		Range:       rng,
 		GeneratedAt: now.Format(time.RFC3339),
 		GroupBy:     "model",
+		Rows:        rows,
+	}, nil
+}
+
+// MetricsBreakdown 는 차원별(model|endpoint|namespace) 합성 분해를 반환한다(L2 groupby 패리티).
+func (p *Provider) MetricsBreakdown(_ context.Context, rng domain.TimeRange, dim string) (domain.MetricsBreakdown, error) {
+	label, ok := domain.DimensionLabel(dim)
+	if !ok {
+		return domain.MetricsBreakdown{}, fmt.Errorf("지원하지 않는 차원: %s", dim)
+	}
+	now := time.Now().UTC()
+	scale := guardScale(rng)
+	type seed struct {
+		key    string
+		weight float64 // 요청 비중
+		ttft   float64 // TTFT p95 기준(ms)
+		cache  float64 // 캐시 적중률
+	}
+	var seeds []seed
+	switch dim {
+	case "endpoint":
+		seeds = []seed{
+			{"/v1/chat/completions", 1.0, 130, 0.66},
+			{"/v1/completions", 0.35, 180, 0.41},
+			{"/v1/embeddings", 0.5, 40, 0.0},
+		}
+	case "namespace":
+		seeds = []seed{
+			{"wm-prod", 1.0, 132, 0.68},
+			{"wm-staging", 0.3, 156, 0.52},
+			{"research-sandbox", 0.18, 240, 0.33},
+		}
+	default: // model
+		seeds = []seed{
+			{"Qwen/Qwen3-30B-A3B", 1.0, 124, 0.70},
+			{"google/gemma-4-31b", 0.45, 520, 0.38},
+			{"meta-llama/Llama-4-8B", 0.6, 96, 0.55},
+		}
+	}
+	rows := make([]domain.MetricsBreakdownRow, 0, len(seeds))
+	for i, s := range seeds {
+		reqs := wave(now, 6000, 14000, 120, float64(i)) * s.weight * scale / 70
+		inTok := reqs * 280
+		outTok := reqs * 110
+		rows = append(rows, domain.MetricsBreakdownRow{
+			Key:              s.key,
+			Requests:         int64(reqs + 0.5),
+			QPS:              round(wave(now, 4, 16, 90, float64(i))*s.weight, 2),
+			TTFTp95ms:        round(s.ttft+wave(now, -8, 8, 70, float64(i)), 0),
+			ITLavgMs:         round(wave(now, 15, 24, 80, float64(i)*1.2), 0),
+			E2Ep95ms:         round(s.ttft*3+wave(now, 100, 400, 110, float64(i)), 0),
+			CacheHitRate:     round(s.cache, 3),
+			PromptTokens:     int64(inTok + 0.5),
+			CompletionTokens: int64(outTok + 0.5),
+		})
+	}
+	return domain.MetricsBreakdown{
+		Range:       rng,
+		GeneratedAt: now.Format(time.RFC3339),
+		Dimension:   dim,
+		Label:       label,
 		Rows:        rows,
 	}, nil
 }

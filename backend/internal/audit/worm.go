@@ -19,10 +19,10 @@ import (
 // WORM 은 가드레일 증적의 불변 보존(MinIO/ObjectScale Object Lock). 능가축(SSOT #20).
 // ClickHouse 는 가변 조회 미러, WORM 은 변경/삭제 불가 원본.
 type WORM struct {
-	cli       *minio.Client
-	bucket    string
+	cli        *minio.Client
+	bucket     string
 	retainDays int
-	enabled   bool
+	enabled    bool
 }
 
 // NewWORM 은 MinIO(S3) 클라이언트를 만들고 Object Lock 버킷을 보장한다.
@@ -74,6 +74,23 @@ func NewWORM(raw, bucket string, retainDays int) *WORM {
 
 // Enabled 는 WORM 보존 가능 여부.
 func (w *WORM) Enabled() bool { return w.enabled }
+
+// Probe 는 MinIO/ObjectScale 버킷 도달성을 확인한다(BucketExists=HEAD, read-only). 진단용.
+func (w *WORM) Probe(ctx context.Context) error {
+	if !w.enabled {
+		return fmt.Errorf("worm 미구성")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	exists, err := w.cli.BucketExists(ctx, w.bucket)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("버킷 %s 없음", w.bucket)
+	}
+	return nil
+}
 
 // Put 은 증적 1건을 불변 객체로 저장한다(GOVERNANCE 보존, retainDays).
 // 키: guard-audit/YYYY/MM/DD/<event_id>.json

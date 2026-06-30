@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
 // entry 는 레지스트리 항목 = 카탈로그 메타 + 업스트림 OpenAI 베이스 URL.
@@ -30,7 +31,7 @@ type Catalog struct {
 // gemmaUpstream 만 환경별로 주입(dev=NodePort / 인클러스터=svc), 나머지는 인클러스터 DNS.
 func New(gemmaUpstream string) *Catalog {
 	return &Catalog{
-		http: &http.Client{Timeout: 60 * time.Second},
+		http: &http.Client{Timeout: 60 * time.Second, Transport: httpx.Capturing(nil)},
 		entries: []entry{
 			{
 				info: domain.ModelInfo{
@@ -74,6 +75,19 @@ func New(gemmaUpstream string) *Catalog {
 			},
 		},
 	}
+}
+
+// Probe 는 추론 업스트림(Dynamo/vLLM) 도달성을 확인한다. 대표로 첫 항목(gemma=env 주입)을
+// /v1/models 로 점검한다. 모델별 상세 readiness 는 카탈로그(Models)에서 확인. 진단용.
+func (c *Catalog) Probe(ctx context.Context) error {
+	if len(c.entries) == 0 {
+		return fmt.Errorf("등록된 업스트림 없음")
+	}
+	e := c.entries[0]
+	if st := c.probe(ctx, e.upstream); st != "ready" {
+		return fmt.Errorf("업스트림 %s 상태=%s", e.upstream, st)
+	}
+	return nil
 }
 
 // Models 는 카탈로그를 반환하고, 도달 가능한 모델은 /v1/models 로 status 를 갱신한다.

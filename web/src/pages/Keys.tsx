@@ -2,6 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchKeys, fetchOrg, issueKey, revokeKey } from "../api/client";
 import type { APIKeyView, IssuedKey, OrgApp } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import SummaryStrip from "../components/SummaryStrip";
+import { useCap } from "../capabilities";
 
 const CUSTOM = "__custom__";
 const nf = new Intl.NumberFormat("ko-KR");
@@ -33,6 +37,7 @@ function QuotaGauge({ used, limit, alert = 0.8 }: { used: number; limit?: number
 const won = (v: number) => `₩${Math.round(v).toLocaleString("ko-KR")}`;
 
 export default function Keys() {
+  const canWrite = useCap().can("keys.write"); // 키 발급·회수 권한(observe 에선 false)
   const [keys, setKeys] = useState<APIKeyView[]>([]);
   const [apps, setApps] = useState<OrgApp[]>([]);
   const [depts, setDepts] = useState<string[]>([]);
@@ -45,6 +50,8 @@ export default function Keys() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [detail, setDetail] = useState<APIKeyView | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState<APIKeyView | null>(null); // 회수 확인(비가역)
+  const { density, setDensity } = useTableDensity("keys");
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -108,9 +115,18 @@ export default function Keys() {
     }
   };
 
-  const revoke = async (id: string) => {
-    await revokeKey(id);
-    load();
+  const revoke = async () => {
+    if (!confirmRevoke) return;
+    setBusy(true);
+    try {
+      await revokeKey(confirmRevoke.api_key_id);
+      setConfirmRevoke(null);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const openIssueModal = () => {
@@ -147,9 +163,12 @@ export default function Keys() {
         <span className="crumb">키·앱 / API 키</span>
         <div className="spacer" />
         <span className="updated">{keys.length}개 키</span>
-        <button type="button" className="btn-primary" onClick={openIssueModal}>
-          + 키 발급
-        </button>
+        <DensityToggle density={density} onChange={setDensity} />
+        {canWrite && (
+          <button type="button" className="btn-primary" onClick={openIssueModal}>
+            + 키 발급
+          </button>
+        )}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
@@ -180,12 +199,22 @@ export default function Keys() {
 
       {!error && loading && keys.length === 0 && <div className="state" role="status">키 목록을 불러오는 중…</div>}
 
+      {keys.length > 0 && (
+        <SummaryStrip items={[
+          { label: "전체 키", value: keys.length },
+          { label: "활성", value: keys.filter((k) => k.enabled).length, tone: "green" },
+          { label: "회수됨", value: keys.filter((k) => !k.enabled).length },
+          { label: "예산 임계 초과", value: keys.filter((k) => k.quota_tpd && (k.tokens_today ?? 0) / k.quota_tpd >= (k.alert_threshold ?? 0.8)).length, tone: keys.some((k) => k.quota_tpd && (k.tokens_today ?? 0) / k.quota_tpd >= (k.alert_threshold ?? 0.8)) ? "amber" : "default" },
+        ]} />
+      )}
+
       <div className="card">
         <div className="card-head"><h3>API 키</h3></div>
         {keys.length === 0 && !loading ? (
           <div className="empty">발급된 키가 없습니다. “+ 키 발급”으로 시작하세요.</div>
         ) : (
-          <table className="usage-table">
+          <div className="table-scroll">
+          <table className={`usage-table sticky-first density-${density}`}>
             <thead>
               <tr>
                 <th>키 이름</th>
@@ -224,7 +253,7 @@ export default function Keys() {
                   </td>
                   <td className="num">
                     {k.enabled && (
-                      <button type="button" className="btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); revoke(k.api_key_id); }}>
+                      <button type="button" className="btn-danger-ghost" disabled={!canWrite} title={canWrite ? "이 키를 회수(비활성화)합니다" : "읽기 전용 모드"} onClick={(e) => { e.stopPropagation(); setConfirmRevoke(k); }}>
                         회수
                       </button>
                     )}
@@ -233,6 +262,7 @@ export default function Keys() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -350,6 +380,21 @@ export default function Keys() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmRevoke}
+        title="API 키 회수"
+        danger
+        busy={busy}
+        confirmLabel="회수"
+        message={
+          <>
+            <b>{confirmRevoke?.name}</b> 키를 회수합니다. 이 키를 쓰는 앱의 호출이 즉시 거부되며 <b>되돌릴 수 없습니다</b>(새 키 재발급 필요).
+          </>
+        }
+        onConfirm={revoke}
+        onCancel={() => setConfirmRevoke(null)}
+      />
     </>
   );
 }

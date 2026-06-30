@@ -7,7 +7,8 @@
 //
 // SummingMergeTree 주의: ORDER BY 외 모든 숫자 컬럼이 머지 시 합산된다.
 // → 가산 가능한 컬럼만 채운다(req_count·prompt/completion_tokens·error_count).
-//   지연 분위수(ttft/itl)는 합산 불가 → 0(모델 축은 vmselect 가 담당).
+//
+//	지연 분위수(ttft/itl)는 합산 불가 → 0(모델 축은 vmselect 가 담당).
 package usage
 
 import (
@@ -23,6 +24,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
 // Event 는 단일 추론 요청의 사용량(프록시에서 생성).
@@ -49,7 +51,7 @@ type Sink struct {
 
 // New 는 ClickHouse URL(creds 포함)로 Sink 를 만들고 배치 worker 를 시작한다.
 func New(raw string) *Sink {
-	s := &Sink{http: &http.Client{Timeout: 8 * time.Second}, ch: make(chan Event, 2048)}
+	s := &Sink{http: &http.Client{Timeout: 8 * time.Second, Transport: httpx.Capturing(nil)}, ch: make(chan Event, 2048)}
 	if raw == "" {
 		return s
 	}
@@ -71,6 +73,16 @@ func New(raw string) *Sink {
 
 // Enabled 는 롤업 적재 가능 여부.
 func (s *Sink) Enabled() bool { return s.enabled }
+
+// Probe 는 ClickHouse 도달성을 확인한다(SELECT 1, read-only). 진단용.
+func (s *Sink) Probe(ctx context.Context) error {
+	if !s.enabled {
+		return fmt.Errorf("clickhouse 미구성")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return s.exec(ctx, "SELECT 1", nil)
+}
 
 // Enqueue 는 사용량 이벤트를 비동기 큐에 넣는다(핫패스 비차단).
 func (s *Sink) Enqueue(e Event) {
@@ -161,11 +173,11 @@ func (s *Sink) QueryRollup(ctx context.Context, rng domain.TimeRange, group stri
 	GROUP BY k HAVING requests > 0 ORDER BY requests DESC LIMIT 200 FORMAT JSON`, col, chInterval(rng))
 	var out struct {
 		Data []struct {
-			K                string  `json:"k"`
-			Requests         chInt   `json:"requests"`
-			PromptTokens     chInt   `json:"prompt_tokens"`
-			CompletionTokens chInt   `json:"completion_tokens"`
-			Errors           chInt   `json:"errors"`
+			K                string `json:"k"`
+			Requests         chInt  `json:"requests"`
+			PromptTokens     chInt  `json:"prompt_tokens"`
+			CompletionTokens chInt  `json:"completion_tokens"`
+			Errors           chInt  `json:"errors"`
 		} `json:"data"`
 	}
 	if err := s.queryJSON(ctx, q, &out); err != nil {

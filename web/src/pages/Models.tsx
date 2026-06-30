@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchHarborModels, fetchHarborStatus, fetchModelMetrics } from "../api/client";
 import type { HarborModel, HarborStatus, ModelMetric } from "../api/types";
-import type { Page } from "../components/Layout";
+import type { NavFn } from "../router";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
+import { useCap } from "../capabilities";
 
 // 서빙 중 모델 메트릭을 Harbor 레포 이름에 매칭(정규화 후 부분일치).
 function norm(s: string): string {
@@ -33,7 +34,10 @@ function human(bytes: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
-export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: string) => void }) {
+export default function Models({ onNavigate }: { onNavigate: NavFn }) {
+  const { can } = useCap();
+  const canImport = can("models.write"); // 모델 임포트 권한
+  const canDeploy = can("endpoints.write"); // 엔드포인트 생성 권한
   const [models, setModels] = useState<HarborModel[]>([]);
   const [status, setStatus] = useState<HarborStatus | null>(null);
   const [available, setAvailable] = useState(true);
@@ -42,6 +46,8 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
   const [detail, setDetail] = useState<HarborModel | null>(null);
   const [metrics, setMetrics] = useState<ModelMetric[]>([]);
   const [q, setQ] = useState("");
+  const [proj, setProj] = useState("all"); // 프로젝트 필터
+  const [deployFilter, setDeployFilter] = useState("all"); // 배포 상태 필터: all|deployed|undeployed
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -69,6 +75,18 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
     return () => ctrl.abort();
   }, [load]);
 
+  const projects = [...new Set(models.map((m) => m.project))].sort();
+  const visibleModels = models.filter((m) => {
+    if (q.trim() && !`${m.name} ${m.full_ref} ${m.tags.join(" ")}`.toLowerCase().includes(q.trim().toLowerCase())) return false;
+    if (proj !== "all" && m.project !== proj) return false;
+    if (deployFilter !== "all") {
+      const deployed = !!matchMetric(m.name, metrics)?.deployed;
+      if (deployFilter === "deployed" && !deployed) return false;
+      if (deployFilter === "undeployed" && deployed) return false;
+    }
+    return true;
+  });
+
   return (
     <>
       <div className="page-head">
@@ -77,9 +95,22 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
         <div className="spacer" />
         {status?.registry && <span className="updated">레지스트리 {status.registry} · {nf.format(status.model_count ?? 0)}개</span>}
         {available && models.length > 0 && (
-          <input className="search-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="모델 검색…" aria-label="모델 검색" />
+          <>
+            <input className="search-input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="모델 검색…" aria-label="모델 검색" />
+            {projects.length > 1 && (
+              <select className="range-select" value={proj} onChange={(e) => setProj(e.target.value)} aria-label="프로젝트 필터">
+                <option value="all">프로젝트: 전체</option>
+                {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            )}
+            <select className="range-select" value={deployFilter} onChange={(e) => setDeployFilter(e.target.value)} aria-label="배포 상태 필터">
+              <option value="all">상태: 전체</option>
+              <option value="deployed">서빙 중</option>
+              <option value="undeployed">미배포</option>
+            </select>
+          </>
         )}
-        <button type="button" className="btn-primary" onClick={() => onNavigate("model-import")}>+ 모델 임포트</button>
+        {canImport && <button type="button" className="btn-primary" onClick={() => onNavigate("model-import")}>+ 모델 임포트</button>}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
@@ -91,9 +122,8 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
       {/* 모델 있음 → 카드 그리드 */}
       {available && models.length > 0 && (
         <div className="model-grid">
-          {models
-            .filter((m) => !q.trim() || `${m.name} ${m.full_ref} ${m.tags.join(" ")}`.toLowerCase().includes(q.trim().toLowerCase()))
-            .map((m) => {
+          {visibleModels.length === 0 && <div className="empty">조건에 맞는 모델이 없습니다. 검색·필터를 완화해 보세요.</div>}
+          {visibleModels.map((m) => {
             const mt = matchMetric(m.name, metrics);
             return (
             <div className="model-card" key={m.full_ref}>
@@ -102,6 +132,12 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
                 {mt?.deployed ? <Badge tone="green" dot>서빙 중</Badge> : <Badge tone="neutral">미배포</Badge>}
               </div>
               <h3 className="model-name">{m.name}</h3>
+              {/* 기능 태그 (표준 메타) */}
+              {mt && mt.features.length > 0 && (
+                <div className="model-features">
+                  {mt.features.map((f) => <span key={f} className="feat-tag">{f}</span>)}
+                </div>
+              )}
               <div className="model-meta">
                 <span>{m.tags.length ? m.tags.join(", ") : "untagged"}</span>
                 <span>·</span>
@@ -109,6 +145,15 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
                 <span>·</span>
                 <span>pull {nf.format(m.pulls)}</span>
               </div>
+              {/* 분해 단가 (입력/출력/캐시 — 비용 투명성) */}
+              {mt && (mt.price_in > 0 || mt.price_out > 0) && (
+                <div className="model-price" title="1M 토큰당 원 (자가호스팅 추정 단가)">
+                  <span className="mp-seg"><i>입력</i><b>₩{mt.price_in}</b></span>
+                  {mt.price_out > 0 && <span className="mp-seg"><i>출력</i><b>₩{mt.price_out}</b></span>}
+                  {mt.price_cached > 0 && <span className="mp-seg mp-cached"><i>캐시</i><b>₩{mt.price_cached}</b></span>}
+                  <span className="mp-unit">/ 1M tok</span>
+                </div>
+              )}
               {/* P4-6 운영 메트릭 칩 — 서빙 중인 모델에 한해 카드 전면 표시 */}
               {mt && (
                 <div className="model-ops">
@@ -121,7 +166,7 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
               )}
               <code className="model-id">{m.full_ref}</code>
               <div className="model-actions">
-                <button type="button" className="btn-primary" onClick={() => onNavigate("endpoints", m.name)}>엔드포인트 생성 →</button>
+                {canDeploy && <button type="button" className="btn-primary" onClick={() => onNavigate("endpoints", { model: m.name })}>엔드포인트 생성 →</button>}
                 <button type="button" className="btn-ghost" onClick={() => setDetail(m)}>상세</button>
               </div>
             </div>
@@ -138,15 +183,17 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
             <div className="empty-models-title">사용 가능한 모델이 없습니다</div>
             <div className="empty-models-desc">NVIDIA NGC·Hugging Face 에서 검증된 모델을 가져오거나, 파일/버킷에서 직접 업로드해 시작하세요. 가져온 모델은 Harbor 레지스트리에 저장되어 Dynamo 가 서빙합니다.</div>
           </div>
-          <div className="import-cards">
-            {SOURCES.map((s) => (
-              <div className="card import-card" key={s.value}>
-                <h3>{s.title}</h3>
-                <p>{s.desc}</p>
-                <button type="button" className="btn-primary" onClick={() => onNavigate("model-import")}>{s.btn}</button>
-              </div>
-            ))}
-          </div>
+          {canImport && (
+            <div className="import-cards">
+              {SOURCES.map((s) => (
+                <div className="card import-card" key={s.value}>
+                  <h3>{s.title}</h3>
+                  <p>{s.desc}</p>
+                  <button type="button" className="btn-primary" onClick={() => onNavigate("model-import")}>{s.btn}</button>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
 
@@ -155,7 +202,7 @@ export default function Models({ onNavigate }: { onNavigate: (p: Page, model?: s
         title={detail ? `모델 · ${detail.name}` : ""}
         subtitle={detail?.project}
         onClose={() => setDetail(null)}
-        footer={detail && <button type="button" className="btn-primary" onClick={() => { onNavigate("endpoints", detail.name); setDetail(null); }}>엔드포인트 생성 →</button>}
+        footer={detail && canDeploy ? <button type="button" className="btn-primary" onClick={() => { onNavigate("endpoints", { model: detail.name }); setDetail(null); }}>엔드포인트 생성 →</button> : undefined}
       >
         {detail && (
           <>
