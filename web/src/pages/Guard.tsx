@@ -9,6 +9,7 @@ import GuardOverview from "../components/GuardOverview";
 import EventHistogram from "../components/EventHistogram";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { useCap } from "../capabilities";
+import InfoTip from "../components/InfoTip";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -207,7 +208,7 @@ export default function Guard() {
         <div className="card">
           <div className="card-head">
             <h3>증적 목록</h3>
-            <span className="info" title="원문·PII 는 저장하지 않습니다. user_ref 는 비식별 해시입니다(SSOT 2-2).">ⓘ</span>
+            <InfoTip>원문·PII 는 저장하지 않습니다. user_ref 는 비식별 해시입니다(SSOT 2-2).</InfoTip>
             {status?.worm_enabled && (
               <span className="tag tag-green" title={`MinIO Object Lock 버킷 ${status.worm_bucket} — 변경·삭제 불가`}>
                 🔒 WORM 보존 {nf.format(status.worm_count)}건

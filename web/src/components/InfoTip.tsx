@@ -35,11 +35,11 @@ export default function InfoTip({ label = "설명 보기", children }: { label?:
       >
         ⓘ
       </button>
-      {open && (
-        <span role="tooltip" id={id} className="infotip-bubble">
-          {children}
-        </span>
-      )}
+      {/* role=status 라이브 영역을 항상 DOM 에 두고 열릴 때 내용을 채워, 스크린리더가 클릭 시 실제로
+          announce 하게 한다(Inclusive Components toggletip 패턴). 닫히면 비어 보이지 않는다. */}
+      <span role="status" id={id} className="infotip-live">
+        {open && <span className="infotip-bubble">{children}</span>}
+      </span>
     </span>
   );
 }

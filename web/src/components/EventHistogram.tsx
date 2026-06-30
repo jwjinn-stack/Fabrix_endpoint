@@ -1,4 +1,5 @@
 import type { GuardAuditRow } from "../api/types";
+import InfoTip from "./InfoTip";
 
 // 시간대별 위반 히스토그램 — 증적을 시간 버킷으로 스택(차단/표시/통과).
 // Splunk 타임라인 히스토그램 패턴(상용SW-화면UIUX-리서치 P4-9).
@@ -29,7 +30,7 @@ export default function EventHistogram({ rows }: { rows: GuardAuditRow[] }) {
     <div className="card">
       <div className="card-head">
         <h3>시간대별 증적 분포</h3>
-        <span className="info" title="기간 내 가드레일 판정을 시간 버킷으로 집계(차단/표시/통과 스택).">ⓘ</span>
+        <InfoTip>기간 내 가드레일 판정을 시간 버킷으로 집계(차단/표시/통과 스택).</InfoTip>
         <span className="spacer" />
         <span className="histo-legend">
           <span><span className="histo-dot" style={{ background: "var(--red)" }} />차단</span>

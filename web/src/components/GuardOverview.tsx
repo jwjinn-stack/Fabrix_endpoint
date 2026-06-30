@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchGuardAudit, fetchGuardPolicy, fetchGuardStatus, type GuardStatus } from "../api/client";
 import type { GuardAuditRow, GuardPolicy } from "../api/types";
+import InfoTip from "./InfoTip";
 
 const nf = new Intl.NumberFormat("ko-KR");
 
@@ -71,7 +72,7 @@ export default function GuardOverview() {
 
       {/* 파이프라인 다이어그램 */}
       <div className="card">
-        <div className="card-head"><h3>가드레일 파이프라인</h3><span className="info" title="모든 추론 요청이 거치는 경로">ⓘ</span></div>
+        <div className="card-head"><h3>가드레일 파이프라인</h3><InfoTip>모든 추론 요청이 거치는 경로</InfoTip></div>
         <div className="pipe">
           <div className="pipe-node">사용자 요청</div>
           <div className="pipe-arrow">→</div>

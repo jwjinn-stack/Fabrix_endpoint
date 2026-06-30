@@ -7,6 +7,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import PipelineWaterfall from "../components/PipelineWaterfall";
 import EnginePipelinePanel from "../components/EnginePipelinePanel";
 import DimensionBreakdown from "../components/DimensionBreakdown";
+import InfoTip from "../components/InfoTip";
 
 const REFRESH_MS = 10_000;
 const nf = new Intl.NumberFormat("ko-KR");
@@ -133,7 +134,7 @@ export default function Traffic() {
       {/* HTTP 에러 코드 분해 (Analytics Errors 매핑) */}
       {s?.errors && (
         <div className="card">
-          <div className="card-head"><h3>HTTP 에러 분해 <span className="info" title="최근 윈도우 동안 코드별 응답 건수. 4xx=클라이언트 / 429=레이트리밋 / 5xx=서버">ⓘ</span></h3></div>
+          <div className="card-head"><h3>HTTP 에러 분해 <InfoTip>최근 윈도우 동안 코드별 응답 건수. 4xx=클라이언트 / 429=레이트리밋 / 5xx=서버</InfoTip></h3></div>
           <div className="err-codes">
             {([
               ["400", "Bad request", "blue"], ["401", "Unauthorized", "blue"],
@@ -152,7 +153,7 @@ export default function Traffic() {
       <div className="card">
         <div className="card-head">
           <h3>최근 요청 스트림</h3>
-          <span className="info" title="프록시를 통과한 최근 요청(증적 기반). 원문/PII 비저장.">ⓘ</span>
+          <InfoTip>프록시를 통과한 최근 요청(증적 기반). 원문/PII 비저장.</InfoTip>
           <span className="spacer" />
           <span className="updated">{stream.length}건</span>
         </div>

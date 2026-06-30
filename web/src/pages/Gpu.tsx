@@ -6,6 +6,7 @@ import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Sparkline from "../components/Sparkline";
 import GpuLedGrid from "../components/GpuLedGrid";
+import InfoTip from "../components/InfoTip";
 
 const REFRESH_MS = 15_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -126,7 +127,7 @@ export default function Gpu() {
         <div className="card">
           <div className="card-head">
             <h3>GPU 디바이스 ({rep.source === "live" ? "DCGM 실측" : "mock"})</h3>
-            <span className="info" title="MIG 효율 = GR_ENGINE_ACTIVE. 낮으면 슬라이스 과할당/유휴(문서 3-4).">ⓘ</span>
+            <InfoTip>MIG 효율 = GR_ENGINE_ACTIVE. 낮으면 슬라이스 과할당/유휴(문서 3-4).</InfoTip>
             <span className="spacer" />
             <span className="updated">{devices.length}개 디바이스</span>
           </div>

@@ -10,6 +10,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import UsageTrendChart from "../components/UsageTrendChart";
 import LatencyPanel from "../components/LatencyPanel";
 import RankCard from "../components/RankCard";
+import InfoTip from "../components/InfoTip";
 import { RangeSelect, useTimeRange } from "../timeRange";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -252,7 +253,7 @@ export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
         <div className="card">
           <div className="card-head">
             <h3>사용량 · 그룹: {groupMeta.label}</h3>
-            <span className="info" title={isModel ? "모델 축은 vmselect 메트릭 실측입니다." : "부서·앱·키 축은 추론 프록시 → usage_rollup 귀속 집계입니다(문서 §3-1)."}>ⓘ</span>
+            <InfoTip>{isModel ? "모델 축은 vmselect 메트릭 실측입니다." : "부서·앱·키 축은 추론 프록시 → usage_rollup 귀속 집계입니다(문서 §3-1)."}</InfoTip>
             <span className="spacer" />
             <span className="updated">요청 {nf.format(totalReq)} · 입력 {compact(totalIn)} · 출력 {compact(totalOut)} 토큰</span>
           </div>

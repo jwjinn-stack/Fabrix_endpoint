@@ -25,7 +25,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | grounded | 2026-06-30 |
 | IMP-18 | compete | 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨 | medium | L | high | grounded | 2026-06-30 |
 | IMP-19 | aesthetic | 인라인 style={{}} 175곳(36개 파일)이 토큰/유틸 체계를 잠식 — 일회성 스타일을 유틸 클래스로 수렴 | low | M | high | grounded | 2026-06-30 |
-| IMP-20 | ux | StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감 | medium | S | high | grounded | 2026-06-30 |
+| IMP-20 | ux | StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감 | medium | S | high | accepted | 2026-06-30 |
 | IMP-21 | ux | 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가 | medium | S | high | grounded | 2026-06-30 |
 | IMP-22 | ux | 생성·편집 폼이 인라인 검증·aria-invalid 없이 조용히 차단 — 죽은 상호작용(WCAG 3.3.1/3.3.3) | medium | M | high | grounded | 2026-06-30 |
 | IMP-23 | compete | 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음 | medium | M | high | grounded | 2026-06-30 |

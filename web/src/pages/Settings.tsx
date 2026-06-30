@@ -7,6 +7,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
+import InfoTip from "../components/InfoTip";
 
 // 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
 function BrandColorCard() {
@@ -15,7 +16,7 @@ function BrandColorCard() {
     <div className="card">
       <div className="card-head">
         <h3>외관 · 브랜드 색상</h3>
-        <span className="info" title="강조색(버튼·링크·차트·선택 상태)을 고객사 표준 색상으로 전환합니다. 이 브라우저에 저장됩니다.">ⓘ</span>
+        <InfoTip>강조색(버튼·링크·차트·선택 상태)을 고객사 표준 색상으로 전환합니다. 이 브라우저에 저장됩니다.</InfoTip>
       </div>
       <p className="policy-hint" style={{ marginTop: 0 }}>
         고객사 표준 색상에 맞춰 전체 UI 강조색이 즉시 바뀝니다. 라이트·다크 모드 공통으로 적용되며 이 브라우저에 저장됩니다.
@@ -200,7 +201,7 @@ export default function Settings() {
       <div className="card">
         <div className="card-head">
           <h3>사용자 · 역할</h3>
-          <span className="info" title="역할(Admin/User/Super)과 부서 매핑. 역할은 인라인으로 변경됩니다.">ⓘ</span>
+          <InfoTip>역할(Admin/User/Super)과 부서 매핑. 역할은 인라인으로 변경됩니다.</InfoTip>
         </div>
         {users.length === 0 && !loading ? (
           <div className="empty">사용자가 없습니다. “+ 사용자 추가”로 등록하세요.</div>
@@ -238,7 +239,7 @@ export default function Settings() {
       <div className="card">
         <div className="card-head">
           <h3>역할 × 권한 참조</h3>
-          <span className="info" title="역할별 허용 권한(읽기 전용 참조). 실제 강제는 API 레벨 RBAC.">ⓘ</span>
+          <InfoTip>역할별 허용 권한(읽기 전용 참조). 실제 강제는 API 레벨 RBAC.</InfoTip>
         </div>
         <table className="usage-table rbac-matrix">
           <thead>

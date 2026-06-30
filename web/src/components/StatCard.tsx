@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Sparkline from "./Sparkline";
+import InfoTip from "./InfoTip";
 
 export type Tone = "green" | "red" | "amber" | "pink" | "teal";
 
@@ -35,9 +36,11 @@ function Delta({ delta, good = "up" }: { delta: number; good?: "up" | "down" }) 
   if (rounded === 0) return <span className="delta flat">＝ 0%</span>;
   const up = rounded > 0;
   const isGood = (up && good === "up") || (!up && good === "down");
+  // 비필수 보강정보 — 툴팁(title=) 대신 말로 풀어쓴 aria-label, 화살표 글리프는 aria-hidden.
+  const aria = `전기간 대비 ${up ? "+" : "-"}${Math.abs(rounded)}% ${isGood ? "개선" : "악화"}`;
   return (
-    <span className={`delta ${isGood ? "good" : "bad"}`} title={`전기간 대비 ${up ? "+" : ""}${rounded}%`}>
-      {up ? "▲" : "▼"} {Math.abs(rounded)}%
+    <span className={`delta ${isGood ? "good" : "bad"}`} aria-label={aria}>
+      <span aria-hidden="true">{up ? "▲" : "▼"} {Math.abs(rounded)}%</span>
     </span>
   );
 }
@@ -62,11 +65,7 @@ export default function StatCard({
     <div className="card">
       <div className="card-head">
         <h3>{title}</h3>
-        {info && (
-          <span className="info" title={info}>
-            ⓘ
-          </span>
-        )}
+        {info && <InfoTip>{info}</InfoTip>}
         <span className="spacer" />
         {link && (
           <button type="button" className="link" onClick={onLink}>

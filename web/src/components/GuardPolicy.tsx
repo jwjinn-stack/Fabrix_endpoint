@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { classifyGuard, fetchGuardPolicy, setGuardPolicy } from "../api/client";
 import type { GuardPolicy as Policy, GuardVerdict, PolicyRule } from "../api/types";
+import InfoTip from "./InfoTip";
 
 const AXES: { key: keyof Policy; label: string; desc: string }[] = [
   { key: "pii", label: "PII 탐지", desc: "주민번호·계좌·여권·이메일 등 개인식별정보 (SR ModernBERT + 한국어 정규식)" },
@@ -98,7 +99,7 @@ export default function GuardPolicyPanel() {
       <div className="card">
         <div className="card-head">
           <h3>정책 카탈로그</h3>
-          <span className="info" title="각 축을 켜고 끄거나 차단/표시(flag) 동작을 지정합니다. 즉시 적용.">ⓘ</span>
+          <InfoTip>각 축을 켜고 끄거나 차단/표시(flag) 동작을 지정합니다. 즉시 적용.</InfoTip>
           <span className="spacer" />
           <button type="button" className="btn-primary" onClick={save} disabled={!dirty || saving}>
             {saving ? "저장 중…" : "정책 저장"}
@@ -140,7 +141,7 @@ export default function GuardPolicyPanel() {
       <div className="card">
         <div className="card-head">
           <h3>정책 테스트</h3>
-          <span className="info" title="현재 정책으로 텍스트를 즉시 분류합니다(프록시/증적 없음).">ⓘ</span>
+          <InfoTip>현재 정책으로 텍스트를 즉시 분류합니다(프록시/증적 없음).</InfoTip>
         </div>
         <div className="policy-test">
           <textarea value={testText} onChange={(e) => setTestText(e.target.value)} rows={2} placeholder="테스트할 프롬프트를 입력하세요" />

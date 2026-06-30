@@ -5,6 +5,7 @@ import type { Page } from "../components/Layout";
 import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonRows } from "../components/Skeleton";
 import InspectDrawer from "../components/InspectDrawer";
+import InfoTip from "../components/InfoTip";
 
 // 지연경고 임계 — 도달은 하지만 느린 경우 warn 으로 강조(O-07).
 const SLOW_MS = 400;
@@ -239,7 +240,7 @@ function NetworkPanel({ net }: { net: DiagNetwork }) {
     <div className="card diag-net">
       <div className="card-head">
         <h3>네트워크 · 설정 점검</h3>
-        <span className="info" title="이름 해석(CoreDNS)·resolv.conf·인클러스터·프록시·env→호스트 — 프로브 던지기 전 설정 검증">ⓘ</span>
+        <InfoTip>이름 해석(CoreDNS)·resolv.conf·인클러스터·프록시·env→호스트 — 프로브 던지기 전 설정 검증</InfoTip>
       </div>
 
       <div className="diag-net-facts">
@@ -352,7 +353,7 @@ export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => v
       <div className="card">
         <div className="card-head">
           <h3>외부 의존성</h3>
-          <span className="info" title="configured=env 구성됨 · reachable=실제 연결됨 · required_by=이 의존성이 받쳐주는 기능 · 단계바=DNS/TCP/TLS/서버 분해">ⓘ</span>
+          <InfoTip>configured=env 구성됨 · reachable=실제 연결됨 · required_by=이 의존성이 받쳐주는 기능 · 단계바=DNS/TCP/TLS/서버 분해</InfoTip>
         </div>
         {loading && !report ? (
           <SkeletonRows rows={8} cols={5} />

@@ -1,4 +1,5 @@
 import type { LatencyBreakdown } from "../api/types";
+import InfoTip from "./InfoTip";
 
 // 추론 지연 3분할 (P4-1, Grafana vLLM): TTFT / TPOT / E2E 각 p50/p95/p99 게이지.
 // 각 지표를 자기 p99 기준으로 정규화한 가로 게이지로 표시, SLO 임계 초과는 강조색.
@@ -92,9 +93,7 @@ export default function LatencyPanel({
     <div className="card lat-panel">
       <div className="card-head">
         <h3>추론 지연 분해</h3>
-        <span className="info" title="TTFT(첫 토큰)·TPOT(토큰당)·E2E(전체) 3분할. 게이지는 좌→우 p50/p95/p99, 점선은 SLO 임계.">
-          ⓘ
-        </span>
+        <InfoTip>TTFT(첫 토큰)·TPOT(토큰당)·E2E(전체) 3분할. 게이지는 좌→우 p50/p95/p99, 점선은 SLO 임계.</InfoTip>
         <span className="spacer" />
         {onRefresh && (
           <button type="button" className="act" onClick={onRefresh} aria-label="추론 지연 새로고침">

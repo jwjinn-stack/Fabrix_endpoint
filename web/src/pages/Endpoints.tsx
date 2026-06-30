@@ -11,6 +11,7 @@ import SummaryStrip from "../components/SummaryStrip";
 import DimensionBreakdown from "../components/DimensionBreakdown";
 import type { MetricsBreakdownRow } from "../api/types";
 import { useCap } from "../capabilities";
+import InfoTip from "../components/InfoTip";
 
 const CUSTOM = "__custom__";
 
@@ -331,7 +332,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       <div className="card">
         <div className="card-head">
           <h3>배포된 엔드포인트 (DynamoGraphDeployment)</h3>
-          <span className="info" title="실 클러스터의 모델 배포 CR. FABRIX 생성분만 삭제할 수 있습니다(운영 보호).">ⓘ</span>
+          <InfoTip>실 클러스터의 모델 배포 CR. FABRIX 생성분만 삭제할 수 있습니다(운영 보호).</InfoTip>
         </div>
         {eps.length === 0 && !loading ? (
           <div className="empty">배포된 엔드포인트가 없습니다. “+ 엔드포인트 생성”으로 모델을 배포하세요.</div>
