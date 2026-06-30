@@ -121,6 +121,11 @@ func (s *Server) Handler() http.Handler {
 		// 4개 tool 이 모두 s.dashboard 데이터를 쓰므로 Dashboard cap 게이트 안에 등록한다:
 		// "대시보드를 못 보면 MCP 로도 못 본다"(observe 읽기전용 정합성 — 미등록이 실제 차단).
 		mux.HandleFunc("POST /api/v1/mcp", s.handleMCP)
+
+		// IMP-9 PoC — 공식 MCP Go SDK(StreamableHTTP, stateless) 별도 라우트.
+		// 기존 수기 라우트(위)는 무수정 유지하고, groupby_metric 1개만 typed AddTool 로 이전한 PoC 를
+		// 나란히 노출해 회귀 없이 비교한다(사람 라이브 검증용). 동일한 Dashboard cap 게이트 안 — 정합성 유지.
+		mux.Handle("POST /api/v1/mcp/v2", s.mcpV2Handler())
 	}
 
 	// 모델 카탈로그 + Harbor 레지스트리 조회 — models cap.
