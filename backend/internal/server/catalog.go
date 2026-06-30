@@ -179,8 +179,15 @@ func (s *Server) handlePlaygroundChat(w http.ResponseWriter, r *http.Request) {
 	s.pstats.Record(verdict.LatencyMs, resp.LatencyMs, false, resp.Model)
 
 	// 일 토큰 예산 카운터 적립(P4-5 하드캡 입력) — x-api-key-id 제시 시.
+	// tpd 가 있으면 적립과 함께 임계/예산 교차를 보고 아웃바운드 알림 hook 을 발화한다(IMP-15).
 	if keyID := r.Header.Get("x-api-key-id"); keyID != "" && keyID != "-" {
-		s.quota.AddTokens(keyID, resp.PromptTokens+resp.CompletionTokens)
+		var tpd int64
+		if s.store != nil {
+			if q, _ := s.store.KeyQuota(r.Context(), keyID); q.Found && q.QuotaTPD != nil {
+				tpd = *q.QuotaTPD
+			}
+		}
+		s.quota.AddTokensWithBudget(keyID, resp.PromptTokens+resp.CompletionTokens, tpd)
 	}
 
 	// 사용량 롤업 적재(부서·앱·키 축 귀속, #4). 모든 추론이 프록시를 통과 = 트레이스 지점.

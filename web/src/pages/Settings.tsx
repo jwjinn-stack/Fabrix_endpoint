@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { createUser, deleteUser, fetchUsers, updateUser } from "../api/client";
-import type { User } from "../api/types";
+import { createUser, deleteUser, fetchUsers, updateUser, fetchAlertConfig, setAlertWebhook } from "../api/client";
+import type { User, AlertConfig } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -72,6 +72,83 @@ function BrandColorCard() {
         </label>
       </div>
       <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: "var(--sp-2)" }}>링크 예시</a></div>
+    </div>
+  );
+}
+
+// 아웃바운드 알림 채널 — 예산·임계 초과 시 제네릭 Webhook 으로 능동 통지(IMP-15).
+// manage 전용(credentials cap). 폐쇄망에서는 반드시 내부 relay URL(외부 SaaS 직결 금지).
+export function AlertWebhookCard() {
+  const toast = useToast();
+  const [cfg, setCfg] = useState<AlertConfig | null>(null);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setCfg(await fetchAlertConfig(signal));
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setCfg(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  const save = async (next: string) => {
+    setBusy(true);
+    try {
+      const r = await setAlertWebhook(next);
+      toast.success(r.webhook_configured ? "Webhook 채널을 등록했습니다." : "Webhook 채널을 해제했습니다.");
+      (r.warnings ?? []).forEach((w) => toast.error(w));
+      setUrl("");
+      load();
+    } catch (e) {
+      toast.error(humanizeError((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>아웃바운드 알림 · Webhook</h3>
+        <InfoTip>키별 예산·임계 초과 시 등록된 Webhook(JSON POST)으로 통지합니다. 비밀·평문 키는 페이로드에 포함되지 않으며(해시 토큰), 키별 “초과 시 통지” 토글이 켜진 키만 발송됩니다.</InfoTip>
+      </div>
+      <p className="policy-hint" style={{ marginTop: 0 }}>
+        상태: {cfg?.webhook_configured ? <Badge tone="green" dot>등록됨</Badge> : <Badge tone="neutral" dot>미등록</Badge>}
+        {" "}· 폐쇄망에서는 <b>내부 relay URL</b> 만 사용하세요(외부 SaaS 직결 금지). http/https 만 허용, 내부 메타데이터/루프백 주소는 거부됩니다.
+      </p>
+      <label className="pg-field">
+        <span>Webhook URL</span>
+        <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://relay.internal.example.com/fabrix-alerts" />
+      </label>
+      <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+        <button type="button" className="btn-primary" disabled={busy || !url.trim()} onClick={() => save(url.trim())}>{busy ? "저장 중…" : "등록"}</button>
+        {cfg?.webhook_configured && <button type="button" className="btn-ghost" disabled={busy} onClick={() => save("")}>해제</button>}
+      </div>
+      {cfg && cfg.audit.length > 0 && (
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="발송 이력">
+          <table className="usage-table">
+            <thead><tr><th>시각</th><th>채널</th><th>이벤트</th><th>토큰(해시)</th><th>결과</th></tr></thead>
+            <tbody>
+              {cfg.audit.slice(0, 10).map((r, i) => (
+                <tr key={i}>
+                  <td>{new Date(r.ts).toLocaleString("ko-KR", { hour12: false })}</td>
+                  <td>{r.channel}</td>
+                  <td>{r.event}</td>
+                  <td><code>{r.token}</code></td>
+                  <td>{r.ok ? <Badge tone="green" dot>성공</Badge> : <Badge tone="red" dot>실패</Badge>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -198,6 +275,7 @@ export default function Settings() {
 
       {error && <div className="state error" role="alert">{error}</div>}
       {canConfig && <ReconfigurePanel />}
+      {canConfig && <AlertWebhookCard />}
 
       <div className="card">
         <div className="card-head">

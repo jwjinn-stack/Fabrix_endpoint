@@ -2,8 +2,12 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
+	"strconv"
+	"sync"
 
+	"github.com/maymust/fabrix-endpoint/internal/alerting"
 	"github.com/maymust/fabrix-endpoint/internal/audit"
 	"github.com/maymust/fabrix-endpoint/internal/capability"
 	"github.com/maymust/fabrix-endpoint/internal/catalog"
@@ -28,6 +32,8 @@ type Server struct {
 	audit      *audit.Sink
 	usage      UsageSource // live=*usage.Sink / mock=mockstore
 	quota      *quota.Limiter
+	alerts     *alerting.Dispatcher // 예산·임계 초과 아웃바운드 통지(IMP-15). observe 는 발송 비활성.
+	alertNotify sync.Map             // map[apiKeyID]bool — 키별 '초과 시 통지' 토글(인메모리)
 	k8s        *k8s.Client
 	harbor     *harbor.Client
 	pstats     *proxystats.Collector
@@ -45,14 +51,24 @@ type Server struct {
 // New 는 주입된 의존성으로 Server 를 만든다. st 는 nil 일 수 있다.
 // caps 는 배포 프로파일(observe|manage)에서 해석된 기능 집합 — 어떤 라우트를 등록할지 결정한다.
 func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, cat *catalog.Catalog, st DataStore, gc *guard.Client, as *audit.Sink, us UsageSource, kc *k8s.Client, hc *harbor.Client, lf *langfuse.Client) *Server {
-	return &Server{
+	// 아웃바운드 알림 디스패처(IMP-15). profile 게이팅: observe(읽기 전용)는 발송 비활성.
+	// keys.write cap 이 있어야(=manage) 통지 채널을 운영·발송할 수 있다.
+	q := quota.New()
+	alerts := alerting.NewDispatcher(caps.Can(capability.KeysWrite), cfg.AuditSalt)
+	if cfg.AlertWebhookURL != "" && alerts.Enabled() {
+		if err := alerts.SetWebhook(cfg.AlertWebhookURL); err != nil {
+			slog.Warn("아웃바운드 알림 webhook URL 무효 — 발송 비활성", "err", err)
+		}
+	}
+	srv := &Server{
 		dashboard:  dashboard,
 		catalog:    cat,
 		store:      st,
 		guard:      gc,
 		audit:      as,
 		usage:      us,
-		quota:      quota.New(),
+		quota:      q,
+		alerts:     alerts,
 		k8s:        kc,
 		harbor:     hc,
 		pstats:     proxystats.New(),
@@ -86,6 +102,36 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 			{Name: "harbor", EnvKey: "FABRIX_HARBOR_URL", RawURL: cfg.HarborURL},
 		},
 	}
+	// 예산·임계 교차 hook(IMP-15) — 판정 신설 없이 quota 게이지 교차에 디스패치만 건다.
+	// 키별 '초과 시 통지' 토글이 켜진 키만 발송한다. 콜백은 비차단(디스패처가 go 발송).
+	q.OnThresholdCross(func(key, kind string, ratio float64, tpd int64) {
+		if v, ok := srv.alertNotify.Load(key); !ok || v != true {
+			return // 토글 꺼짐 → 통지 안 함
+		}
+		event := alerting.EventThresholdCrossed
+		if kind == "budget" {
+			event = alerting.EventBudgetCrossed
+		}
+		// spend/max_budget 은 추정 KRW(혼합 단가) — 평문 키·PII 미포함.
+		const mixKRWPerToken = 375.0 / 1_000_000.0
+		srv.alerts.Dispatch(key, alerting.Event{
+			Event:        event,
+			EventGroup:   "key",
+			Spend:        round1(float64(tpd) * ratio * mixKRWPerToken),
+			MaxBudget:    round1(float64(tpd) * mixKRWPerToken),
+			EventMessage: alertMessage(kind, ratio),
+		})
+	})
+	return srv
+}
+
+// alertMessage 는 사람용 요약(식별 정보 없음 — 해시 토큰만 페이로드에 포함).
+func alertMessage(kind string, ratio float64) string {
+	pct := int(ratio*100 + 0.5)
+	if kind == "budget" {
+		return "일 토큰 예산 한도(100%)를 초과했습니다(현재 " + strconv.Itoa(pct) + "%)."
+	}
+	return "일 토큰 예산 경고 임계를 초과했습니다(현재 " + strconv.Itoa(pct) + "%)."
 }
 
 // Handler 는 미들웨어가 적용된 최종 http.Handler 를 반환한다.
@@ -210,6 +256,9 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 		mux.HandleFunc("PUT /api/v1/config", s.handleSetConfig)
 		mux.HandleFunc("GET /api/v1/config/status", s.handleConfigStatus)
+		// 아웃바운드 알림 채널(IMP-15) — 예산·임계 초과 Webhook. manage 전용(민감·아웃바운드).
+		mux.HandleFunc("GET /api/v1/alerts/config", s.handleGetAlertConfig)
+		mux.HandleFunc("PUT /api/v1/alerts/webhook", s.handleSetAlertWebhook)
 	}
 
 	// 미들웨어 배선: Logger → CORS → Authn → RateLimit → handlers.

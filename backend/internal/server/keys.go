@@ -72,6 +72,10 @@ func (s *Server) handleIssueKey(w http.ResponseWriter, r *http.Request) {
 	if req.AlertThreshold != nil {
 		s.quota.SetAlertThreshold(issued.APIKeyID, *req.AlertThreshold)
 	}
+	// 초과 시 통지 토글(IMP-15) — 인메모리. 켜진 키만 임계/예산 교차 시 아웃바운드 발송.
+	if req.NotifyOnAlert {
+		s.alertNotify.Store(issued.APIKeyID, true)
+	}
 	httpx.JSON(w, http.StatusCreated, issued)
 }
 

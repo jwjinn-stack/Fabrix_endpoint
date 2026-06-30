@@ -72,6 +72,11 @@ type Config struct {
 	SelfDeployment string // env FABRIX_SELF_DEPLOYMENT (자기 Deployment 이름)
 	SelfConfigMap  string // env FABRIX_SELF_CONFIGMAP  (envFrom 으로 읽는 ConfigMap 이름)
 
+	// ── 아웃바운드 알림 (IMP-15). 예산·임계 초과 시 제네릭 Webhook 으로 능동 통지.
+	// observe(읽기 전용) 프로파일은 발송 비활성(manage 전용). 비면 미설정(발송 안 함).
+	// 폐쇄망에서는 반드시 내부 relay URL 이어야 한다(SSRF — 외부 SaaS 직결 금지).
+	AlertWebhookURL string // env FABRIX_ALERT_WEBHOOK_URL
+
 	// ── per-key 레이트리밋 (IMP-28). 키별 토큰버킷(httpx.RateLimit). 0 이면 비활성(통과).
 	// profile-aware 기본값: observe(읽기 관제, 폴링 다수 → 넉넉) > manage. env 로 명시 오버라이드 가능.
 	RateLimitRPS   float64 // env FABRIX_RATELIMIT_RPS   (초당 토큰 보충률, 키별)
@@ -109,6 +114,8 @@ func Load() Config {
 		LangfuseHost:      env("FABRIX_LANGFUSE_HOST", ""),
 		LangfusePublicKey: env("FABRIX_LANGFUSE_PUBLIC_KEY", ""),
 		LangfuseSecretKey: env("FABRIX_LANGFUSE_SECRET_KEY", ""),
+
+		AlertWebhookURL: env("FABRIX_ALERT_WEBHOOK_URL", ""),
 
 		SelfNamespace:  env("FABRIX_SELF_NAMESPACE", ""),
 		SelfDeployment: env("FABRIX_SELF_DEPLOYMENT", ""),
