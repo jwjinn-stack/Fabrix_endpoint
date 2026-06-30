@@ -206,6 +206,7 @@ export default function Settings() {
         {users.length === 0 && !loading ? (
           <div className="empty">사용자가 없습니다. “+ 사용자 추가”로 등록하세요.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className="usage-table">
             <thead>
               <tr><th>이름</th><th>이메일</th><th>역할</th><th>부서</th><th>상태</th><th></th></tr>
@@ -233,6 +234,7 @@ export default function Settings() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -241,6 +243,7 @@ export default function Settings() {
           <h3>역할 × 권한 참조</h3>
           <InfoTip>역할별 허용 권한(읽기 전용 참조). 실제 강제는 API 레벨 RBAC.</InfoTip>
         </div>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="usage-table rbac-matrix">
           <thead>
             <tr>
@@ -261,6 +264,7 @@ export default function Settings() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="policy-hint">모든 권한 토글·역할 변경은 감사 이벤트로 캡처됩니다. 상향 권한 부여 차단(자신보다 높은 역할 부여 불가)은 현재 사용자 컨텍스트 연동 후 활성화됩니다.</div>
       </div>
 

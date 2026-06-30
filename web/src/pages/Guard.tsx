@@ -220,6 +220,7 @@ export default function Guard() {
           {rows.length === 0 ? (
             <div className="empty">선택한 조건의 증적이 없습니다. 플레이그라운드에서 PII/Jailbreak 요청을 보내면 여기에 기록됩니다.</div>
           ) : (
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className="usage-table">
               <thead>
                 <tr>
@@ -252,6 +253,7 @@ export default function Guard() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

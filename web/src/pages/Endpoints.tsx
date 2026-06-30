@@ -337,6 +337,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
         {eps.length === 0 && !loading ? (
           <div className="empty">배포된 엔드포인트가 없습니다. “+ 엔드포인트 생성”으로 모델을 배포하세요.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className={`usage-table density-${density}`}>
             <thead>
               <tr>
@@ -379,6 +380,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

@@ -115,6 +115,7 @@ export default function Sessions() {
 
         {sessions.length > 0 && (
           <div className="tbl-scroll">
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
@@ -140,6 +141,7 @@ export default function Sessions() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

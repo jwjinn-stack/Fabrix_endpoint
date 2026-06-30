@@ -173,6 +173,7 @@ export default function Traces() {
 
         {traces.length > 0 && (
           <div className="tbl-scroll">
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
@@ -203,6 +204,7 @@ export default function Traces() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
@@ -442,6 +444,7 @@ function SpanAttrs({ span }: { span: TraceSpan }) {
         <span className={span.status === "error" ? "sa-err" : "sa-ok"}>{span.status}</span>
       </div>
       {entries.length > 0 && (
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="span-attr-table">
           <tbody>
             {entries.map(([k, v]) => (
@@ -449,6 +452,7 @@ function SpanAttrs({ span }: { span: TraceSpan }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

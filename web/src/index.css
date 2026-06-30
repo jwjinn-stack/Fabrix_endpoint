@@ -383,6 +383,8 @@ body {
   color: var(--text-faint);
   font-size: 12px;
 }
+/* 데이터 신선도 stale 배지(IMP-21) — 색 비의존(아이콘+텍스트) */
+.freshness-stale { color: var(--amber); font-weight: 600; }
 .range-select {
   background: var(--surface);
   border: 1px solid var(--border-strong);

@@ -8,6 +8,7 @@ import PipelineWaterfall from "../components/PipelineWaterfall";
 import EnginePipelinePanel from "../components/EnginePipelinePanel";
 import DimensionBreakdown from "../components/DimensionBreakdown";
 import InfoTip from "../components/InfoTip";
+import DataFreshness from "../components/DataFreshness";
 
 const REFRESH_MS = 10_000;
 const nf = new Intl.NumberFormat("ko-KR");
@@ -40,6 +41,7 @@ export default function Traffic() {
   const [stream, setStream] = useState<GuardAuditRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const [detail, setDetail] = useState<GuardAuditRow | null>(null);
   const [windowSec, setWindowSec] = useState(600); // D-07 로컬 라이브 윈도우(초)
 
@@ -54,6 +56,7 @@ export default function Traffic() {
       setPipeline(p);
       // 최신순 보장 — API 정렬 순서와 무관하게 ts 내림차순 후 상위 20건.
       setStream([...g.rows].sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, 20));
+      setLastLoaded(Date.now());
       setError(null);
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError((e as Error).message);
@@ -78,6 +81,7 @@ export default function Traffic() {
         <h1>트래픽 / 프록시</h1>
         <span className="crumb">관제 / 트래픽</span>
         <div className="spacer" />
+        <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
         <select className="range-select" value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} aria-label="라이브 윈도우">
           {WINDOWS.map((w) => (
             <option key={w.value} value={w.value}>윈도우: {w.label}</option>
@@ -160,6 +164,7 @@ export default function Traffic() {
         {stream.length === 0 ? (
           <div className="empty">최근 1시간 요청이 없습니다. 플레이그라운드에서 요청을 보내보세요.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className="usage-table">
             <thead>
               <tr>
@@ -182,6 +187,7 @@ export default function Traffic() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

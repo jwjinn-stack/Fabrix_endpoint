@@ -145,6 +145,7 @@ export default function MaskingPolicyPanel() {
           <span className="spacer" />
           <button type="button" className="btn-ghost btn-sm" onClick={addRule}>+ 규칙 추가</button>
         </div>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="usage-table">
           <thead>
             <tr><th>유형</th><th>표시명</th><th>처리</th><th></th></tr>
@@ -171,6 +172,7 @@ export default function MaskingPolicyPanel() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="policy-hint">
           처리: <b>보관</b>(그대로) · <b>마스킹</b>(부분 가림) · <b>해시</b>(비식별 대체) · <b>제거</b>([REDACTED]). 실제 적용은 게이트웨이 글루가 수행합니다.
         </div>

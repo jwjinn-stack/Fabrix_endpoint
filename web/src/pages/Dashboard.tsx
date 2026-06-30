@@ -9,6 +9,7 @@ import TimeseriesChart from "../components/TimeseriesChart";
 import Alarms from "../components/Alarms";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonCards } from "../components/Skeleton";
+import DataFreshness from "../components/DataFreshness";
 import { RANGES, RangeSelect, useTimeRange } from "../timeRange";
 
 const REFRESH_MS = 15_000;
@@ -74,6 +75,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastLoaded, setLastLoaded] = useState<number | null>(null); // 성공 fetch 수신 시각(신선도)
   // 관제뷰 빌더(#16) — 패널 표시 토글, localStorage 저장.
   const [editView, setEditView] = useState(false);
   // D-03 인지부하: 기본은 핵심 3카드만(글랜스). GPU/MIG는 "더 보기"로 펼침(카드 영역 한정).
@@ -100,6 +102,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
         const [o, s] = await Promise.all([fetchOverview(range, signal), fetchTimeseries(range, signal)]);
         setOverview(o);
         setSeries(s);
+        setLastLoaded(Date.now());
         setError(null);
       } catch (e) {
         if ((e as Error).name !== "AbortError") setError((e as Error).message);
@@ -125,10 +128,6 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
   // 분포 BarList 행 클릭 → 우측 슬라이드 상세.
   const [distDetail, setDistDetail] = useState<{ kind: "dept" | "app"; item: BarItem } | null>(null);
 
-  const updatedAt = overview
-    ? new Date(overview.generated_at).toLocaleTimeString("ko-KR", { hour12: false })
-    : "—";
-
   // KPI 카드 스파크라인/변화율 — 이미 받아온 시계열에서 산출(추가 호출 없음).
   const sparkQps = series?.points.map((p) => p.qps) ?? [];
   const sparkTtft = series?.points.map((p) => p.ttft_p95_ms) ?? [];
@@ -140,7 +139,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
         <h1>관제 대시보드</h1>
         <span className="crumb">관제 / 대시보드</span>
         <div className="spacer" />
-        <span className="updated">업데이트 {updatedAt}</span>
+        <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
         <RangeSelect />
         <button type="button" className="btn-ghost" onClick={() => setEditView((v) => !v)} aria-pressed={editView}>
           {editView ? "편집 완료" : "뷰 편집"}

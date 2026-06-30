@@ -22,11 +22,11 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
 | IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded | 2026-06-30 |
 | IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | done | 2026-06-30 |
-| IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | grounded | 2026-06-30 |
+| IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | done | 2026-06-30 |
 | IMP-18 | compete | 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨 | medium | L | high | grounded | 2026-06-30 |
 | IMP-19 | aesthetic | 인라인 style={{}} 175곳(36개 파일)이 토큰/유틸 체계를 잠식 — 일회성 스타일을 유틸 클래스로 수렴 | low | M | high | grounded | 2026-06-30 |
-| IMP-20 | ux | StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감 | medium | S | high | accepted | 2026-06-30 |
-| IMP-21 | ux | 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가 | medium | S | high | grounded | 2026-06-30 |
+| IMP-20 | ux | StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감 | medium | S | high | done | 2026-06-30 |
+| IMP-21 | ux | 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가 | medium | S | high | done | 2026-06-30 |
 | IMP-22 | ux | 생성·편집 폼이 인라인 검증·aria-invalid 없이 조용히 차단 — 죽은 상호작용(WCAG 3.3.1/3.3.3) | medium | M | high | grounded | 2026-06-30 |
 | IMP-23 | compete | 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음 | medium | M | high | grounded | 2026-06-30 |
 | IMP-24 | compete | 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가 | medium | M | high | grounded | 2026-06-30 |
@@ -205,6 +205,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (코드로 확인, not separately researched — low ambiguity) — grep 결과 table-scroll/sticky-first 는 index.css(정의)와 Keys.tsx(유일 사용)에만 등장. 다른 표 페이지(Usage/Guard/Settings/Traffic/Gpu/Playground)는 래퍼 없이 usage-table 직접 사용 → nowrap 셀 + 다컬럼 시 카드/페이지 가로 오버플로 위험. 클래스가 이미 존재하므로 적용만 하면 됨(저위험·추가형).
 - **Sources**: (코드 검증 — 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (low ambiguity, 구현 직행 — IMP-14 와 함께 표 페이지 일괄 정리 권장)
+- **Result** (2026-06-30, done · security-light: clean): 미래핑 `usage-table`/`span-attr-table` 14개를 `.table-scroll`(role=region·tabIndex=0·aria-label) 로 일괄 래핑 → 표만 가로 스크롤, 페이지 미오버플로. 시각 QA(900px): usage/traffic/gpu 페이지 가로 오버플로 0, 콘솔 에러 0. sticky-first(첫 컬럼 고정)는 시각 리스크로 follow-up. tsc·build 통과. spec: `specs/2026-06-30/IMP-17-table-scroll.md`.
 
 ### IMP-18 — 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨
 - **Type**: compete (sev=medium, effort=L)
@@ -232,6 +233,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 코드로 갭 정확 확인: StatCard.tsx:66 메트릭 ⓘ 가 `<span className="info" title=…>`(포커스 불가·마우스 전용), :39 Delta 가 `title={전기간 대비 …%}`. InfoTip(InfoTip.tsx)은 존재하나 grep 상 DimensionBreakdown 에서만 사용 → IMP-4 가 대시보드 최다노출 카드를 비껴감. 동일 안티패턴 ~7개 컴포넌트에도 존재(화면 전반 클린업). 권위: native title= 은 접근성상 비권장(스타일·타이밍·키보드·터치·SR 비일관) = WCAG 1.4.13 갭. 보강정보 전용 ⓘ 의 정석은 toggletip(클릭/Enter/Space) = 곧 InfoTip. Inclusive Components: toggletip 버블은 role=status 라이브 영역으로 클릭 시 채워야 실제 announce. Delta 같은 비필수 산문은 툴팁이 틀린 도구 — 가시/sr-only 라벨로 대체.
 - **Sources**: https://inclusive-components.design/tooltips-toggletips/ , https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus.html , https://sarahmhigley.com/writing/tooltips-in-wcag-21/
 - **Deep-dive suggestion**: 없음 (출처·정제 충분, 구현 직행 — IMP-4 후속, 기존 InfoTip 재사용이라 저위험·고가성비)
+- **Result** (2026-06-30, done · security-light: clean): InfoTip 버블을 `role=status` 라이브영역으로 하드닝(클릭 시 announce), StatCard ⓘ→InfoTip·Delta title=→aria-label(▲▼ aria-hidden). 코드베이스 `className="info" title=` 24곳 전부 InfoTip 으로(삼항/중첩 수동). 시각 QA: 대시보드 ⓘ 토글 open=true·버블 내용 채워짐, Delta aria-label='전기간 대비 +2.5% 개선', 콘솔 에러 0. tsc·build 통과. spec: `specs/2026-06-30/IMP-20-statcard-infotip-a11y.md`.
 
 ### IMP-21 — 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가
 - **Type**: ux (sev=medium, effort=S)
@@ -241,6 +243,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 가설이 관측/관제 대시보드 베스트 프랙티스와 정확히 일치. (1) 신선도 표시는 표준(groundcover Grafana best practices: stale 데이터 위험 + '마지막 갱신' 타임스탬프 + 색상코딩 권장; 자동갱신 주기는 데이터종류 차등 5~15s — 현 폴링과 부합). (2) 카운트다운 + 수동제어가 표준 UX(autorefresh.io countdown-mode·Power BI·ServiceNow). (3) visibilitychange 백그라운드 일시정지는 명시적 권장(배터리·rate-limit·throttle 멈춤 오인 해소). (4) React Query 는 dataUpdatedAt·refetchOnWindowFocus 로 자연 통합(IMP-8).
 - **Sources**: https://www.groundcover.com/learn/observability/grafana-dashboards , https://autorefresh.io/features/countdown-mode/ , https://tanstack.com/query/v4/docs/framework/react/guides/window-focus-refetching , https://reactuse.com/blog/react-timer-hooks/
 - **Deep-dive suggestion**: 없음 (출처 충분, 구현 직행 — IMP-8/IMP-16 과 조율; SWR 채택 시 신선도 로직 축소)
+- **Result** (2026-06-30, done · security-light: clean): 무의존 `DataFreshness`(1초 틱 상대시간 + 절대시각 title + '자동 Ns' + 색비의존 stale 배지 role=status) 신설, Dashboard·Gpu·Traffic 폴링 헤더에 적용(성공 fetch 시 lastLoaded 기록). Sessions 는 자동폴링 아님→제외. visibilitychange 일시정지·IMP-16 실패 결합은 follow-up. 시각 QA: '마지막 갱신 방금 · 자동 15s' 렌더 확인, 콘솔 에러 0. tsc·build 통과. spec: `specs/2026-06-30/IMP-21-data-freshness.md`.
 
 ### IMP-22 — 생성·편집 폼이 인라인 검증·aria-invalid 없이 조용히 차단 — 죽은 상호작용(WCAG 3.3.1/3.3.3)
 - **Type**: ux (sev=medium, effort=M)

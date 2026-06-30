@@ -265,6 +265,7 @@ export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
                 : "이 축의 귀속 데이터가 아직 없습니다. 플레이그라운드/프록시 요청이 누적되면 채워집니다."}
             </div>
           ) : (
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className="usage-table">
               <thead>
                 <tr>
@@ -291,6 +292,7 @@ export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

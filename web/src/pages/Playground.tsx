@@ -535,6 +535,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
               <h3>모델 비교 결과</h3>
               <button type="button" className="icon" aria-label="닫기" onClick={() => setCompareRows(null)}>✕</button>
             </div>
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className="usage-table">
               <thead>
                 <tr><th>모델</th><th>응답</th><th className="num">지연</th><th className="num">tok/s</th><th className="num">입력</th><th className="num">출력</th></tr>
@@ -552,6 +553,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
                 ))}
               </tbody>
             </table>
+            </div>
             <div className="modal-note">동일 프롬프트를 모든 도달 가능 모델에 동시 전송한 비교(Bedrock Compare 패턴). 단발 비교는 비스트리밍 호출이라 TTFT 는 채팅 응답에서만 표기됩니다.</div>
           </div>
         </div>

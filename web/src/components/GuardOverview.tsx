@@ -118,6 +118,7 @@ export default function GuardOverview() {
         {recent.length === 0 ? (
           <div className="empty">최근 차단된 요청이 없습니다.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className="usage-table">
             <thead><tr><th>시각</th><th>앱</th><th>유형</th><th>사유</th></tr></thead>
             <tbody>
@@ -131,6 +132,7 @@ export default function GuardOverview() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>
