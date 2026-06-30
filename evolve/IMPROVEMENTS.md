@@ -23,6 +23,24 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 
 > **참고 — 이전 스킴의 잔재 상태**: `deferred-sensitive`/`needs-poc`/`needs-design`는 초기 버전이 "보류 후 플랜/결정 게이트"로 쓰던 태그다. 현재는 모두 "빌드 → PR 검토"로 흡수됨 — `deferred-sensitive`→위 민감 빌드(+signoff 라벨), `needs-poc`→PoC 브랜치로 빌드 후 사람이 라이브 검증(예: IMP-9 MCP Inspector), `needs-design`→빌드 후 PR/Step 3.7에서 시각 검토. 앞으로 새로 갈리는 분기점은 `spike-needed` 하나뿐.
 
+## 배포 전 보안 확인 (`needs-security-signoff` 체크리스트)
+
+민감 항목은 **코드 빌드 + 보안 리뷰는 끝났지만, 머지/배포 전 아래를 사람이 확인**해야 한다. 대부분 **Go BFF 코드가 아니라 K8s/엣지 배포 설정·운영 정책 확인**이며(딱 1개만 엣지 yaml 수정 필요), 이 목록은 PR이 닫혀도 남도록 여기에 둔다. (`needs-security-signoff` PR과 1:1.)
+
+**IMP-28 — 인증·레이트리밋**
+- [ ] **[CRITICAL · 엣지설정 수정 필요]** 엣지가 클라이언트가 보낸 신원 헤더(`x-auth-request-user`/`x-user-id`/`x-dept-id`/`x-fabrix-app-id`)를 **STRIP** 하는지. ⚠️ 현재 `docs/templates/envoy-session-cookie-to-xuserid.yaml:47-48`은 클라 `x-user-id`를 **존중**(early-return)하므로 위조 가능 → **strip-then-inject**(세션쿠키/SSO 값만 주입)로 고쳐야 함. 검증: 외부에서 `curl -H "x-user-id: spoof@test"` → 백엔드 증적에 미반영 확인. (BFF 코드는 옳음 — 신원은 인가에 미사용, 증적·레이트리밋 키 용도만.)
+- [ ] **[운영 판단]** 멀티 레플리카 시 레이트리밋이 per-pod 인메모리라 실효 한도 ≈ N배. 단일 레플리카/안전장치 수준이면 수용, 정확한 전역 캡 필요하면 Redis 공유 store(후속).
+
+**IMP-32 — 트레이스 전문검색**
+- [ ] **[미래 · 실연동 시]** 실 ClickHouse 도입 시 검색 컬럼 allowlist에 **마스킹/가드 원문 컬럼을 절대 배제** + 누설 테스트. (현 mock/synthetic은 화이트리스트로 안전 — `TestQDoesNotLeakMaskedContent` 단언.)
+
+**IMP-15 — 아웃바운드 알림**
+- [ ] **[확인]** webhook 등록이 manage(KeysWrite) 프로파일만 가능 — 이미 코드로 강제(확인만). 폐쇄망은 내부 relay URL만.
+- [ ] **[선택 강화]** BFF pod에 K8s NetworkPolicy로 egress 대상 제한. DNS rebinding은 타임아웃(4s+9s)·재시도 1회로 폭발반경 제한(수용 판단).
+
+**IMP-9 — MCP go-sdk PoC** (main 머지됨, `/api/v1/mcp/v2` 별도 라우트)
+- [ ] **[라이브 검증]** MCP Inspector/Claude Code로 `/api/v1/mcp/v2` initialize·list·call 확인 + 공급망/라이선스(Apache-2.0/MIT, v1.6.1 핀) sign-off 후 나머지 tool 3개+resource 2개 이전 & 수기 mcp.go 제거(별도 PR).
+
 ## Open
 
 | ID | Type | Title | Severity | Effort | Confidence | Status | Created |
