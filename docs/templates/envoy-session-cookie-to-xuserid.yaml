@@ -44,10 +44,18 @@ spec:
         function envoy_on_request(handle)
           local h = handle:headers()
 
-          -- 1) 이미 x-user-id가 있으면 존중(프론트가 직접 실은 경우 우선)
-          if h:get("x-user-id") then return end
+          -- ★ 신뢰 경계(SECURITY): 클라이언트가 위조해 보낼 수 있는 신원 헤더를 먼저 전부
+          --   제거(STRIP)한다. 이 게이트웨이가 주입하는 값만 다운스트림(BFF)이 신뢰한다.
+          --   ⚠ 절대 클라이언트가 보낸 x-user-id 를 "존중"하지 말 것 — 그러면 누구나
+          --   `x-user-id: ceo@corp` 로 타인 신원을 위조할 수 있다(BFF IdentityFrom 의 전제).
+          h:remove("x-user-id")
+          h:remove("x-auth-request-user")
+          h:remove("x-dept-id")
+          h:remove("x-fabrix-app-id")
+          h:remove("x-app-id")
+          h:remove("x-fabrix-userid-source")
 
-          -- 2) 세션 쿠키에서 sessionID 추출
+          -- 세션 쿠키에서 sessionID 추출 → 권위있는 신원으로만 주입(strip-then-inject)
           local cookie = h:get("cookie")
           local sid = get_cookie(cookie, COOKIE_NAME)
 
