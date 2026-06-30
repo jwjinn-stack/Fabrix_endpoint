@@ -4,27 +4,35 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 
 ## Open
 
-| ID | Type | Title | Severity | Effort | Confidence | Status |
-|----|------|-------|----------|--------|------------|--------|
-| IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | done |
-| IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done |
-| IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | done |
-| IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | done |
-| IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
-| IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done |
-| IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | done |
-| IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | done |
-| IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded |
-| IMP-10 | code | 전역 React ErrorBoundary 부재 — 한 페이지의 렌더 throw가 관제 콘솔 전체를 백스크린 | high | S | high | grounded |
-| IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | grounded |
-| IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | grounded |
-| IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | grounded |
-| IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded |
-| IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded |
-| IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | grounded |
-| IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | grounded |
-| IMP-18 | compete | 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨 | medium | L | high | grounded |
-| IMP-19 | aesthetic | 인라인 style={{}} 175곳(36개 파일)이 토큰/유틸 체계를 잠식 — 일회성 스타일을 유틸 클래스로 수렴 | low | M | high | grounded |
+| ID | Type | Title | Severity | Effort | Confidence | Status | Created |
+|----|------|-------|----------|--------|------------|--------|----------|
+| IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | done | 2026-06-30 |
+| IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done | 2026-06-30 |
+| IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | done | 2026-06-30 |
+| IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | done | 2026-06-30 |
+| IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded | 2026-06-30 |
+| IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done | 2026-06-30 |
+| IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | done | 2026-06-30 |
+| IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | done | 2026-06-30 |
+| IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded | 2026-06-30 |
+| IMP-10 | code | 전역 React ErrorBoundary 부재 — 한 페이지의 렌더 throw가 관제 콘솔 전체를 백스크린 | high | S | high | grounded | 2026-06-30 |
+| IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | grounded | 2026-06-30 |
+| IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | grounded | 2026-06-30 |
+| IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | grounded | 2026-06-30 |
+| IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
+| IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded | 2026-06-30 |
+| IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | grounded | 2026-06-30 |
+| IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | grounded | 2026-06-30 |
+| IMP-18 | compete | 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨 | medium | L | high | grounded | 2026-06-30 |
+| IMP-19 | aesthetic | 인라인 style={{}} 175곳(36개 파일)이 토큰/유틸 체계를 잠식 — 일회성 스타일을 유틸 클래스로 수렴 | low | M | high | grounded | 2026-06-30 |
+| IMP-20 | ux | StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감 | medium | S | high | grounded | 2026-06-30 |
+| IMP-21 | ux | 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가 | medium | S | high | grounded | 2026-06-30 |
+| IMP-22 | ux | 생성·편집 폼이 인라인 검증·aria-invalid 없이 조용히 차단 — 죽은 상호작용(WCAG 3.3.1/3.3.3) | medium | M | high | grounded | 2026-06-30 |
+| IMP-23 | compete | 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음 | medium | M | high | grounded | 2026-06-30 |
+| IMP-24 | compete | 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가 | medium | M | high | grounded | 2026-06-30 |
+| IMP-25 | aesthetic | 차트 시각언어가 화면마다 손수 SVG로 제각각 — 호버 크로스헤어/툴팁 readout 부재로 Grafana/Datadog 대비 빈약 | medium | L | high | grounded | 2026-06-30 |
+| IMP-26 | code | 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출 | low | S | medium | proposed | 2026-06-30 |
+| IMP-27 | aesthetic | 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도 | low | M | medium | proposed | 2026-06-30 |
 
 ## Details
 
@@ -213,3 +221,75 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 코드 실측: web/src 전체 style={{}} 175곳/36파일(grep 확인). 이 중 ~12곳만 진짜 동적값, ~63곳은 반복 정적 레이아웃 패턴(flex+gap, marginTop:var(--sp-3), fontSize:var(--fs-xs)). 결정적 위험: ~92곳은 raw px(marginLeft:6, fontSize:11 류)로 index.css 의 다크 토큰 캐스케이드(:root[data-theme=dark])·--sp/--fs 토큰을 우회 → 다크/밀도 토글 미반영 위험 실재. 유틸 클래스는 index.css 에 .muted 1개뿐이라 일회성 인라인이 흩어질 수밖에 없는 구조. 외부 권위(GitLab Pajamas/Atlassian Forge/Penpot)가 일치: 인라인/하드코딩 오버라이드는 토큰 업데이트 미반영·다크모드/새 모드에서 깨짐. 단, 가설 그대로면 '인라인 난립→유틸 난립' 함정 → 적용 순서·의미론 정교화 필요(상수 유틸 deprecated, 의미론적 클래스만).
 - **Sources**: https://design.gitlab.com/product-foundations/design-tokens-using/ , https://penpot.app/blog/the-developers-guide-to-design-tokens-and-css-variables/ , https://developer.atlassian.com/platform/forge/design-tokens-and-theming/
 - **Deep-dive suggestion**: 없음 (출처·정제 충분; raw-px 92곳부터 점진 적용, IMP-19 는 저우선·자투리 작업으로)
+
+### IMP-20 — StatCard ⓘ·변화율(Delta)이 여전히 native title= — IMP-4 접근성 수정이 대시보드(가장 큰 표면)를 비껴감
+- **Type**: ux (sev=medium, effort=S)
+- **Area**: `web/src/components/StatCard.tsx:66`(`<span className="info" title={info}>ⓘ</span>`)·`:39`(Delta `title={...전기간 대비...%}`); 호출부 `web/src/pages/Dashboard.tsx:198,217,229,243`(info= 4곳); 동일 안티패턴 ~7곳: GuardOverview·EventHistogram·EnginePipelinePanel·GpuLedGrid·ReconfigurePanel·MaskingPolicy·GuardPolicy·UsageTrendChart
+- **Problem**: IMP-4(done)는 무의존 `InfoTip` toggletip 을 만들어 DimensionBreakdown ⓘ 에만 적용했다. 그러나 운영자가 가장 먼저 보는 대시보드 StatCard 의 ⓘ(메트릭 의미)와 변화율 Delta 의 '전기간 대비 …%' 설명은 아직 native `title=` 에 머물러 있다 — 키보드 포커스로 안 뜨고, 터치 미표시, 지연·무스타일이라 IMP-4 가 닫으려던 WCAG 1.4.13 갭이 핵심 화면에서 그대로 재현된다. ⓘ 자체도 `<span className="info">` 라 button 이 아니라 포커스 불가. 결국 '메트릭을 한 출처에서 설명' 가치가 데스크톱 마우스 사용자에게만 닿는다.
+- **Fix**: (1) StatCard.tsx:66 `<span className="info" title={info}>ⓘ</span>` → `<InfoTip>{info}</InfoTip>`(DimensionBreakdown 패턴 그대로). (2) Delta(StatCard.tsx:39)는 툴팁이 아니라 비필수 보강정보 — title= 제거하고 방향+크기를 말로 풀어쓴 `aria-label`(예: `전기간 대비 +3.2% 개선`) + ▲▼ 글리프 `aria-hidden`. (3) **InfoTip 먼저 하드닝** — 버블을 `role="tooltip"` → `role="status"` 라이브 영역으로 바꿔 열릴 때 채워 SR 이 클릭 시 실제로 announce 하게(Inclusive Components). 이 픽스는 DimensionBreakdown 에도 전파. (4) 잔존 `<span className="info" title=…>` ~7곳을 InfoTip 으로 일괄 전환해 IMP-4 를 화면 단위로 완결. 이미 라벨된 버튼(refresh ⟳ 등)·truncation overflow span 의 redundant title= 는 보존. 무의존(in-house InfoTip) 유지.
+- **Evidence**: yes (high) — 코드로 갭 정확 확인: StatCard.tsx:66 메트릭 ⓘ 가 `<span className="info" title=…>`(포커스 불가·마우스 전용), :39 Delta 가 `title={전기간 대비 …%}`. InfoTip(InfoTip.tsx)은 존재하나 grep 상 DimensionBreakdown 에서만 사용 → IMP-4 가 대시보드 최다노출 카드를 비껴감. 동일 안티패턴 ~7개 컴포넌트에도 존재(화면 전반 클린업). 권위: native title= 은 접근성상 비권장(스타일·타이밍·키보드·터치·SR 비일관) = WCAG 1.4.13 갭. 보강정보 전용 ⓘ 의 정석은 toggletip(클릭/Enter/Space) = 곧 InfoTip. Inclusive Components: toggletip 버블은 role=status 라이브 영역으로 클릭 시 채워야 실제 announce. Delta 같은 비필수 산문은 툴팁이 틀린 도구 — 가시/sr-only 라벨로 대체.
+- **Sources**: https://inclusive-components.design/tooltips-toggletips/ , https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus.html , https://sarahmhigley.com/writing/tooltips-in-wcag-21/
+- **Deep-dive suggestion**: 없음 (출처·정제 충분, 구현 직행 — IMP-4 후속, 기존 InfoTip 재사용이라 저위험·고가성비)
+
+### IMP-21 — 폴링 화면에 데이터 신선도(마지막 갱신 시각) 표시 부재 — 무음 갱신이라 멈춤/최신 구분 불가
+- **Type**: ux (sev=medium, effort=S)
+- **Area**: `web/src/pages/Dashboard.tsx:118`(REFRESH_MS=15000 setInterval)·`web/src/pages/Gpu.tsx:74`(15s)·`web/src/pages/Traffic.tsx:68`(10s)·`web/src/pages/Sessions.tsx:187`; grep `마지막 갱신`/`초 전`/freshness 0건(Diagnostics 프로브 시각 제외)
+- **Problem**: Dashboard·Gpu·Traffic 이 10~15초 간격으로 조용히 폴링하지만 '마지막 갱신: N초 전' 같은 신선도 표시가 없다. 온콜이 '지금 정상인가'를 판단하는 관제 콘솔에서, 폴링이 멈췄거나(백엔드 행·탭 백그라운드 throttle) 데이터가 오래됐는지 구분할 수 없다 — 멈춘 화면을 라이브로 오인하면 대응이 지연된다. Grafana/Datadog/Honeycomb 은 모두 갱신 시각 + 다음 갱신 카운트다운 또는 'stale' 배지를 표준 제공한다.
+- **Fix**: 각 폴링 화면 헤더(TimeRange 옆)에 경량 인디케이터 "마지막 갱신 {상대시간} · 자동 {N}s" + 수동 새로고침 버튼. 마지막 성공 fetch 타임스탬프를 상태로 보관, 1초 틱으로 상대시간 갱신. 정제: (a) 상대시간 라벨에 title/툴팁으로 절대 타임스탬프(HH:MM:SS) 병기(상대시간 단독은 모호). (b) 화면별 폴링주기 ~3배 무응답 시 'stale' 톤 전환(15s→~45s), 실패 누적(IMP-16)과 결합. (c) stale 배지는 색상 비의존 — 아이콘/"오래됨" 텍스트 동반(WCAG 1.4.1), aria-live="polite" 로 전환 고지. (d) document.visibilitychange 로 hidden 시 폴링 일시정지·visible 복귀 시 즉시 재요청(throttle 멈춤 오인 방지). (e) IMP-8(SWR/React Query) 도입 시 dataUpdatedAt 로 신선도 직결 + refetchOnWindowFocus/dedupingInterval 로 가시성·중복요청 위임; 미도입이면 공용 usePolling 훅(타임스탬프+가시성+카운트다운 캡슐화)으로 3개 화면 공유.
+- **Evidence**: yes (high) — 가설이 관측/관제 대시보드 베스트 프랙티스와 정확히 일치. (1) 신선도 표시는 표준(groundcover Grafana best practices: stale 데이터 위험 + '마지막 갱신' 타임스탬프 + 색상코딩 권장; 자동갱신 주기는 데이터종류 차등 5~15s — 현 폴링과 부합). (2) 카운트다운 + 수동제어가 표준 UX(autorefresh.io countdown-mode·Power BI·ServiceNow). (3) visibilitychange 백그라운드 일시정지는 명시적 권장(배터리·rate-limit·throttle 멈춤 오인 해소). (4) React Query 는 dataUpdatedAt·refetchOnWindowFocus 로 자연 통합(IMP-8).
+- **Sources**: https://www.groundcover.com/learn/observability/grafana-dashboards , https://autorefresh.io/features/countdown-mode/ , https://tanstack.com/query/v4/docs/framework/react/guides/window-focus-refetching , https://reactuse.com/blog/react-timer-hooks/
+- **Deep-dive suggestion**: 없음 (출처 충분, 구현 직행 — IMP-8/IMP-16 과 조율; SWR 채택 시 신선도 로직 축소)
+
+### IMP-22 — 생성·편집 폼이 인라인 검증·aria-invalid 없이 조용히 차단 — 죽은 상호작용(WCAG 3.3.1/3.3.3)
+- **Type**: ux (sev=medium, effort=M)
+- **Area**: `web/src/pages/Endpoints.tsx`(input 21개, 예: `:262 if (keyAppMode==="custom" && !keyForm.app_name.trim()) return;` — 에러표시 없이 return)·`web/src/pages/Keys.tsx`(input 9개)·`web/src/pages/Settings.tsx`(서버 응답을 :82-84 에서만 사후 매핑); 전 페이지 grep `aria-invalid`/`pattern=`/`required` 0건
+- **Problem**: 엔드포인트 생성 위저드·키 발급·설정 폼이 클라이언트 인라인 검증을 전혀 안 한다. 필수값 누락 시 핸들러가 조용히 `return` 만 하고(Endpoints.tsx:262) 어떤 필드가 왜 막혔는지 피드백이 없다 — 버튼을 눌렀는데 아무 일도 안 일어나는 죽은 상호작용. aria-invalid/inline error/required 가 0건이라 SR 은 오류 필드를 인지조차 못 한다(WCAG 3.3.1/3.3.3). 유일한 검증은 Settings 의 서버 400 매핑뿐이라 폐쇄망에서 라운드트립 후에야 오류를 안다.
+- **Fix**: 의존성 0 검증 헬퍼/훅 + 현대 접근가능 폼 패턴(GOV.UK + NNG + WCAG). (1) **3단계 타이밍**: (a) untouched → 무에러, (b) blur → 해당 필드 검증·touched 표시, (c) 이미 에러인 필드 → change 마다 재검증해 고치는 즉시 해제, (d) submit → 전체 검증·전체 노출. pristine 필드는 타이핑 중 검증 금지. (2) 필드 a11y: 에러 시 aria-invalid=true(touched/submit 후에만, pristine 필수필드엔 금지), 에러텍스트 aria-describedby 연결, 에러노드 role="alert"(또는 aria-live=polite). required/aria-required+pattern 은 시맨틱으로 유지하되 novalidate + JS 한국어 메시지를 실 UX 경로로(네이티브 버블은 스타일·일관성 불가). (3) **disabled submit 금지** — 제출시켜 오류를 드러내라; 조용한 return(Endpoints.tsx:262)을 검증→에러렌더→포커스관리로 교체. (4) **포커스/요약**: 위저드·긴 폼은 submit 시 상단 에러 SUMMARY 블록(role=alert, tabindex=-1, 각 필드로 점프하는 링크) + 거기로 포커스 이동; 짧은 폼(키 발급)은 첫 오류필드 포커스로 충분. 포커스된 필드가 스크롤되게(모바일). (5) 기존 `.state.error` 토큰 재사용; 빨간 테두리는 텍스트 동반 필수(색상단독 WCAG 1.4.1 실패). per-field 성공틱/검증툴팁은 노이즈라 생략. 폐쇄망에서 클라이언트만으로 동작(라운드트립 불필요).
+- **Evidence**: yes (high) — 2025-2026 권위 소스(NNG/W3C ARIA21/MDN/WebAIM/GOV.UK) 합의와 일치. (1) blur 검증·"premature validation feels accusatory"=NNG 정설(인라인-on-blur 오류 ~22%↓); SOTA 는 3단계(blur→이미 에러면 on-change→submit 전체+첫 오류 포커스) — 가설에 stage(b) 추가 필요. (2) aria-invalid/aria-describedby=W3C ARIA21+MDN 정확; pristine 필수필드 aria-invalid 금지·role=alert 동반. (3) disabled submit=확정 안티패턴(Adam Silver/Adrian Roselli/NNG: 버튼 눌러야 뭐가 틀렸는지 앎, autofill/대비 문제). (4) 첫 오류 포커스 + 6필드+ 폼은 상단 에러 SUMMARY(GOV.UK de-facto 표준)가 갭. (5) native required/pattern 1차선 + JS 가 실 UX(네이티브 버블 비스타일·blur 시 소멸). 의존성 0 useFieldValidation 훅 + .state.error 토큰 재사용이 비례적 정답(RHF/Zod 불필요).
+- **Sources**: https://www.nngroup.com/articles/errors-forms-design-guidelines/ , https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA21 , https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-invalid , https://adamsilver.io/blog/the-problem-with-disabled-buttons-and-what-to-do-instead/ , https://www.72technologies.com/blog/form-validation-ux-when-to-show-errors , https://webaim.org/techniques/formvalidation/
+- **Deep-dive suggestion**: 없음 (출처·정제 충분, 구현 직행 — IMP-12 모달/IMP-4 접근성 작업과 묶으면 효율적)
+
+### IMP-23 — 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음
+- **Type**: compete (sev=medium, effort=M)
+- **Area**: `web/src/pages/Usage.tsx:39 toCSV`·`:87 exportCSV`(유일); 내보내기 부재: `web/src/pages/Traces.tsx`·`Sessions.tsx`·`Guard.tsx`·`Keys.tsx`·`Gpu.tsx`(grep download/csv = Usage 만)
+- **Problem**: Usage 만 CSV 내보내기를 갖췄고 동급 표 기반인 Traces(요청 증적)·Sessions(대화 비용)·Guard(가드레일 차단 증적)·Keys(키·예산)에는 반출 경로가 없다. 폐쇄망 금융 고객은 감사·보고·외부 BI 연동을 위해 데이터 반출이 거버넌스 필수인데 한 화면에만 있어 일관성·신뢰가 떨어진다. Langfuse(trace export/API)·Helicone(CSV/세션 export)·Datadog(표 CSV·로그 export)은 모든 표 뷰에서 반출을 표준 제공.
+- **Fix**: Usage 의 toCSV/exportCSV 를 공용 `exportTable(rows, columns, filename, {format})` 로 추출하고 각 표 뷰(Traces·Sessions·Guard·Keys)에 Export 컨트롤 추가. 활성 필터+기간을 파일명 + 내장 메타데이터 헤더에 반영(감사 재현 가능 — Langfuse 패턴). Traces 는 JSON/JSONL 기본(span 구조 보존)+ flattened CSV 옵션. 민감 표는 profile 게이팅: observe 에서 PII 컬럼 마스킹, 전체 Guard/Keys 내보내기는 manage 전용. 내보내기 audit 이벤트를 IMP-15 디스패처/diagnostics 인프라로 발화. 대용량은 cap/stream + truncation 고지(Datadog 행 제한 대응). **profile 게이팅 + export-audit 로그는 경쟁사 문서에 없는 FABRIX 차별점 — 유지.**
+- **Evidence**: yes (high) — 경쟁 갭 실재 + 리더 동작과 일치. Langfuse: "Most tables support batch-exports"(CSV+JSON) + "All filters applied to the table will be applied to the export" — 가설의 필터/기간 반영과 정확히 일치; trace 는 JSON/JSONL(span 보존). Datadog: 모든 Logs Explorer 가 timeseries/top list/table 을 CSV 다운로드(행캡 예: 100k), RUM/Product Analytics/Logs 전반 반복 = export 는 모든 표 표면 표준. Helicone: sessions/requests 1급 export. 따라서 Usage 단독은 진짜 갭. 정제: (1) export 감사로그·접근제어는 Langfuse 문서에 없음 → FABRIX 차별점으로 유지, (2) Datadog 처럼 행 cap/stream + truncation 라벨, (3) Traces 는 JSON 우선·CSV 차선, (4) 적용 필터+기간을 헤더/사이드카 메타로 stamp(감사 재현).
+- **Sources**: https://langfuse.com/docs/api-and-data-platform/features/export-from-ui , https://docs.datadoghq.com/logs/explorer/export/ , https://docs.helicone.ai/features/sessions
+- **Deep-dive suggestion**: 없음 (출처 충분, 구현 직행 — IMP-24 필터-URL 작업과 묶으면 '활성 필터 반영' 일관). 주의: 가드/키 PII 반출은 민감 — profile 게이팅·감사로그는 사람 검토 권장.
+
+### IMP-24 — 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가
+- **Type**: compete (sev=medium, effort=M)
+- **Area**: `web/src/router.ts`(해시/경로 라우팅, `pathForPage`·`queryParam` 헬퍼 존재)·`web/src/timeRange.tsx`·`web/src/pages/Traces.tsx`(:51-61 마운트 시 queryParam 으로 필터 '시드만', setFilter/setRange 는 URL 되쓰기 없음)·Sessions.tsx·Usage.tsx·Guard.tsx
+- **Problem**: 트레이스/세션/사용량 화면의 필터(모델·상태·기간·차원)가 컴포넌트 로컬 state 로만 살아 URL 에 반영되지 않는다. 온콜이 '이 endpoint 의 지난 1시간 차단 트레이스'를 링크로 공유하거나, 새로고침/뒤로가기로 같은 뷰를 재현하거나, 자주 쓰는 조사 뷰를 저장할 수 없다. Datadog(공유 가능 뷰 URL)·Honeycomb(쿼리 퍼머링크)·Grafana(URL 인코딩 변수)는 모두 '공유 가능한 deep-link 상태'를 핵심 협업 기능으로 제공.
+- **Fix**: 의존성 0 `useUrlState` 훅을 router.ts 위에 얹어 양방향 동기화. (1) 읽기는 기존 queryParam()/URLSearchParams 재사용, 쓰기는 history.replaceState(필터/기간 미세조정=replace 로 back 스택 오염 방지; 페이지전환/드릴다운은 push 로 분리). (2) 직렬화 대상: model·status·decision·app·range + (IMP-1) 드릴다운 차원. 배열은 콤마/반복키 인코딩, URL→state 타입복원(range 는 TimeRange 화이트리스트 검증). (3) 검색어 타이핑 등은 ~300ms debounce 후 replaceState. (4) **단일 출처**: Traces/Sessions/Usage 의 현 시드-온-마운트 코드를 useUrlState 로 대체해 시드+되쓰기 통합(현 setFilter 가 URL 안 건드리는 비대칭 제거). (5) '저장된 뷰': 우선 localStorage(이름→querystring 스냅샷)로 의존성 0 유지, manage 프로파일만 백엔드 저장으로 승격(cap 게이팅). **observe(읽기전용)에서도 '링크 복사(읽기 URL)'는 항상 허용, '뷰 저장(쓰기)'만 게이팅** — 온콜 협업 가치 보존. Datadog 식 '뷰 링크 복사' 버튼 1개 filter-bar 우측.
+- **Evidence**: yes (high) — 정설 + 경쟁 갭 실재. Datadog: Saved Views short-link 공유·그래프 공유 URL 이 time range·queries·filters 복원·context links 가 widget filter+template var+time range 묶음. Honeycomb 쿼리 퍼머링크, Grafana URL 인코딩 template var(다중값 IN/NOT IN). React 관행: local useState 만 두면 새로고침·뒤로가기·공유에서 소실=정확한 안티패턴, URL querystring 동기화가 권장(LogRocket). **코드 확인(중요)**: router.ts 에 pathForPage(query 생성)·queryParam(읽기)이 이미 있고 Traces.tsx 가 마운트 시 queryParam 으로 초기필터 '시드만'(L51-61) 하나 setFilter/setRange 는 URL 되쓰기 없음 → 갭 정확 실재 + 인프라 절반 존재(되쓰기 훅만 추가). bespoke History API 라우터라 의존성 0 useUrlState 방향이 스택과 정합.
+- **Sources**: https://docs.datadoghq.com/logs/explorer/saved_views/ , https://docs.datadoghq.com/dashboards/sharing/graphs/ , https://docs.datadoghq.com/dashboards/guide/context-links/ , https://blog.logrocket.com/url-state-usesearchparams/ , https://grafana.com/docs/plugins/grafana-honeycomb-datasource/latest/
+- **Deep-dive suggestion**: 없음 (출처·정제 충분, 구현 직행 — IMP-1 드릴다운 필터 보존·IMP-23 export 활성필터와 정합)
+
+### IMP-25 — 차트 시각언어가 화면마다 손수 SVG로 제각각 — 호버 크로스헤어/툴팁 readout 부재로 Grafana/Datadog 대비 빈약
+- **Type**: aesthetic (sev=medium, effort=L)
+- **Area**: `web/src/components/TimeseriesChart.tsx`(254줄 bespoke SVG, 호버 readout 없음·axis fontSize 9~10 고정)·UsageTrendChart.tsx·Sparkline.tsx·StackedShareBar.tsx·EventHistogram.tsx·PipelineWaterfall.tsx — 공통 차트 추상화·테마 없음
+- **Problem**: 차트가 컴포넌트마다 독립 SVG 로 손수 그려져 축 폰트(9~10px 고정, 토큰 미사용)·색·여백·그리드가 제각각이고, 핵심 TimeseriesChart 조차 마우스 호버 시 해당 시점 QPS/TTFT/차단 값을 읽어주는 크로스헤어 툴팁이 없다(드래그 줌만). Grafana/Datadog/Arize 는 호버 readout·통일 축/그리드/범례·일관 팔레트가 기본이라, 우리 차트는 데이터는 맞아도 '관측 제품다운' 정밀함이 부족하다. 작은 축 텍스트는 가독성·대비(WCAG)도 미흡.
+- **Fix**: 의존성 0 유지하고 자체 공용 프리미티브로 통일(라이브러리 불필요). (1) `web/src/components/chart/` 신설: 토큰화 상수(PAD 1종, --fs-xs 기반 축폰트, var(--text-dim)/(--border) 그리드·축색, 일관 팔레트) + `<Axis>/<Grid>/<Legend>` 헬퍼 + useChartHover 훅 + `<Crosshair>/<ChartTooltip>`. TimeseriesChart·UsageTrendChart·Sparkline 이 모두 사용하게 리팩터. (2) TimeseriesChart 에 Grafana 식 hover readout: onMouseMove 로 최근접 인덱스 산출 → 수직 크로스헤어 + 시리즈 마커 + 시점 QPS/TTFT p95/차단 박스(Grafana 'All' 모드). 드래그줌과 공존(드래그 중 selection 우선, idle hover 만 readout), 포커스 시 좌우 화살표 크로스헤어 이동. (3) 축 텍스트 fontSize={9|10} → var(--fs-xs)(11px), fill 을 var(--text-dim)로 상향(WCAG 대비). (4) 툴팁은 React 컴포넌트(foreignObject/오버레이 div)로 토큰 직접 적용. /design-review 로 QA. **OSS 도입 비권장**(visx tooltip/legend 미내장·Recharts ~150KB zero-dep 위반·uPlot canvas 스택 불일치).
+- **Evidence**: yes (high) — (1) 호버 크로스헤어+readout 은 관측 제품 표준(Grafana: hover tooltip 기본 + Single/All/Hidden 모드 + Shared crosshair/tooltip 1급). 현 TimeseriesChart 는 드래그줌+키보드줌만, hover crosshair/readout 전무 = 명확한 결손. (2) 시각언어 불일치 코드 확인: SVG <text> 토큰 미사용 하드코딩(TimeseriesChart.tsx:176/179/242 fontSize={10}·:199 ={9}; UsageTrendChart.tsx:96 ={10}·:102 ={9}), index.css --fs-xs:11px 존재하나 차트만 9~10px 이탈, 여백 제각각(PAD.left 40 vs 48), 축/그리드/범례/툴팁 헬퍼 없어 독립 구현(254L/112L/42L). 9px 축은 WCAG 가독성 취약. (3) OSS 비권장(visx 도 tooltip/legend/responsive 미내장→절감 없음; Recharts ~150KB zero-dep 충돌; uPlot canvas 불일치) → 토큰 기반 자체 SVG 프리미티브가 번들·일관성 양면 최적.
+- **Sources**: https://grafana.com/docs/grafana-cloud/visualizations/panels-visualizations/configure-tooltips/ , https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/best-practices/ , https://blog.logrocket.com/best-react-chart-libraries-2026/ , https://github.com/airbnb/visx , https://github.com/leeoniya/uPlot
+- **Deep-dive suggestion**: deep-research-lite (공용 차트 프리미티브 API 표면 + 크로스헤어/readout 상호작용 패턴 정밀화; OSS 평가는 위에서 종결 — 자체 SVG 추출 확정)
+
+### IMP-26 — 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출
+- **Type**: code (sev=low, effort=S)
+- **Area**: `web/src/pages/Settings.tsx:82-84`(forbidden/network/email 을 한국어로 매핑하는 유일한 mapper) vs 전 페이지 `setError((e as Error).message)` 다수 — Endpoints.tsx:98,158,175,191,280·Sessions/Gpu/Traffic 등; `web/src/api/client.ts getJSON`
+- **Problem**: Settings 는 403/network/email 오류를 친절한 한국어 안내로 매핑하는데, 나머지 거의 모든 페이지는 `setError((e as Error).message)` 로 백엔드 raw 메시지(영문 스택성 문자열·HTTP 텍스트)를 사용자에게 그대로 보여준다. 폐쇄망 엔터프라이즈 제품에서 일관성·신뢰가 깨지고, 같은 403 도 화면마다 다르게 표현된다. 에러→사용자 메시지 변환 로직이 중복·산재해 유지보수도 어렵다.
+- **Fix**: Settings 의 매핑을 공용 util `toUserMessage(err)` 로 추출(403/네트워크/타임아웃/429/5xx/AbortError 표준 한국어 메시지 + 알 수 없는 경우 폴백). client.ts getJSON 이 HTTP 상태를 보존한 타입드 에러를 throw 하도록 보강(IMP-16 timeout/retry 와 함께)해 매핑이 status 기반으로 정확해지게. 전 페이지 catch 를 이 util 경유로 통일. ErrorBoundary(IMP-10) 폴백과 톤 일치.
+- **Evidence**: 미연구 (low ambiguity, 코드로 갭 확인 — Settings.tsx:82-84 만 매핑, 타 페이지는 raw message 노출). IMP-16(타입드 에러)·IMP-10(ErrorBoundary)·IMP-22(폼 검증 메시지)와 결이 같아 함께 정합화 권장.
+- **Sources**: (코드 검증 — 외부 출처 없음)
+- **Deep-dive suggestion**: 없음 (구현 직행 — IMP-16 타입드 에러 도입 후 status 기반 매핑이 더 정확)
+
+### IMP-27 — 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도
+- **Type**: aesthetic (sev=low, effort=M)
+- **Area**: `web/src/components/StatCard.tsx`(.metric/.num/.lbl 블록)·`web/src/index.css .card`(box-shadow `0 1px 2px rgba(16,24,40,.04)` 극미약)·`--shadow-card`/`--shadow-card-hover`·`web/src/pages/Dashboard.tsx`(bento 그리드)
+- **Problem**: 카드 그림자가 거의 안 보일 만큼 미약하고(.04~.06 알파) KPI 숫자(--fs-metric 26px)와 라벨(--fs-xs 11px) 사이 위계·여백 리듬이 평이해, 같은 B2B 콘솔이라도 Linear(미세 경계+절제된 elevation)·Vercel(또렷한 타입 위계·넉넉한 패딩)·Datadog/Grafana(KPI 빅넘버+보조지표 정렬) 대비 정보가 한 평면에 눌려 '읽히는 순서'가 약하고 값싸 보인다. Delta 화살표·sparkline·usage bar 가 동일 무게로 경쟁해 시선 우선순위가 흐리다.
+- **Fix**: (1) elevation 토큰 재설계: 평상시 더 또렷한 1단 그림자 + hover 시 명확한 lift, 카드 radius/패딩 리듬 정돈. (2) KPI 타입 위계 강화 — 빅넘버 무게↑·단위 디엠퍼사이즈, Delta 는 작은 pill 로 분리, 라벨 letter-spacing/대비 조정. (3) sparkline 은 카드 하단 풀블리드 미니 배경으로 격하해 숫자가 주역이 되게. Linear/Vercel '절제된 깊이 + 강한 타입 위계' 기준으로 끌어올리되 라이트+스틸블루 엔터프라이즈 톤 유지. /design-review 로 before/after QA.
+- **Evidence**: 미연구 (low ambiguity). 베이스라인은 Backend.AI 라이트+스틸블루(MEMORY: best-in-class 대비 끌어올리기 허용·사람승인/design-consultation). aesthetic 항목이라 시각 QA 와 사람 승인 필요 — 자율 빌드보다 /design-review·/plan-design-review 권장.
+- **Sources**: (미연구 — design-review 단계에서 Linear/Vercel/Datadog 레퍼런스 캡처)
+- **Deep-dive suggestion**: deep-research-lite 또는 design-review (elevation/타입 위계 레퍼런스 정밀화; IMP-19 인라인스타일·IMP-25 차트 토큰과 함께 시각 일관성 작업)
