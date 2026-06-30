@@ -189,9 +189,10 @@ export default function DimensionBreakdown({
                 {cols.map((k) => {
                   const m = metaByKey[k];
                   const v = cellValue(r, k);
-                  // 백엔드(domain.AnnotateWarnings)가 내려준 warn_keys 를 단일 출처로 사용.
-                  // 미제공(프론트 mock 등)일 때만 로컬 isWarn 으로 폴백.
-                  const warn = r.warn_keys ? r.warn_keys.includes(k) : isWarn(m, v, medians[k]);
+                  // 백엔드(domain.AnnotateWarnings)가 내려준 판정을 단일 출처로 사용.
+                  // `warn` 은 항상 직렬화되므로(위반 없으면 false) 그 존재로 백엔드 annotate 여부를 판별 —
+                  // warn_keys 는 omitempty 라 위반 없는 행에선 생략됨. 미제공(프론트 mock)일 때만 isWarn 폴백.
+                  const warn = r.warn !== undefined ? !!r.warn_keys?.includes(k) : isWarn(m, v, medians[k]);
                   return (
                     <td key={k} className="num">
                       <span style={warn ? { color: "var(--amber, #d98e00)", fontWeight: 600 } : undefined}
