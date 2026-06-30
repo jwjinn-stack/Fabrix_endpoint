@@ -373,15 +373,18 @@ export function fetchEnginePipeline(signal?: AbortSignal): Promise<EnginePipelin
 
 export function fetchTraces(
   range: TimeRange,
-  filters?: { decision?: string; status?: string; model?: string; app?: string },
+  filters?: { decision?: string; status?: string; model?: string; app?: string; q?: string },
   signal?: AbortSignal,
 ): Promise<TraceListReport> {
-  const q = new URLSearchParams({ range });
+  const sp = new URLSearchParams({ range });
   for (const k of ["decision", "status", "model", "app"] as const) {
     const v = filters?.[k];
-    if (v && v !== "all") q.set(k, v);
+    if (v && v !== "all") sp.set(k, v);
   }
-  return getJSON<TraceListReport>(`/traces?${q.toString()}`, signal);
+  // IMP-32: q 는 가산적 전문검색(빈 문자열은 생략 = 기존 동작). 서버가 화이트리스트 필드만 검색.
+  const qv = filters?.q?.trim();
+  if (qv) sp.set("q", qv);
+  return getJSON<TraceListReport>(`/traces?${sp.toString()}`, signal);
 }
 
 export function fetchTrace(traceId: string, signal?: AbortSignal): Promise<TraceDetail> {

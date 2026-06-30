@@ -20,6 +20,7 @@ const TRACE_SCHEMA = {
   status: enumField(["all", "ok", "error"] as const, "all"),
   model: strField("all"),
   app: strField("all"),
+  q: strField(""), // IMP-32: 자유 텍스트 전문검색(가산적). 빈 문자열이면 URL 에서 생략.
 } as const;
 
 const RANGES: { value: TimeRange; label: string }[] = [
@@ -66,9 +67,15 @@ export default function Traces() {
   // IMP-24: 필터·기간·드릴다운 컨텍스트가 URL 단일 출처로 산다(시드+되쓰기 통합).
   // L2→L3 drill-through 로 넘어온 model/decision/range 쿼리도 그대로 복원된다.
   const [st, patch] = useUrlState(TRACE_SCHEMA);
-  const { range, decision, status, model, app } = st;
+  const { range, decision, status, model, app, q } = st;
   const setRange = (r: TimeRange) => patch({ range: r });
-  const filters = useMemo(() => ({ decision, status, model, app }), [decision, status, model, app]);
+  const filters = useMemo(() => ({ decision, status, model, app, q }), [decision, status, model, app, q]);
+  // IMP-32: 검색창은 즉시 반응(로컬 state) + URL 되쓰기는 디바운스(useUrlState debounce).
+  const [qInput, setQInput] = useState(q);
+  // popstate/뷰적용 등 외부에서 q 가 바뀌면 입력창도 동기화.
+  useEffect(() => { setQInput(q); }, [q]);
+  const onQChange = (v: string) => { setQInput(v); patch({ q: v }, { debounce: true }); };
+  const clearQ = () => { setQInput(""); patch({ q: "" }); };
   const cap = useCap();
   const canSave = !cap.caps.readonly; // 뷰 저장(쓰기)은 manage 프로파일만 — 링크 복사는 항상 허용
   const canEval = cap.can("eval"); // 평가 점수 기록(인라인 "이거 평가")은 eval cap(manage)만
@@ -92,8 +99,8 @@ export default function Traces() {
         const d = await fetchTraces(range, filters, signal);
         setData(d);
         setError(null);
-        // 필터 미적용(all) 일 때만 옵션 모집단 갱신 → 필터링으로 옵션이 줄지 않게.
-        if (filters.decision === "all" && filters.status === "all" && filters.model === "all" && filters.app === "all") {
+        // 필터 미적용(all + q 없음) 일 때만 옵션 모집단 갱신 → 필터링으로 옵션이 줄지 않게.
+        if (filters.decision === "all" && filters.status === "all" && filters.model === "all" && filters.app === "all" && !filters.q) {
           setOpts({
             models: [...new Set(d.traces.map((t) => t.model))].sort(),
             apps: [...new Set(d.traces.map((t) => t.app_id))].sort(),
@@ -136,7 +143,7 @@ export default function Traces() {
   }), [traces]);
 
   const setFilter = (k: keyof typeof filters, v: string) => patch({ [k]: v } as Partial<typeof st>);
-  const resetFilters = () => patch({ decision: "all", status: "all", model: "all", app: "all" });
+  const resetFilters = () => { setQInput(""); patch({ decision: "all", status: "all", model: "all", app: "all", q: "" }); };
   // 저장된 뷰 적용: querystring → 화면 state 복원(+URL 되쓰기).
   const applyView = (query: string) => patch(decodeState(TRACE_SCHEMA, query));
 
@@ -184,6 +191,18 @@ export default function Traces() {
 
       <div className="card">
         <div className="filter-bar" role="group" aria-label="트레이스 필터">
+          {/* IMP-32: 서버사이드 전문검색 — 입력/출력 미리보기 + 메타 화이트리스트(마스킹/차단 원문 제외) */}
+          <label className="fb-field" style={{ flex: "1 1 220px", minWidth: 180 }}><span>검색</span>
+            <input
+              className="inline-search"
+              type="search"
+              value={qInput}
+              onChange={(e) => onQChange(e.target.value)}
+              placeholder="입력·출력·모델·앱 등 전문검색"
+              aria-label="트레이스 전문검색"
+              style={{ width: "100%" }}
+            />
+          </label>
           <label className="fb-field"><span>판정</span>
             <select value={filters.decision} onChange={(e) => setFilter("decision", e.target.value)}>
               <option value="all">전체</option><option value="allowed">통과</option><option value="flagged">표시</option><option value="blocked">차단</option>
@@ -204,7 +223,13 @@ export default function Traces() {
               <option value="all">전체</option>{opts.apps.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </label>
-          {(filters.decision !== "all" || filters.status !== "all" || filters.model !== "all" || filters.app !== "all") && (
+          {filters.q && (
+            <span className="filter-chip" role="status" aria-label={`검색어 ${filters.q}`} style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-1)", padding: "2px 8px", border: "1px solid var(--border)", borderRadius: "var(--radius-pill, 999px)", background: "var(--surface-2)", fontSize: "var(--fs-sm)" }}>
+              검색: "{filters.q}"
+              <button type="button" className="chip-x" onClick={clearQ} aria-label="검색어 지우기" style={{ border: "none", background: "none", cursor: "pointer", lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          )}
+          {(filters.decision !== "all" || filters.status !== "all" || filters.model !== "all" || filters.app !== "all" || filters.q !== "") && (
             <button type="button" className="btn-ghost btn-sm" onClick={resetFilters}>필터 초기화</button>
           )}
           <span className="spacer" style={{ flex: 1 }} />
