@@ -1775,25 +1775,48 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .span-wf { position: relative; }
 .span-wf-head { display: flex; justify-content: space-between; font-size: var(--fs-sm); color: var(--text-dim); font-weight: 600; margin-bottom: var(--sp-2); }
 .span-wf-scale { color: var(--text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
-.span-wf-rows { position: relative; }
-.span-ttft-line { position: absolute; top: 0; bottom: 22px; width: 2px; background: var(--primary); opacity: 0.5; z-index: 1; pointer-events: none; }
-.span-block { border-bottom: 1px solid var(--border); }
+.span-wf-rows { position: relative; padding-top: 20px; }
+/* IMP-34: 시간축 눈금 — track 영역 상단(0/¼/½/¾/total). 눈금선은 행 전체 높이로 옅게 내려긋는다. */
+.span-axis { position: absolute; top: 0; left: 0; right: 0; bottom: 22px; pointer-events: none; z-index: 0; }
+.span-axis-tick { position: absolute; top: 0; bottom: 0; }
+.span-axis-rule { position: absolute; top: 18px; bottom: 0; left: 0; width: 1px; background: var(--border); opacity: 0.7; }
+.span-axis-label { position: absolute; top: 0; left: 0; transform: translateX(-50%); font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.span-axis-tick:first-child .span-axis-label { transform: none; }
+.span-axis-tick:last-child .span-axis-label { transform: translateX(-100%); }
+.span-ttft-line { position: absolute; top: 18px; bottom: 22px; width: 2px; background: var(--primary); opacity: 0.5; z-index: 1; pointer-events: none; }
+.span-block { border-bottom: 1px solid var(--border); position: relative; z-index: 1; }
 .span-block:last-child { border-bottom: none; }
+/* IMP-34: 선택 스팬 ↔ 상세 패널 양방향 하이라이트(좌측 스틸블루 액센트 + 약한 배경) */
+.span-block.is-active { background: var(--primary-weak); box-shadow: inset 3px 0 0 var(--primary); }
+.span-block.is-hover:not(.is-active) { background: var(--surface-2); }
 .span-row { display: flex; align-items: center; gap: var(--sp-2); width: 100%; background: none; border: none; padding: 5px 0; cursor: pointer; font: inherit; text-align: left; }
 .span-row:hover { background: var(--surface-2); }
-.span-row.open { background: var(--primary-weak); }
+.span-row.open { background: transparent; }
 .span-label { flex: none; width: 224px; display: flex; align-items: center; gap: 6px; overflow: hidden; }
+/* 타임라인 깊이 들여쓰기 가이드 */
+.span-indent { flex: none; width: 1px; align-self: stretch; background: var(--border); margin-right: 4px; }
 .span-kind { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .span-name { font-size: var(--fs-sm); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Menlo, monospace; }
 .span-err { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
 .span-track { flex: 1; position: relative; height: 16px; }
-.span-bar { position: absolute; top: 2px; height: 12px; border-radius: 3px; min-width: 2px; }
+.span-bar { position: absolute; top: 2px; height: 12px; border-radius: 3px; min-width: 2px; transition: box-shadow 0.12s ease; }
+.span-block.is-active .span-bar { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--primary); }
 .span-ms { flex: none; width: 56px; text-align: right; font-size: var(--fs-xs); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* IMP-34: 호버 readout — 막대 시작 위치에 떠서 self/total ms + 토큰을 보여준다. 값은 모두 텍스트(이스케이프). */
+.span-readout { position: absolute; bottom: calc(100% + 6px); left: 0; transform: translateX(-4px); z-index: 5; min-width: 132px; max-width: 220px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); box-shadow: var(--shadow-card-hover); font-size: var(--fs-xs); pointer-events: none; }
+.span-readout-name { display: flex; align-items: center; gap: 5px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.span-readout-name em { font-style: normal; color: var(--text-faint); font-weight: 400; }
+.span-readout-dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.span-readout-row { display: flex; justify-content: space-between; gap: var(--sp-3); color: var(--text-dim); line-height: 1.7; }
+.span-readout-row b { color: var(--text); font-variant-numeric: tabular-nums; }
 /* 스팬 인라인 에러/경고 사유 — 어느 단계가 문제였는지 한눈에 */
 .span-reason { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--red); background: var(--red-weak); border-radius: 3px; padding: 0 5px; }
 .span-reason.warn { color: var(--amber); background: var(--amber-weak); }
-.span-wf-legend { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-faint); }
+.span-wf-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--border); font-size: var(--fs-xs); color: var(--text-faint); }
 .span-wf-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+/* IMP-34: 응집 범례 칩 — 색 칩 + 라벨 + 개수 배지 */
+.span-chip { display: inline-flex; align-items: center; gap: 0; padding: 2px 7px 2px 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text-dim); line-height: 1.4; }
+.span-chip-n { margin-left: 5px; padding: 0 5px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); color: var(--text-faint); font-variant-numeric: tabular-nums; font-size: 10px; }
 
 /* span 속성 (OTel key/value) */
 .span-attrs { padding: var(--sp-2) 0 var(--sp-3) 230px; }
