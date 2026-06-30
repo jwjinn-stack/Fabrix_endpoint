@@ -3,6 +3,7 @@ import { fetchSession, fetchSessions } from "../api/client";
 import VirtualRows from "../components/VirtualRows";
 import type { SessionDetail, SessionListReport, SessionTurn, TimeRange } from "../api/types";
 import Badge, { type BadgeTone } from "../components/Badge";
+import { ScorePanel } from "../components/ScoreBadge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
@@ -137,11 +138,11 @@ export default function Sessions() {
               <thead>
                 <tr>
                   <th>세션</th><th>시작</th><th className="num">턴</th><th>사용자</th><th>앱</th>
-                  <th>모델</th><th className="num">토큰</th><th className="num">비용</th><th className="num">길이</th><th>차단</th>
+                  <th>모델</th><th className="num">토큰</th><th className="num">비용</th><th className="num">지연 p50</th><th className="num">길이</th><th>차단</th>
                 </tr>
               </thead>
               <tbody>
-                <VirtualRows items={sessions} colSpan={10} scrollRef={vScrollRef}>
+                <VirtualRows items={sessions} colSpan={11} scrollRef={vScrollRef}>
                   {(s) => (
                   <tr key={s.session_id} className={`row-click ${selId === s.session_id ? "row-sel" : ""}`} tabIndex={0}
                     onClick={() => setSelId(s.session_id)} onKeyDown={(e) => { if (e.key === "Enter") setSelId(s.session_id); }}>
@@ -153,6 +154,7 @@ export default function Sessions() {
                     <td className="cell-dim">{s.models.join(", ")}</td>
                     <td className="num">{fmtTok(s.total_tokens)}</td>
                     <td className="num">₩{s.total_cost_krw.toLocaleString()}</td>
+                    <td className="num" title={`TTFT p50 ${s.ttft_p50_ms}ms · avg ${s.ttft_avg_ms}ms`}>{fmtMs(s.latency_p50_ms)}</td>
                     <td className="num">{fmtDur(s.duration_ms)}</td>
                     <td>{s.blocked > 0 ? <Badge tone="red" dot>{s.blocked}건</Badge> : <Badge tone="green">없음</Badge>}</td>
                   </tr>
@@ -229,6 +231,12 @@ function SessionDetailView({ detail }: { detail: SessionDetail }) {
 
   return (
     <>
+      {/* IMP-18: 세션 롤업 헤더 — 이 대화 한눈에(비용·턴·지연 p50). */}
+      <div className="sess-rollup" style={{ padding: "var(--sp-2) var(--sp-3)", margin: "0 0 var(--sp-2)", border: "1px solid var(--primary-weak)", borderLeft: "3px solid var(--primary)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)", fontSize: "var(--fs-sm)" }}>
+        이 대화: <b>₩{s.total_cost_krw.toLocaleString()}</b> · <b>{s.turns}</b>턴 · p50 <b>{fmtMs(s.latency_p50_ms)}</b>
+        <span style={{ color: "var(--text-dim)" }}> · TTFT p50 {s.ttft_p50_ms}ms / avg {s.ttft_avg_ms}ms</span>
+      </div>
+
       <div className="trace-summary">
         <DetailRow label="사용자">{s.user_id}</DetailRow>
         <DetailRow label="앱 / 부서">{s.app_id} · {s.dept_id}</DetailRow>
@@ -237,6 +245,14 @@ function SessionDetailView({ detail }: { detail: SessionDetail }) {
         <DetailRow label="총 비용">₩{s.total_cost_krw.toLocaleString()}</DetailRow>
         <DetailRow label="세션 길이">{fmtDur(s.duration_ms)}</DetailRow>
       </div>
+
+      {/* IMP-18: 세션 단위 평가 점수 */}
+      {detail.scores && detail.scores.length > 0 && (
+        <div className="sess-scores" style={{ margin: "var(--sp-2) 0" }}>
+          <div className="sess-timeline-head">세션 평가 점수 ({detail.scores.length})</div>
+          <ScorePanel scores={detail.scores} />
+        </div>
+      )}
 
       {/* O-06 리플레이 컨트롤 */}
       <div

@@ -3,6 +3,7 @@ import { fetchModels, runEval } from "../api/client";
 import type { EvalResult, ModelInfo } from "../api/types";
 import Sparkline from "../components/Sparkline";
 import InfoTip from "../components/InfoTip";
+import { scoreColor, scoreCue } from "../components/ScoreBadge";
 import { humanizeError } from "../utils/errors";
 
 // 프롬프트/평가 관리 (#17) — LLM-as-judge. 대상 모델 응답을 심판 모델이 1~5점 채점.
@@ -42,9 +43,7 @@ export default function Eval() {
     }
   }, [model, judge, prompt, criteria, busy]);
 
-  const scoreColor = (s: number) => (s >= 4 ? "var(--green)" : s >= 2 ? "var(--amber)" : "var(--red)");
-  // O-12: 점수(1-5) → 평문 신뢰도 큐.
-  const scoreCue = (s: number) => (s >= 4.5 ? "매우 일치" : s >= 3.5 ? "대체로 일치" : s >= 2.5 ? "부분 일치" : "근거 부족");
+  // scoreColor/scoreCue 는 ScoreBadge 로 공용화(IMP-18) — Traces/Sessions 배지와 동일 로직.
   const avg = results.length ? results.reduce((a, r) => a + r.score, 0) / results.length : 0;
   // 세션 내 평가 추이(회귀 비교) — results 는 최신순, 추이는 과거→현재.
   const trend = [...results].reverse().map((r) => r.score);

@@ -734,6 +734,23 @@ export type SpanKind = LangfuseObsType | ServingSpanKind;
 // 스팬 출처: langfuse=토큰/비용/프롬프트/가드레일, otel=victoria-traces 서빙 내부.
 export type SpanSource = "langfuse" | "otel";
 
+// ── 평가 점수 (Langfuse Scores 정합) — backend domain.Score 와 1:1 ──
+// 개별 trace/observation/session 에 '부착'되는 품질 점수. numeric|categorical|boolean.
+export type ScoreDataType = "numeric" | "categorical" | "boolean";
+export type ScoreSource = "human" | "llm-judge" | "api";
+export interface Score {
+  name: string;
+  value: number; // numeric=점수, boolean=0|1, categorical=string_value 사용
+  string_value?: string; // categorical 라벨
+  data_type: ScoreDataType;
+  comment?: string; // 채점 근거(사람/LLM 텍스트 — escape 렌더)
+  source: ScoreSource;
+  trace_id: string;
+  observation_id?: string; // observation-level(특정 span)
+  session_id?: string;
+  ts: string;
+}
+
 export interface TraceSpan {
   span_id: string;
   parent_id?: string;
@@ -752,6 +769,7 @@ export interface TraceSpan {
   derived?: boolean;
   // OTel GenAI 속성명 그대로 (gen_ai.*) + Langfuse usageDetails/costDetails. 표시는 key/value 그대로.
   attributes: Record<string, string | number | boolean>;
+  scores?: Score[]; // observation-level 평가 점수(특정 span 에 부착)
 }
 
 export interface TraceSummary {
@@ -783,6 +801,7 @@ export interface TraceSummary {
   finish_reason: string; // stop | length | content_filter
   http_status: number;
   stream: boolean;
+  scores?: Score[]; // trace 에 부착된 평가 점수(품질 시계열)
 }
 
 export interface TraceListReport {
@@ -826,6 +845,10 @@ export interface SessionSummary {
   total_cost_krw: number;
   blocked: number;
   duration_ms: number; // 세션 시작~끝 경과
+  // 세션-레벨 지연 롤업(Helicone/Datadog 패턴) — 비용·토큰은 위 기존 필드.
+  ttft_p50_ms: number; // 턴 TTFT 중앙값
+  ttft_avg_ms: number; // 턴 TTFT 평균
+  latency_p50_ms: number; // 턴 E2E(total_ms) 중앙값
 }
 export interface SessionListReport {
   range: TimeRange;
@@ -836,4 +859,5 @@ export interface SessionListReport {
 export interface SessionDetail {
   summary: SessionSummary;
   turns: SessionTurn[];
+  scores?: Score[]; // 세션 단위 평가 점수
 }

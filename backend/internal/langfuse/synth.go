@@ -76,6 +76,75 @@ func rangeBuckets(rng domain.TimeRange) (n int, stepSec int) {
 
 func b36(v uint32) string { return strconv.FormatInt(int64(v), 36) }
 
+// ── 평가 점수 합성 (Langfuse Scores) ──
+// scoreDimensions: 결정적으로 trace 당 0~2개의 점수를 합성한다(numeric + 가끔 categorical).
+var scoreDimensions = []struct {
+	name     string
+	rationale string
+}{
+	{"정확성", "사실관계가 질문과 일치하며 근거가 명확함"},
+	{"간결성", "불필요한 군더더기 없이 핵심을 전달"},
+	{"근거제시", "출처·근거를 명시해 신뢰도가 높음"},
+	{"안전성", "정책 위반 표현 없이 안전하게 응답"},
+}
+
+// synthScores 는 결정적으로 trace/session 에 부착할 점수를 만든다(0~2개). source=llm-judge.
+func synthScores(seed uint32, traceID, sessionID, observationID string) []domain.Score {
+	r := newRNG(seed ^ 0x5f356495)
+	n := int(r() * 2.6) // 0,1,2
+	if n == 0 {
+		return nil
+	}
+	ts := time.Now().UTC().Format(time.RFC3339)
+	out := make([]domain.Score, 0, n)
+	used := map[int]bool{}
+	for i := 0; i < n; i++ {
+		di := int(r() * float64(len(scoreDimensions)))
+		if used[di] {
+			di = (di + 1) % len(scoreDimensions)
+		}
+		used[di] = true
+		d := scoreDimensions[di]
+		// 대부분 numeric(1~5), 가끔 categorical(감성 라벨)
+		if r() > 0.82 {
+			labels := []string{"긍정", "중립", "부정"}
+			lab := labels[int(r()*float64(len(labels)))]
+			out = append(out, domain.Score{
+				Name: "감성", StringValue: lab, DataType: "categorical", Comment: "응답 톤 분류",
+				Source: "llm-judge", TraceID: traceID, ObservationID: observationID, SessionID: sessionID, TS: ts,
+			})
+			continue
+		}
+		val := math.Round(2 + r()*3) // 2~5
+		out = append(out, domain.Score{
+			Name: d.name, Value: val, DataType: "numeric", Comment: d.rationale,
+			Source: "llm-judge", TraceID: traceID, ObservationID: observationID, SessionID: sessionID, TS: ts,
+		})
+	}
+	return out
+}
+
+// p50i 는 정수 슬라이스의 p50(중앙값, nearest-rank). avgi 는 평균(반올림).
+func p50i(vals []int) int {
+	if len(vals) == 0 {
+		return 0
+	}
+	s := append([]int(nil), vals...)
+	sort.Ints(s)
+	idx := (len(s) - 1) / 2
+	return s[idx]
+}
+func avgi(vals []int) int {
+	if len(vals) == 0 {
+		return 0
+	}
+	sum := 0
+	for _, v := range vals {
+		sum += v
+	}
+	return int(math.Round(float64(sum) / float64(len(vals))))
+}
+
 // ── 트레이스 ──
 func traceFromSeed(seed uint32, ts time.Time) domain.TraceSummary {
 	r := newRNG(seed)
@@ -144,16 +213,23 @@ func traceFromSeed(seed uint32, ts time.Time) domain.TraceSummary {
 	if decision == "blocked" {
 		decMs = 0
 	}
+	traceID := "tr_" + b36(seed)
+	sessionID := "sess_" + b36(seed%100000)
+	var scores []domain.Score
+	if decision != "blocked" { // 차단건은 응답이 없어 평가 대상 아님
+		scores = synthScores(seed, traceID, sessionID, "")
+	}
 	return domain.TraceSummary{
-		TraceID: "tr_" + b36(seed), TS: ts.UTC().Format(time.RFC3339),
+		TraceID: traceID, TS: ts.UTC().Format(time.RFC3339),
 		Model: m.id, Endpoint: m.id + "-router", AppID: app.id, DeptID: app.dept,
 		APIKeyID: "ak_" + app.id[4:min(8, len(app.id))], UserID: fmt.Sprintf("u#%d", hash(app.id)%9000+1000),
-		SessionID: "sess_" + b36(seed%100000), Route: "local-vllm",
+		SessionID: sessionID, Route: "local-vllm",
 		TotalMs: int(math.Round(totalMs)), TTFTMs: int(math.Round(ttft)), QueueMs: int(math.Round(queue)), DecodeMs: int(math.Round(decMs)),
 		PromptTokens: prompt, CompletionToken: completionTok, CachedTokens: cached,
 		TokensPerSec: round1(ternF(decision == "blocked", 0, tps)),
 		TotalCostKRW: round2(inputCost + outputCost), InputCostKRW: round2(inputCost), OutputCostKRW: round2(outputCost),
 		Status: status, Decision: decision, FinishReason: finish, HTTPStatus: http, Stream: r() > 0.3,
+		Scores: scores,
 	}
 }
 
@@ -165,9 +241,16 @@ func spansFromSeed(seed uint32, s domain.TraceSummary) []domain.TraceSpan {
 	root := "s_" + b36(seed)
 	var spans []domain.TraceSpan
 	t := 0.0
+	// observation-level: root generation 에 trace 점수를 부착(특정 span 에 부착 — Langfuse observation eval).
+	var rootScores []domain.Score
+	for _, sc := range s.Scores {
+		sc.ObservationID = root
+		rootScores = append(rootScores, sc)
+	}
 	spans = append(spans, domain.TraceSpan{
 		SpanID: root, Name: "chat " + s.Model, Kind: "generation", Source: "langfuse",
 		StartMs: 0, DurationMs: s.TotalMs, Status: s.Status, Level: ternS(errored, "ERROR", "DEFAULT"), Model: s.Model, CostKRW: s.TotalCostKRW,
+		Scores: rootScores,
 		Attributes: map[string]any{
 			"gen_ai.request.model": s.Model, "gen_ai.request.stream": s.Stream,
 			"usageDetails.input": s.PromptTokens, "usageDetails.output": s.CompletionToken, "usageDetails.cache_read_input_tokens": s.CachedTokens,
@@ -322,12 +405,16 @@ func synthSession(seed uint32, now time.Time) (domain.SessionSummary, []domain.S
 	}
 	sort.Strings(modelList)
 	totalTok, totalCost, blockedN := 0, 0.0, 0
+	ttfts := make([]int, 0, len(turns))
+	e2es := make([]int, 0, len(turns))
 	for _, t := range turns {
 		totalTok += t.PromptTokens + t.CompletionToken
 		totalCost += t.CostKRW
 		if t.Decision == "blocked" {
 			blockedN++
 		}
+		ttfts = append(ttfts, t.TTFTMs)
+		e2es = append(e2es, t.TotalMs)
 	}
 	first, _ := time.Parse(time.RFC3339, turns[0].TS)
 	last, _ := time.Parse(time.RFC3339, turns[len(turns)-1].TS)
@@ -335,6 +422,7 @@ func synthSession(seed uint32, now time.Time) (domain.SessionSummary, []domain.S
 		SessionID: "sess_" + b36(seed), StartedAt: turns[0].TS, LastAt: turns[len(turns)-1].TS, Turns: len(turns),
 		AppID: app.id, DeptID: app.dept, UserID: user, Models: modelList,
 		TotalTokens: totalTok, TotalCostKRW: round2(totalCost), Blocked: blockedN, DurationMs: last.Sub(first).Milliseconds(),
+		TTFTP50Ms: p50i(ttfts), TTFTAvgMs: avgi(ttfts), LatencyP50Ms: p50i(e2es),
 	}
 	return sum, turns
 }
@@ -357,8 +445,13 @@ func synthSessionList(rng domain.TimeRange, app string) domain.SessionListReport
 
 func synthSessionDetail(sessionID string) domain.SessionDetail {
 	seed64, _ := strconv.ParseUint(strings.TrimPrefix(sessionID, "sess_"), 36, 32)
-	sum, turns := synthSession(uint32(seed64), time.Now())
-	return domain.SessionDetail{Summary: sum, Turns: turns}
+	seed := uint32(seed64)
+	sum, turns := synthSession(seed, time.Now())
+	scores := synthScores(seed, "", sessionID, "")
+	for i := range scores {
+		scores[i].SessionID = sessionID // 세션 단위 점수
+	}
+	return domain.SessionDetail{Summary: sum, Turns: turns, Scores: scores}
 }
 
 // ── 가드레일 원문 ──

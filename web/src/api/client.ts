@@ -34,6 +34,7 @@ import type {
   ThirdPartyCred,
   TimeRange,
   Timeseries,
+  Score,
   SessionDetail,
   SessionListReport,
   TraceDetail,
@@ -395,6 +396,22 @@ export function fetchSessions(range: TimeRange, app?: string, signal?: AbortSign
 
 export function fetchSession(sessionId: string, signal?: AbortSignal): Promise<SessionDetail> {
   return getJSON<SessionDetail>(`/sessions/${encodeURIComponent(sessionId)}`, signal);
+}
+
+// IMP-18: 라이브 trace 에 평가 점수를 부착(Langfuse scores). source=llm-judge|human|api.
+export async function recordScore(
+  traceId: string,
+  body: { name: string; value: number; data_type: Score["data_type"]; comment?: string; source: Score["source"]; string_value?: string; observation_id?: string; session_id?: string },
+): Promise<Score> {
+  const res = await fetch(`${BASE}/traces/${encodeURIComponent(traceId)}/scores`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as Score;
 }
 
 export function fetchCredentials(signal?: AbortSignal): Promise<{ credentials: ThirdPartyCred[]; available: boolean }> {
