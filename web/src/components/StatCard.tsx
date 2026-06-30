@@ -88,26 +88,34 @@ export default function StatCard({
       </div>
       <div className="metrics">
         {metrics.map((m) => (
-          <div className={`metric ${m.tone ?? ""}`} key={m.label}>
-            <div className="num">
-              {m.value}
-              {m.unit && <span className="unit">{m.unit}</span>}
-              {typeof m.delta === "number" && <Delta delta={m.delta} good={m.deltaGood} />}
-            </div>
+          <div
+            className={`metric ${m.tone ?? ""}${m.spark && m.spark.length > 1 ? " has-spark" : ""}`}
+            key={m.label}
+          >
+            {/* IMP-27: 스파크라인을 메트릭 블록 하단 풀블리드 배경으로 격하 — 라벨/숫자와 흐름 분리. */}
             {m.spark && m.spark.length > 1 && (
-              <Sparkline values={m.spark} color={m.tone ? TONE_COLOR[m.tone] : "var(--primary)"} />
-            )}
-            {typeof m.bar === "number" && (
-              <div className="usage">
-                <span
-                  style={{
-                    width: `${Math.min(Math.max(m.bar, 0), 1) * 100}%`,
-                    background: m.barColor ?? "var(--primary)",
-                  }}
-                />
+              <div className="metric-spark" aria-hidden="true">
+                <Sparkline values={m.spark} color={m.tone ? TONE_COLOR[m.tone] : "var(--primary)"} />
               </div>
             )}
-            <div className="lbl">{m.label}</div>
+            <div className="metric-body">
+              <div className="num">
+                {m.value}
+                {m.unit && <span className="unit">{m.unit}</span>}
+                {typeof m.delta === "number" && <Delta delta={m.delta} good={m.deltaGood} />}
+              </div>
+              {typeof m.bar === "number" && (
+                <div className="usage">
+                  <span
+                    style={{
+                      width: `${Math.min(Math.max(m.bar, 0), 1) * 100}%`,
+                      background: m.barColor ?? "var(--primary)",
+                    }}
+                  />
+                </div>
+              )}
+              <div className="lbl">{m.label}</div>
+            </div>
           </div>
         ))}
       </div>

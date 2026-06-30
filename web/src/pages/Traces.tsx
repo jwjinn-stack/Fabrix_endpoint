@@ -12,6 +12,7 @@ import ViewBar from "../components/ViewBar";
 import { useUrlState, decodeState, strField, enumField, rangeField } from "../urlState";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+import { spanGeometry, spanDepth, selfMs, kindCounts } from "../components/spanWaterfall";
 
 // IMP-24: 필터·기간을 URL 단일 출처로(시드+되쓰기 통합). 미세조정은 replaceState.
 const TRACE_SCHEMA = {
@@ -273,24 +274,28 @@ export default function Traces() {
   );
 }
 
-// span 깊이 계산: parent_id 체인을 따라 들여쓰기 레벨 산출(O-01 트리 뷰).
+// IMP-34: span 속성에서 토큰 합 추출(readout 용). OTel gen_ai / Langfuse usage 공통 키.
+// 없으면 undefined → readout 에서 토큰 줄을 숨긴다.
+function spanTokens(sp: TraceSpan): number | undefined {
+  const a = sp.attributes ?? {};
+  // total 우선, 없으면 input+output 합산.
+  const total = num(a["gen_ai.usage.total_tokens"] ?? a["usage.total_tokens"] ?? a["total_tokens"] ?? a["tokens"]);
+  if (total != null) return total;
+  const inTok = num(a["gen_ai.usage.input_tokens"] ?? a["gen_ai.usage.prompt_tokens"]);
+  const outTok = num(a["gen_ai.usage.output_tokens"] ?? a["gen_ai.usage.completion_tokens"]);
+  if (inTok != null || outTok != null) return (inTok ?? 0) + (outTok ?? 0);
+  return undefined;
+}
+function num(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
+
 // 스팬 속성에서 에러 사유 추출 — OTel/Langfuse 공통 키 중 먼저 잡히는 값.
 function spanErrReason(sp: TraceSpan): string | undefined {
   const a = sp.attributes ?? {};
   const v = a["exception.message"] ?? a["error.message"] ?? a["status_message"] ?? a["gen_ai.error"] ?? a["error"];
   return v != null && v !== "" ? String(v) : undefined;
-}
-
-function spanDepth(sp: TraceSpan, byId: Map<string, TraceSpan>): number {
-  let depth = 0;
-  let cur = sp.parent_id ? byId.get(sp.parent_id) : undefined;
-  const seen = new Set<string>([sp.span_id]);
-  while (cur && !seen.has(cur.span_id)) {
-    depth += 1;
-    seen.add(cur.span_id);
-    cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
-  }
-  return depth;
 }
 
 // ───────────────────────── 상세: 요약 + waterfall + 속성 ─────────────────────────
@@ -325,6 +330,8 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
   const [view, setView] = useState<"timeline" | "tree">("timeline");
   // O-02: span 이름/타입/id 부분일치 필터(대소문자 무시).
   const [q, setQ] = useState("");
+  // IMP-34: 호버 readout 대상 span(타임라인 막대/행). openSpan(선택) 과 별개로 약한 강조.
+  const [hoverSpan, setHoverSpan] = useState<string | null>(null);
 
   // 트리 모드용 span 인덱스 + 깊이. 부모 정보가 거의 평면이면 kind 별 "단계 그룹"으로 흉내.
   const byId = useMemo(() => new Map(detail.spans.map((sp) => [sp.span_id, sp])), [detail.spans]);
@@ -340,8 +347,19 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
     );
   };
 
-  // 타임라인: 시작 시각 순. 트리: 계층 정렬(부모 깊이 있으면 그대로, 없으면 kind 묶음).
-  const timelineSpans = useMemo(() => [...children].sort((a, b) => a.start_ms - b.start_ms).filter(matches), [children, q]);
+  // 타임라인: 시작 시각 순 + 깊이(들여쓰기). 트리: 계층 정렬(부모 깊이 있으면 그대로, 없으면 kind 묶음).
+  // IMP-34: 타임라인에서도 parent 체인 깊이만큼 라벨을 들여쓰기해 계층을 가시화한다.
+  const timelineRows = useMemo(
+    () =>
+      [...children]
+        .sort((a, b) => a.start_ms - b.start_ms)
+        .filter(matches)
+        .map((sp) => ({ sp, depth: spanDepth(sp, byId) })),
+    [children, q, byId],
+  );
+
+  // IMP-34: 등장 kind 만 응집 범례 칩(색·라벨·개수)으로.
+  const legendChips = useMemo(() => kindCounts(children), [children]);
 
   // 트리: 계층 데이터가 있으면 깊이로 들여쓰기. 없으면 kind 별 단계 그룹(정직하게 평면 흉내).
   const treeGroups = useMemo(() => {
@@ -363,7 +381,7 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
     return order.map((k) => ({ label: SPAN_LABEL[k], spans: groups.get(k)!.map((sp) => ({ sp, depth: 1 })) }));
   }, [children, q, hasHierarchy, byId]);
 
-  const visibleCount = timelineSpans.length;
+  const visibleCount = timelineRows.length;
 
   return (
     <>
@@ -448,17 +466,38 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
           <div className="state">"{q}" 와 일치하는 스팬이 없습니다.</div>
         ) : view === "timeline" ? (
           <div className="span-wf-rows">
+            {/* IMP-34: 시간축 눈금(0 · 1/4 · 1/2 · 3/4 · total) — track 영역(232px..우측64px)에 정렬 */}
+            <div className="span-axis" aria-hidden="true">
+              {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+                <span key={f} className="span-axis-tick" style={{ left: `calc(232px + (100% - 296px) * ${f})` }}>
+                  <span className="span-axis-rule" />
+                  <span className="span-axis-label">{f === 0 ? "0" : fmtMs(total * f)}</span>
+                </span>
+              ))}
+            </div>
             {/* TTFT 기준선 */}
             <div className="span-ttft-line" style={{ left: `calc(232px + (100% - 296px) * ${ttftPct / 100})` }} title={`TTFT ${s.ttft_ms}ms`} aria-hidden="true" />
-            {timelineSpans.map((sp) => {
-              const left = (sp.start_ms / total) * 100;
-              const width = Math.max(0.6, (sp.duration_ms / total) * 100);
+            {timelineRows.map(({ sp, depth }) => {
+              const { leftPct, widthPct } = spanGeometry(sp, total);
               const open = openSpan === sp.span_id;
+              const hovered = hoverSpan === sp.span_id;
               const color = SPAN_COLOR[sp.kind];
+              const self = selfMs(sp, detail.spans);
+              const tokens = spanTokens(sp);
               return (
-                <div key={sp.span_id} className="span-block">
-                  <button type="button" className={`span-row ${open ? "open" : ""}`} onClick={() => onToggleSpan(sp.span_id)} aria-expanded={open}>
-                    <span className="span-label">
+                <div key={sp.span_id} className={`span-block${open ? " is-active" : ""}${hovered ? " is-hover" : ""}`}>
+                  <button
+                    type="button"
+                    className={`span-row ${open ? "open" : ""}`}
+                    onClick={() => onToggleSpan(sp.span_id)}
+                    onMouseEnter={() => setHoverSpan(sp.span_id)}
+                    onMouseLeave={() => setHoverSpan((h) => (h === sp.span_id ? null : h))}
+                    onFocus={() => setHoverSpan(sp.span_id)}
+                    onBlur={() => setHoverSpan((h) => (h === sp.span_id ? null : h))}
+                    aria-expanded={open}
+                  >
+                    <span className="span-label" style={{ paddingLeft: depth > 0 ? `calc(${depth} * var(--sp-2))` : undefined }}>
+                      {depth > 0 && <span className="span-indent" aria-hidden="true" />}
                       <span className="span-kind" style={{ background: color }} aria-hidden="true" />
                       <span className="span-name">{sp.name}</span>
                       <span className={`span-src span-src-${sp.source}`} title={sp.source === "langfuse" ? "Langfuse observation (토큰·비용·프롬프트)" : "OTel → victoria-traces (Dynamo/vLLM)"}>{sp.source === "langfuse" ? "LF" : "VT"}</span>
@@ -468,7 +507,17 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
                       {sp.status !== "error" && sp.level === "WARNING" && <span className="span-reason warn" title="경고">경고</span>}
                     </span>
                     <span className="span-track">
-                      <span className="span-bar" style={{ left: `${left}%`, width: `${width}%`, background: color, opacity: sp.status === "error" ? 1 : 0.85 }} />
+                      <span className="span-bar" style={{ left: `${leftPct}%`, width: `${widthPct}%`, background: color, opacity: sp.status === "error" ? 1 : 0.85 }} />
+                      {/* IMP-34: 호버 readout — 막대 시작 위치에 self/total ms + 토큰. 모든 값 텍스트(이스케이프). */}
+                      {hovered && (
+                        <span className="span-readout" role="status" style={{ left: `${leftPct}%` }}>
+                          <span className="span-readout-name"><span className="span-readout-dot" style={{ background: color }} aria-hidden="true" />{sp.name} <em>{SPAN_LABEL[sp.kind]}</em></span>
+                          <span className="span-readout-row"><span>시작</span><b>+{fmtMs(sp.start_ms)}</b></span>
+                          <span className="span-readout-row"><span>self</span><b>{fmtMs(self)}</b></span>
+                          <span className="span-readout-row"><span>total</span><b>{fmtMs(sp.duration_ms)}</b></span>
+                          {tokens != null && <span className="span-readout-row"><span>토큰</span><b>{fmtTokens(tokens)}</b></span>}
+                        </span>
+                      )}
                     </span>
                     <span className="span-ms">{fmtMs(sp.duration_ms)}</span>
                   </button>
@@ -488,7 +537,7 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
                   const open = openSpan === sp.span_id;
                   const color = SPAN_COLOR[sp.kind];
                   return (
-                    <div key={sp.span_id} className="span-block" style={{ paddingLeft: `calc(${depth} * var(--sp-3))`, borderLeft: depth > 0 ? "1px solid var(--border)" : undefined, marginLeft: depth > 0 ? 1 : 0 }}>
+                    <div key={sp.span_id} className={`span-block${open ? " is-active" : ""}`} style={{ paddingLeft: `calc(${depth} * var(--sp-3))`, borderLeft: depth > 0 ? "1px solid var(--border)" : undefined, marginLeft: depth > 0 ? 1 : 0 }}>
                       <button type="button" className="disclose-btn" aria-expanded={open} onClick={() => onToggleSpan(sp.span_id)} style={{ width: "100%" }}>
                         <span className="caret">›</span>
                         <span className="span-kind" style={{ background: color, marginRight: "var(--sp-1)" }} aria-hidden="true" />
@@ -506,9 +555,10 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
             ))}
           </div>
         )}
+        {/* IMP-34: 응집 범례 칩 — 등장 kind 만 색 칩 + 라벨 + 개수 */}
         <div className="span-wf-legend">
-          {[...new Set(children.map((c) => c.kind))].map((k) => (
-            <span key={k}><i style={{ background: SPAN_COLOR[k] }} />{SPAN_LABEL[k]}</span>
+          {legendChips.map(({ kind, count }) => (
+            <span key={kind} className="span-chip"><i style={{ background: SPAN_COLOR[kind] }} />{SPAN_LABEL[kind]}<span className="span-chip-n">{count}</span></span>
           ))}
           <span className="span-wf-src"><span className="span-src span-src-langfuse">LF</span> Langfuse · <span className="span-src span-src-otel">VT</span> victoria-traces · <span className="span-derived">attr</span> 파생</span>
         </div>
