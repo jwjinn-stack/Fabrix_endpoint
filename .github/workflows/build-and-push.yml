@@ -55,6 +55,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # buildx 빌더(docker-container 드라이버) 셋업 — 이게 없으면 기본 docker 드라이버라
+      # cache-to: type=gha 가 "Cache export is not supported for the docker driver" 로 실패한다.
+      - uses: docker/setup-buildx-action@v3
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
