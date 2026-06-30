@@ -1705,16 +1705,71 @@ dialog.slide-panel::backdrop { background: rgba(16, 24, 40, 0.28); }
 /* IMP-38 인시던트 인박스 — 상태 필터 탭·상태 배지·발생횟수·시각·액션 */
 .inc-tabs { margin: var(--sp-2) var(--sp-3) 0; }
 .inc-tabs button { flex: 1; }
-.note.inc { flex-direction: row; align-items: flex-start; }
+
+/* IMP-43 시각 위계 — severity 좌측 컬러바·아이콘·상대시각·호버 액션·미처리 강조.
+   카드형 행(Datadog event stream / Grafana OnCall / Linear inbox 밀도 기준). */
+.note.inc {
+  position: relative;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  padding-left: var(--sp-4); /* 좌측 컬러바 자리 */
+  border: 1px solid transparent;
+  transition: background var(--ease), border-color var(--ease);
+}
+.note.inc:hover,
+.note.inc:focus-within { background: var(--surface-2); border-color: var(--border); }
 .note.inc .note-body { flex: 1; min-width: 0; }
+
+/* severity 좌측 컬러바 (4px) — 색은 .inc-sev-* 매핑 */
+.inc-bar {
+  position: absolute; left: 0; top: var(--sp-1); bottom: var(--sp-1);
+  width: 3px; border-radius: 999px; background: var(--text-dim);
+}
+/* severity 아이콘 글리프 */
+.inc-glyph { flex: 0 0 auto; margin-top: 1px; }
+.inc-icon { font-size: 11px; line-height: 1; color: var(--text-dim); }
+
+/* severity 토큰 매핑 — info=중성, warning=amber, critical=red */
+.inc-sev-info .inc-bar { background: var(--text-dim); }
+.inc-sev-info .inc-icon { color: var(--text-dim); }
+.inc-sev-warning .inc-bar { background: var(--amber); }
+.inc-sev-warning .inc-icon { color: var(--amber); }
+.inc-sev-critical .inc-bar { background: var(--red); }
+.inc-sev-critical .inc-icon { color: var(--red); }
+
+/* 미처리(triggered) 강조 — 약한 배경 틴트 + 컬러바 굵게 + 미읽음 도트 */
+.note.inc.inc-unhandled { background: color-mix(in srgb, var(--red) 5%, transparent); }
+.note.inc.inc-unhandled .inc-bar { width: 4px; }
+.note.inc.inc-unhandled.inc-sev-warning { background: color-mix(in srgb, var(--amber) 6%, transparent); }
+.note.inc.inc-unhandled.inc-sev-info { background: color-mix(in srgb, var(--text-dim) 6%, transparent); }
+.note.inc.inc-unhandled .inc-glyph::before {
+  content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  margin-right: 4px; vertical-align: middle; background: var(--red);
+}
+.note.inc.inc-unhandled.inc-sev-warning .inc-glyph::before { background: var(--amber); }
+.note.inc.inc-unhandled.inc-sev-info .inc-glyph::before { background: var(--text-dim); }
+
 .inc-state { font-size: 10px; font-weight: 600; padding: 1px 6px; border: 1px solid var(--border); }
 .inc-state.inc-triggered { color: var(--red, #c8281e); border-color: var(--red, #c8281e); background: var(--red-weak, rgba(200,40,30,0.1)); }
 .inc-state.inc-acked { color: var(--primary); border-color: var(--primary); background: var(--primary-weak); }
 .inc-state.inc-snoozed { color: var(--text-faint); }
 .inc-state.inc-resolved { color: var(--ok, #1a7f5a); border-color: var(--ok, #1a7f5a); background: color-mix(in srgb, var(--ok, #1a7f5a) 10%, transparent); }
 .inc-count { font-size: var(--fs-xs); font-weight: 700; color: var(--text-faint); }
-.inc-times { display: flex; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px; }
-.inc-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-2); }
+/* 상대시각 — 모노 폰트로 정렬감(Datadog/Linear 타임스탬프) */
+.inc-rel { font-family: var(--mono, monospace); font-size: var(--fs-xs); color: var(--text-faint); letter-spacing: -0.01em; }
+.inc-times { display: flex; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px; font-family: var(--mono, monospace); letter-spacing: -0.01em; }
+
+/* 호버 액션 — 기본 흐릿, 행 호버/포커스·미처리 행에서 드러남 */
+.inc-actions {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-2);
+  opacity: 0; transition: opacity var(--ease);
+}
+.note.inc:hover .inc-actions,
+.note.inc:focus-within .inc-actions,
+.note.inc.inc-unhandled .inc-actions { opacity: 1; }
+@media (hover: none) { .inc-actions { opacity: 1; } }
 
 /* P4-1 추론 지연 3분할 게이지 패널 */
 .lat-panel .lat-body { display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-2); }

@@ -101,4 +101,36 @@ describe("NotificationsDrawer 인시던트 인박스 (IMP-38)", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  // ───── IMP-43 시각 위계 (severity 컬러바·상대시각·미처리 강조·호버 액션) ─────
+  it("severity별 컬러바 클래스를 행에 적용한다(critical=inc-sev-critical)", async () => {
+    renderDrawer();
+    const title = await screen.findByText("엔드포인트 NotReady");
+    const row = title.closest(".note.inc");
+    expect(row).toHaveClass("inc-sev-critical");
+    // 좌측 컬러바 요소 존재
+    expect(row?.querySelector(".inc-bar")).toBeInTheDocument();
+  });
+
+  it("triggered 인시던트는 미처리 강조 클래스를 받는다(inc-unhandled)", async () => {
+    renderDrawer();
+    const title = await screen.findByText("엔드포인트 NotReady");
+    expect(title.closest(".note.inc")).toHaveClass("inc-unhandled");
+  });
+
+  it("상대시각을 렌더하고 절대시각을 title 로 보존한다", async () => {
+    renderDrawer();
+    await screen.findByText("엔드포인트 NotReady");
+    // last_seen 기반 상대시각("전" 포함) — 고정 과거 타임스탬프이므로 "전" 으로 끝남
+    const rels = screen.getAllByText(/전$/);
+    expect(rels.length).toBeGreaterThan(0);
+    expect(rels[0].getAttribute("title")).toMatch(/최근|2026/);
+  });
+
+  it("처리중/해소 호버 액션 버튼이 행에 존재한다(IMP-38 액션 비회귀)", async () => {
+    renderDrawer();
+    await screen.findByText("엔드포인트 NotReady");
+    expect(screen.getByRole("button", { name: "처리중" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "해소" })).toBeInTheDocument();
+  });
 });

@@ -3,7 +3,8 @@ import { ackIncident, fetchIncidents, resolveIncident, snoozeIncident } from "..
 import { useCap } from "../capabilities";
 import { useToast } from "../toast";
 import { humanizeError } from "../utils/errors";
-import type { Incident, IncidentState } from "../api/types";
+import { relativeTime } from "../utils/format";
+import type { AlarmSeverity, Incident, IncidentState } from "../api/types";
 
 // 인시던트 인박스 (IMP-38) — OnCall/PagerDuty 모델. 기존 알림 드로어를 read-only 리스트에서
 // 상태(ack/resolve/snooze)·발생횟수·최초/최근 시각·그룹핑을 가진 **인시던트 라이프사이클**로 격상.
@@ -28,6 +29,19 @@ const STATE_LABEL: Record<IncidentState, string> = {
   acked: "처리중",
   resolved: "해소됨",
   snoozed: "스누즈",
+};
+
+// severity 시각 매핑 (IMP-43) — 좌측 컬러바·아이콘. 색은 CSS(.inc-sev-*) 토큰으로,
+// 여기선 아이콘·접근성 라벨만. info 는 중성(--text-dim), warning=amber, critical=red.
+const SEV_ICON: Record<AlarmSeverity, string> = {
+  critical: "▲", // 위험 (Datadog/OnCall 의 사선 경고 모티프)
+  warning: "◆",
+  info: "●",
+};
+const SEV_LABEL: Record<AlarmSeverity, string> = {
+  critical: "심각",
+  warning: "경고",
+  info: "정보",
 };
 
 const SNOOZE_OPTIONS = [
@@ -149,22 +163,40 @@ export default function NotificationsDrawer({ open, onClose }: { open: boolean; 
         {loading && incidents.length === 0 && <div className="empty">불러오는 중…</div>}
         {!loading && visible.length === 0 && <div className="empty">해당 상태의 인시던트가 없습니다.</div>}
         {visible.map((inc) => (
-          <div key={inc.id} className={`note inc note-${inc.severity}`}>
-            <span className={`note-dot ${inc.severity === "critical" ? "guard" : ""}`} aria-hidden="true" />
+          <div
+            key={inc.id}
+            className={`note inc note-${inc.severity} inc-sev-${inc.severity}${
+              inc.state === "triggered" ? " inc-unhandled" : ""
+            }`}
+          >
+            {/* severity 좌측 컬러바 (IMP-43) — 색은 .inc-sev-* 토큰 */}
+            <span className="inc-bar" aria-hidden="true" />
+            {/* 미처리(triggered) 미읽음 도트 + severity 아이콘 */}
+            <span className="inc-glyph" title={`${SEV_LABEL[inc.severity]} 인시던트`}>
+              <span className="sr-only">{SEV_LABEL[inc.severity]}</span>
+              <span className="inc-icon" aria-hidden="true">{SEV_ICON[inc.severity]}</span>
+            </span>
             <div className="note-body">
               <div className="note-msg">{inc.title}</div>
               <div className="note-foot">
                 <span className={`badge inc-state inc-${inc.state}`}>{STATE_LABEL[inc.state]}</span>
                 {inc.count > 1 && <span className="inc-count" title="발생 횟수">×{inc.count}</span>}
+                {/* 상대시각 — 최근 발생 기준, 절대시각은 title 로 보존 */}
+                <span className="inc-rel" title={`최근 ${fmtTime(inc.last_seen)}`}>
+                  {relativeTime(inc.last_seen)}
+                </span>
                 {inc.state === "snoozed" && inc.silenced_until && (
-                  <span className="note-ts">~{fmtTime(inc.silenced_until)} 까지</span>
+                  <span className="inc-rel" title={`~${fmtTime(inc.silenced_until)} 까지`}>
+                    {relativeTime(inc.silenced_until)}까지
+                  </span>
                 )}
               </div>
               <div className="inc-times">
-                <span>최초 {fmtTime(inc.first_seen)}</span>
-                <span>최근 {fmtTime(inc.last_seen)}</span>
+                <span title={fmtTime(inc.first_seen)}>최초 {relativeTime(inc.first_seen)}</span>
+                {inc.count > 1 && <span title={fmtTime(inc.last_seen)}>최근 {relativeTime(inc.last_seen)}</span>}
               </div>
-              {/* 액션 — ack 은 처리 전(triggered/snoozed)에, resolve/snooze 는 write cap 일 때 */}
+              {/* 액션 — ack 은 처리 전(triggered/snoozed)에, resolve/snooze 는 write cap 일 때.
+                  IMP-43: 기본 흐릿, 행 호버/포커스(focus-within)·미처리 행에서 드러남(.inc-actions). */}
               <div className="inc-actions">
                 {(inc.state === "triggered" || inc.state === "snoozed") && (
                   <button
