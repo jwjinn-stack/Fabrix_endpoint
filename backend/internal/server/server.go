@@ -212,9 +212,22 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/config/status", s.handleConfigStatus)
 	}
 
+	// 미들웨어 배선: Logger → CORS → Authn → RateLimit → handlers.
+	// Authn 은 CORS 뒤 — OPTIONS preflight 가 신원 해석에 막히지 않도록(preflight 는 토큰 불요).
+	// RateLimit 은 Authn 뒤 — 신원(IdentityFrom) 으로 버킷 키를 잡을 수 있도록.
+	// health/capabilities 는 면제(프로브·부팅 토글이 레이트리밋에 막히면 안 됨).
 	return httpx.Chain(mux,
 		httpx.Logger,
 		httpx.CORS(s.allowed),
+		httpx.Authn,
+		httpx.RateLimit(httpx.RateLimitConfig{
+			RPS:   s.cfg.RateLimitRPS,
+			Burst: s.cfg.RateLimitBurst,
+			ExemptPaths: []string{
+				"/api/v1/healthz",
+				"/api/v1/capabilities",
+			},
+		}),
 	)
 }
 

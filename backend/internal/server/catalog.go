@@ -185,10 +185,14 @@ func (s *Server) handlePlaygroundChat(w http.ResponseWriter, r *http.Request) {
 
 	// 사용량 롤업 적재(부서·앱·키 축 귀속, #4). 모든 추론이 프록시를 통과 = 트레이스 지점.
 	if s.usage != nil && s.usage.Enabled() {
+		idApp := "playground"
+		if id, _ := httpx.IdentityFrom(r.Context()); id.AppID != "" {
+			idApp = id.AppID
+		}
 		s.usage.Enqueue(usage.Event{
 			Ts:               time.Now().UTC(),
 			DeptID:           s.resolveDept(r),
-			AppID:            headerOr(r, "x-app-id", "playground"),
+			AppID:            idApp,
 			APIKeyID:         headerOr(r, "x-api-key-id", "-"),
 			Model:            resp.Model,
 			PromptTokens:     resp.PromptTokens,

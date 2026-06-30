@@ -114,8 +114,11 @@ func (s *Server) classifyAndAudit(ctx context.Context, r *http.Request, prompt, 
 	return v
 }
 
-// buildAuditRow 는 판정 + 요청 헤더(귀속)로 증적 행을 만든다(원문/PII 비저장).
+// buildAuditRow 는 판정 + 요청 신원(귀속)으로 증적 행을 만든다(원문/PII 비저장).
+// 신원은 미들웨어가 해석해 ctx 에 실은 httpx.IdentityFrom 단일 경로로 읽는다(ad-hoc 헤더 파싱 제거).
+// salted-hash 비식별 귀속 동작은 그대로 — raw id 의 출처만 헤더 → ctx 로 바뀐다.
 func (s *Server) buildAuditRow(r *http.Request, prompt, model string, v domain.GuardVerdict) domain.GuardAuditRow {
+	id, _ := httpx.IdentityFrom(r.Context())
 	piiSub := make([]string, 0, len(v.PIIEntities))
 	for _, e := range v.PIIEntities {
 		piiSub = append(piiSub, e.Type)
@@ -125,13 +128,17 @@ func (s *Server) buildAuditRow(r *http.Request, prompt, model string, v domain.G
 	if v.Decision == domain.DecisionBlocked {
 		httpStatus = 403
 	}
+	appID := id.AppID
+	if appID == "" {
+		appID = "playground"
+	}
 	return domain.GuardAuditRow{
 		EventID:       audit.NewEventID(),
 		Ts:            time.Now().UTC().Format("2006-01-02 15:04:05.000"),
 		TraceID:       audit.NewEventID(),
-		UserRef:       s.audit.UserRef(header(r, "x-user-id")),
+		UserRef:       s.audit.UserRef(id.UserID),
 		DeptID:        s.resolveDept(r),
-		AppID:         headerOr(r, "x-app-id", "playground"),
+		AppID:         appID,
 		APIKeyID:      headerOr(r, "x-api-key-id", "-"),
 		Model:         model,
 		Decision:      v.Decision,
@@ -144,14 +151,16 @@ func (s *Server) buildAuditRow(r *http.Request, prompt, model string, v domain.G
 	}
 }
 
-// resolveDept 는 부서를 해석한다(identity-broker #14): x-dept-id 헤더 우선,
-// 없으면 x-user-id(이메일)로 사용자 디렉터리(app_user) 조회, 그래도 없으면 unknown.
+// resolveDept 는 부서를 해석한다(identity-broker #14): 신원의 Dept(x-dept-id) 우선,
+// 없으면 신원 UserID(이메일)로 사용자 디렉터리(app_user) 조회, 그래도 없으면 unknown.
+// 신원은 httpx.IdentityFrom(ctx) 단일 경로로 읽는다(ad-hoc 헤더 파싱 제거).
 func (s *Server) resolveDept(r *http.Request) string {
-	if d := r.Header.Get("x-dept-id"); d != "" {
-		return d
+	id, _ := httpx.IdentityFrom(r.Context())
+	if id.Dept != "" {
+		return id.Dept
 	}
-	if uid := r.Header.Get("x-user-id"); uid != "" && s.store != nil {
-		if dept, ok := s.store.DeptForUser(r.Context(), uid); ok {
+	if id.UserID != "" && s.store != nil {
+		if dept, ok := s.store.DeptForUser(r.Context(), id.UserID); ok {
 			return dept
 		}
 	}
@@ -164,8 +173,6 @@ func (s *Server) policyVersion() string {
 	}
 	return "v1"
 }
-
-func header(r *http.Request, k string) string { return r.Header.Get(k) }
 
 func headerOr(r *http.Request, k, def string) string {
 	if v := r.Header.Get(k); v != "" {

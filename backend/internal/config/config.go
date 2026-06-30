@@ -71,12 +71,24 @@ type Config struct {
 	SelfNamespace  string // env FABRIX_SELF_NAMESPACE  (자기 파드 네임스페이스)
 	SelfDeployment string // env FABRIX_SELF_DEPLOYMENT (자기 Deployment 이름)
 	SelfConfigMap  string // env FABRIX_SELF_CONFIGMAP  (envFrom 으로 읽는 ConfigMap 이름)
+
+	// ── per-key 레이트리밋 (IMP-28). 키별 토큰버킷(httpx.RateLimit). 0 이면 비활성(통과).
+	// profile-aware 기본값: observe(읽기 관제, 폴링 다수 → 넉넉) > manage. env 로 명시 오버라이드 가능.
+	RateLimitRPS   float64 // env FABRIX_RATELIMIT_RPS   (초당 토큰 보충률, 키별)
+	RateLimitBurst int     // env FABRIX_RATELIMIT_BURST (버킷 용량)
 }
 
 // Load 는 환경변수에서 설정을 읽고, 없으면 개발 친화적 기본값을 쓴다.
 func Load() Config {
+	profile := env("FABRIX_PROFILE", "manage")
+	// profile-aware 레이트리밋 기본값: observe 는 폴링형 읽기 관제라 넉넉하게,
+	// manage 는 변경 동작 포함이라 조금 더 보수적으로. env 가 있으면 명시 오버라이드.
+	rlRPS, rlBurst := 20.0, 40
+	if profile == "observe" {
+		rlRPS, rlBurst = 40.0, 80
+	}
 	return Config{
-		Profile:           env("FABRIX_PROFILE", "manage"),
+		Profile:           profile,
 		Features:          env("FABRIX_FEATURES", ""),
 		Addr:              env("FABRIX_API_ADDR", ":8080"),
 		AllowedOrigins:    splitCSV(env("FABRIX_ALLOWED_ORIGINS", "http://localhost:5173")),
@@ -101,7 +113,19 @@ func Load() Config {
 		SelfNamespace:  env("FABRIX_SELF_NAMESPACE", ""),
 		SelfDeployment: env("FABRIX_SELF_DEPLOYMENT", ""),
 		SelfConfigMap:  env("FABRIX_SELF_CONFIGMAP", ""),
+
+		RateLimitRPS:   envFloat("FABRIX_RATELIMIT_RPS", rlRPS),
+		RateLimitBurst: envInt("FABRIX_RATELIMIT_BURST", rlBurst),
 	}
+}
+
+func envFloat(key string, def float64) float64 {
+	if v := os.Getenv(key); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return def
 }
 
 func envInt(key string, def int) int {
