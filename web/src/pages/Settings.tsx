@@ -11,6 +11,7 @@ import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
 import InfoTip from "../components/InfoTip";
 import { humanizeError } from "../utils/errors";
+import { useToast } from "../toast";
 import { useFieldValidation, required } from "../utils/useFieldValidation";
 import FieldError from "../components/FieldError";
 
@@ -99,15 +100,15 @@ const PERMS: { label: string; admin: boolean; super: boolean; user: boolean }[] 
 export default function Settings() {
   const canWrite = useCap().can("users.write"); // 사용자 추가·역할 변경·삭제 권한
   const canConfig = useCap().can("credentials"); // 연동 설정 재구성(민감) — manage 전용
+  const toast = useToast(); // 전역 토스트(IMP-29) — 성공/오류 일원화
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<string[]>(["admin", "user", "super"]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // 초기 로드 실패만 인라인 표시
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ email: "", name: "", role: "user", dept_id: "" });
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
-  const [notice, setNotice] = useState<string | null>(null); // 성공 토스트
   const [confirmRole, setConfirmRole] = useState<{ user: User; role: string } | null>(null); // 권한 상향 확인
   const [confirmDel, setConfirmDel] = useState<User | null>(null); // 사용자 삭제 확인
 
@@ -120,12 +121,6 @@ export default function Settings() {
     },
     name: required("이름을 입력하세요."),
   });
-
-  // 토스트 — 3초 후 자동 소거.
-  const toast = useCallback((msg: string) => {
-    setNotice(msg);
-    setTimeout(() => setNotice(null), 3000);
-  }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -159,9 +154,9 @@ export default function Settings() {
     try {
       await updateUser(u.user_id, { role, dept_id: u.dept_id, status: u.status });
       setConfirmRole(null);
-      toast(`${u.name}님의 역할을 ${ROLE_LABEL[role] ?? role}(으)로 변경했습니다.`);
+      toast.success(`${u.name}님의 역할을 ${ROLE_LABEL[role] ?? role}(으)로 변경했습니다.`);
       load();
-    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
   const remove = async () => {
@@ -169,10 +164,10 @@ export default function Settings() {
     setBusy(true);
     try {
       await deleteUser(confirmDel.user_id);
-      toast(`${confirmDel.name}님을 삭제했습니다.`);
+      toast.success(`${confirmDel.name}님을 삭제했습니다.`);
       setConfirmDel(null);
       load();
-    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
   const submit = () => fv.handleSubmit(doSubmit);
@@ -183,10 +178,10 @@ export default function Settings() {
       await createUser(form);
       setModal(false);
       fv.reset();
-      toast(`${form.name}님을 추가했습니다.`);
+      toast.success(`${form.name}님을 추가했습니다.`);
       setForm({ email: "", name: "", role: "user", dept_id: "" });
       load();
-    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
   const openAddUser = () => { fv.reset(); setForm({ email: "", name: "", role: "user", dept_id: "" }); setModal(true); };
@@ -202,7 +197,6 @@ export default function Settings() {
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
-      {notice && <div className="toast" role="status">{notice}</div>}
       {canConfig && <ReconfigurePanel />}
 
       <div className="card">

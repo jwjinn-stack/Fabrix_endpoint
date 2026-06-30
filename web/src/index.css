@@ -980,24 +980,74 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 }
 
 /* 성공 토스트 — 우상단, 액션 성공 피드백(역할 변경·추가·삭제 등) */
-.toast {
+/* 전역 토스트 시스템(IMP-29) — 라이브 region 둘(polite/assertive)을 상시 배치.
+   region 자체는 화면을 점유하지 않고(자식 토스트만 보임), 우상단에 스택으로 쌓인다. */
+.toast-region {
   position: fixed;
   top: calc(var(--topbar-h) + 12px);
   right: 20px;
   z-index: 60;
-  background: var(--green-weak);
-  border: 1px solid var(--green);
-  color: var(--green);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: min(420px, calc(100vw - 40px));
+  pointer-events: none; /* region 은 클릭 통과, 개별 토스트만 받음 */
+}
+/* assertive(오류) region 은 polite 스택 아래로 살짝 내려 겹치지 않게 */
+.toast-region-alert { top: calc(var(--topbar-h) + 12px); }
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--text-muted);
+  color: var(--text);
   border-radius: var(--radius-sm);
-  padding: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--shadow-card-hover);
   animation: toast-in var(--ease);
 }
+.toast-success { border-left-color: var(--green); }
+.toast-success .toast-icon { color: var(--green); }
+.toast-error { border-left-color: var(--red); }
+.toast-error .toast-icon { color: var(--red); }
+.toast-info { border-left-color: var(--primary); }
+.toast-info .toast-icon { color: var(--primary); }
+.toast-icon { flex: none; font-weight: 700; line-height: 1.5; }
+.toast-msg { flex: 1; min-width: 0; line-height: 1.45; }
+.toast-action {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 2px;
+  text-decoration: underline;
+}
+.toast-close {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.toast-close:hover { color: var(--text); }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
 }
 
 /* ── 모델 카탈로그 ── */

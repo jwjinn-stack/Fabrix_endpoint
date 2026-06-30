@@ -14,6 +14,7 @@ import { useCap } from "../capabilities";
 import InfoTip from "../components/InfoTip";
 import Modal from "../components/Modal";
 import { humanizeError } from "../utils/errors";
+import { useToast } from "../toast";
 import { useFieldValidation } from "../utils/useFieldValidation";
 import FieldError from "../components/FieldError";
 import FormErrorSummary from "../components/FormErrorSummary";
@@ -65,6 +66,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
   const { can } = useCap(); // 쓰기 권한: 생성·삭제 endpoints.write / 키 발급 keys.write
   const canDeploy = can("endpoints.write");
   const canIssueKey = can("keys.write");
+  const toast = useToast(); // 전역 토스트(IMP-29) — mutation 성공/오류 일원화
   const [eps, setEps] = useState<Endpoint[]>([]);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +75,6 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
   const [form, setForm] = useState<EndpointSpec>(empty);
   const [preview, setPreview] = useState<EndpointPreview | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [detail, setDetail] = useState<Endpoint | null>(null);
   const [confirmDel, setConfirmDel] = useState<Endpoint | null>(null); // 삭제 확인 대상(비가역)
   const { density, setDensity } = useTableDensity("endpoints");
@@ -187,17 +188,18 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
 
   const doCreate = async () => {
     setBusy(true);
-    setError(null);
+    // 생성→롤아웃은 비동기 적용 — 진행형(pending) 토스트로 동일 ID 전이(IMP-29).
+    const tid = toast.info(`엔드포인트 “${form.name}” 생성·적용 중…`, { id: `ep-create-${form.name}`, duration: 0 });
     try {
       const r = await createEndpoint(form, true);
-      setNotice(`엔드포인트 생성 적용됨: ${r.result}`);
+      toast.success(`엔드포인트 생성 적용됨: ${r.result}`, { id: tid });
       setWizard(false);
       setForm(empty);
       setPreview(null);
       wfv.reset();
       load();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message), { id: tid });
     } finally {
       setBusy(false);
     }
@@ -209,11 +211,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
     setBusy(true);
     try {
       await deleteEndpoint(ns, name);
-      setNotice(`삭제됨: ${name}`);
+      toast.success(`삭제됨: ${name}`);
       setConfirmDel(null);
       load();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -300,10 +302,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
         quota_tpd: keyForm.quota_tpd ? Number(keyForm.quota_tpd) : undefined,
       });
       setIssued(k);
-      setNotice(`API 키 발급됨: ${keyForm.app_name || keyForm.app_id} → ${keyForm.model_scope}`);
+      // 평문 키는 별도 1회성 카드로만 표시 — 토스트엔 키 값을 넣지 않는다(보안).
+      toast.success(`API 키 발급됨: ${keyForm.app_name || keyForm.app_id} → ${keyForm.model_scope}`);
       loadChoices();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -325,7 +328,6 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
-      {notice && <div className="state" role="status">{notice}</div>}
       {!available && (
         <div className="state" role="status">
           kubectl 미구성으로 엔드포인트 기능이 비활성입니다. (백엔드 FABRIX_KUBECTL/권한 확인)

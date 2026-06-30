@@ -10,6 +10,7 @@ import { SkeletonRows } from "../components/Skeleton";
 import ExportButton from "../components/ExportButton";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+import { useToast } from "../toast";
 import { useFieldValidation } from "../utils/useFieldValidation";
 import FieldError from "../components/FieldError";
 
@@ -44,10 +45,11 @@ const won = (v: number) => `₩${Math.round(v).toLocaleString("ko-KR")}`;
 
 export default function Keys() {
   const canWrite = useCap().can("keys.write"); // 키 발급·회수 권한(observe 에선 false)
+  const toast = useToast(); // 전역 토스트(IMP-29) — mutation 성공/오류 일원화
   const [keys, setKeys] = useState<APIKeyView[]>([]);
   const [apps, setApps] = useState<OrgApp[]>([]);
   const [depts, setDepts] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // 초기 로드 실패만 인라인 표시
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [issued, setIssued] = useState<IssuedKey | null>(null);
@@ -112,6 +114,7 @@ export default function Keys() {
 
   const doSubmit = async () => {
     setBusy(true);
+    const keyName = form.key_name; // 폼 리셋 전에 토스트용으로 보존
     try {
       const k = await issueKey({
         app_id: appMode === "select" ? form.app_id : undefined,
@@ -128,9 +131,11 @@ export default function Keys() {
       fv.reset();
       setAppMode("select");
       setForm({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80" });
+      // 평문 키는 별도 1회성 카드(issued)로만 표시 — 토스트엔 키 값을 절대 넣지 않는다(보안).
+      toast.success(`API 키를 발급했습니다${keyName ? ` — ${keyName}` : ""}.`);
       load();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -139,12 +144,14 @@ export default function Keys() {
   const revoke = async () => {
     if (!confirmRevoke) return;
     setBusy(true);
+    const name = confirmRevoke.name;
     try {
       await revokeKey(confirmRevoke.api_key_id);
       setConfirmRevoke(null);
+      toast.success(`${name} 키를 회수했습니다.`);
       load();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
