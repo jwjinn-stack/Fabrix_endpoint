@@ -6,6 +6,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import SummaryStrip from "../components/SummaryStrip";
+import { SkeletonRows } from "../components/Skeleton";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
 
@@ -199,8 +200,6 @@ export default function Keys() {
         </div>
       )}
 
-      {!error && loading && keys.length === 0 && <div className="state" role="status">키 목록을 불러오는 중…</div>}
-
       {keys.length > 0 && (
         <SummaryStrip items={[
           { label: "전체 키", value: keys.length },
@@ -212,7 +211,9 @@ export default function Keys() {
 
       <div className="card">
         <div className="card-head"><h3>API 키</h3></div>
-        {keys.length === 0 && !loading ? (
+        {loading && keys.length === 0 ? (
+          <div className="table-scroll"><SkeletonRows rows={6} cols={7} /></div>
+        ) : keys.length === 0 ? (
           <div className="empty">발급된 키가 없습니다. “+ 키 발급”으로 시작하세요.</div>
         ) : (
           <div className="table-scroll">

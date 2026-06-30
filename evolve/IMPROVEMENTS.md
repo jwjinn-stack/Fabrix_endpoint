@@ -19,7 +19,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | done | 2026-06-30 |
 | IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | done | 2026-06-30 |
 | IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | done | 2026-06-30 |
-| IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
+| IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | done | 2026-06-30 |
 | IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded | 2026-06-30 |
 | IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | done | 2026-06-30 |
 | IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | done | 2026-06-30 |
@@ -180,6 +180,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 코드 검증: Skeleton.tsx 에 Skeleton·SkeletonCards(count)·SkeletonRows(rows/cols) 가 이미 있고 접근성 모범적(시각요소 aria-hidden + 별도 sr-only role=status aria-live=polite). 8개 페이지(Dashboard·Usage·Traffic·Traces·Sessions·Gpu·Guard·Diagnostics) 사용 중. 반면 5개 핵심 운영 화면이 평문 텍스트(Keys·Models·Credentials·Endpoints·Settings, `loading && rows.length===0` 패턴). 외부 권위: NN/g 가 정확히 이 패턴 권고 — "스켈레톤은 전체 화면(영역) 로딩에 더 낫다(와이어프레임이 페이지 모습을 예고)", 스피너는 "단일 모듈"용. LukeW 원조 연구: 실제 로드시간 동일해도 스켈레톤이 더 빠르게 인지. NN/g 회의론 반영: 1초 미만엔 불필요(~500ms 초과부터 우월) → BFF 경유 fetch 는 대개 그 이상이라 타당. CLS 는 '설계로' 막아야 함(행수·높이·컬럼폭 실표와 일치). [배제] Vercel '22%↑'·Conductor '11% CTA↑' 수치는 1차 출처 미확인 콘텐츠팜성이라 의도적 제외.
 - **Sources**: https://www.nngroup.com/articles/skeleton-screens/ , https://www.nngroup.com/videos/skeleton-screens-vs-progress-bars-vs-spinners/ , https://www.lukew.com/ff/entry.asp?1797
 - **Deep-dive suggestion**: 없음 (출처 충분, 구현 직행 — 기존 컴포넌트 재사용이라 저위험)
+- **Result** (2026-06-30, done · security-light: clean): Keys·Settings(사용자)·Models 의 평문 로더를 카드 내부 `SkeletonRows`/`SkeletonCards` 로 통일(empty 오인 제거). Gpu/Sessions 상세패널 인라인 로더는 follow-up. tsc·lint·test green. spec: `specs/2026-06-30/IMP-14-loading-consistency.md`.
 
 ### IMP-15 — 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음
 - **Type**: compete (sev=medium, effort=L)

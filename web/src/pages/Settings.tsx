@@ -5,6 +5,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
+import { SkeletonRows } from "../components/Skeleton";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
@@ -186,8 +187,6 @@ export default function Settings() {
 
       {error && <div className="state error" role="alert">{error}</div>}
       {notice && <div className="toast" role="status">{notice}</div>}
-      {!error && loading && users.length === 0 && <div className="state" role="status">사용자를 불러오는 중…</div>}
-
       {canConfig && <ReconfigurePanel />}
 
       <div className="card">
@@ -195,7 +194,9 @@ export default function Settings() {
           <h3>사용자 · 역할</h3>
           <InfoTip>역할(Admin/User/Super)과 부서 매핑. 역할은 인라인으로 변경됩니다.</InfoTip>
         </div>
-        {users.length === 0 && !loading ? (
+        {loading && users.length === 0 ? (
+          <div className="table-scroll"><SkeletonRows rows={6} cols={6} /></div>
+        ) : users.length === 0 ? (
           <div className="empty">사용자가 없습니다. “+ 사용자 추가”로 등록하세요.</div>
         ) : (
           <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">

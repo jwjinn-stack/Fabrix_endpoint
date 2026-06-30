@@ -4,6 +4,7 @@ import type { HarborModel, HarborStatus, ModelMetric } from "../api/types";
 import type { NavFn } from "../router";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
+import { SkeletonCards } from "../components/Skeleton";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
 
@@ -118,7 +119,7 @@ export default function Models({ onNavigate }: { onNavigate: NavFn }) {
       {!available && !loading && (
         <div className="state" role="status">Harbor 레지스트리가 구성되지 않았습니다. (FABRIX_HARBOR_URL)</div>
       )}
-      {!error && loading && models.length === 0 && <div className="state" role="status">모델 레지스트리를 불러오는 중…</div>}
+      {!error && loading && models.length === 0 && <SkeletonCards count={6} />}
 
       {/* 모델 있음 → 카드 그리드 */}
       {available && models.length > 0 && (
