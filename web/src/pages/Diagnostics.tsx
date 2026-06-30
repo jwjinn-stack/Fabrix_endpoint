@@ -335,7 +335,7 @@ export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => v
         </button>
       </div>
 
-      <p className="muted" style={{ marginTop: -4, fontSize: 13 }}>
+      <p className="muted" style={{ marginTop: -4, fontSize: "var(--fs-body)" }}>
         이 Pod 에서 외부 의존성에 실제로 연결되는지 능동 프로브(read-only)로 확인합니다. 단계별 지연(DNS·TCP·TLS·서버)·실패 원인·네트워크 설정을 함께 보여줍니다. 자격증명(비밀번호)은 표시되지 않습니다.
       </p>
 

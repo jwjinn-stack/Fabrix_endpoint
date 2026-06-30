@@ -657,6 +657,50 @@ body {
   vertical-align: middle;
 }
 
+/* IMP-25 공용 차트 프리미티브 — 축 텍스트는 토큰 폰트(--fs-xs)/색(--text-dim, WCAG 4.5:1). */
+.chart-axis-text {
+  font-size: var(--fs-xs);
+  fill: var(--text-dim);
+}
+/* 호버 크로스헤어 + Grafana 식 readout 박스 */
+.chart-tooltip {
+  font-size: var(--fs-xs);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text);
+  line-height: 1.5;
+  display: inline-block;
+  white-space: nowrap;
+}
+.chart-tooltip-title {
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.chart-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.chart-tooltip-key {
+  color: var(--text-dim);
+}
+.chart-tooltip-key .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.chart-tooltip-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* ── 알람 ── */
 .alarms {
   display: flex;
@@ -725,6 +769,24 @@ body {
   background: var(--surface-2); border-radius: var(--radius-sm);
 }
 .state.error .btn { margin-top: var(--sp-1); }
+/* IMP-22 인라인 폼 검증 — 색상단독 금지(텍스트+⚠ 아이콘 동반, WCAG 1.4.1). */
+.field-error {
+  display: flex; align-items: flex-start; gap: 4px;
+  margin-top: 2px; color: var(--red); font-size: var(--fs-xs); font-weight: 500;
+}
+.field-error > span[aria-hidden] { line-height: 1.2; }
+/* 에러 필드 강조 — 빨간 테두리는 위 텍스트와 함께만 의미를 가진다(단독 아님). */
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 1px var(--red);
+}
+/* 위저드·긴 폼 submit 시 상단 에러 요약 — .state.error 톤 재사용. */
+.form-error-summary { margin-bottom: var(--sp-3); }
+.form-error-summary strong { display: block; margin-bottom: var(--sp-1); }
+.form-error-summary ul { margin: 0; padding-left: var(--sp-4); }
+.form-error-summary li { margin: 2px 0; }
+.form-error-summary .link { color: var(--red); }
+.form-error-summary:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 /* 카드 내부 빈 상태 — 데이터 0건일 때 사라지지 않게 */
 .empty {
   padding: var(--sp-5) var(--sp-2);
@@ -808,6 +870,11 @@ body {
 
 /* 가로 스크롤 컨테이너 — 컬럼 많은 테이블(키 등)이 카드를 넘칠 때 페이지 본문 대신 테이블만 스크롤 */
 .table-scroll { overflow-x: auto; }
+
+/* IMP-30 행 windowing 뷰포트 — 세로 스크롤 영역. 행 수가 임계(≈150)를 넘으면 보이는 행만 렌더.
+   임계 이하에선 내용이 max-height 보다 짧아 스크롤바가 안 생기고 기존과 동일하게 보인다. */
+.vrow-viewport { max-height: 70vh; overflow-y: auto; }
+.vrow-viewport .vrow-spacer td { padding: 0; border: none; }
 
 /* 리스트 상단 요약 칩 줄 — 요약 우선 + 넓은 화면 빈 공간 완화 */
 .summary-strip { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: var(--sp-4); }
@@ -962,24 +1029,74 @@ body {
 }
 
 /* 성공 토스트 — 우상단, 액션 성공 피드백(역할 변경·추가·삭제 등) */
-.toast {
+/* 전역 토스트 시스템(IMP-29) — 라이브 region 둘(polite/assertive)을 상시 배치.
+   region 자체는 화면을 점유하지 않고(자식 토스트만 보임), 우상단에 스택으로 쌓인다. */
+.toast-region {
   position: fixed;
   top: calc(var(--topbar-h) + 12px);
   right: 20px;
   z-index: 60;
-  background: var(--green-weak);
-  border: 1px solid var(--green);
-  color: var(--green);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  max-width: min(420px, calc(100vw - 40px));
+  pointer-events: none; /* region 은 클릭 통과, 개별 토스트만 받음 */
+}
+/* assertive(오류) region 은 polite 스택 아래로 살짝 내려 겹치지 않게 */
+.toast-region-alert { top: calc(var(--topbar-h) + 12px); }
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--text-muted);
+  color: var(--text);
   border-radius: var(--radius-sm);
-  padding: var(--sp-2) var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 500;
   box-shadow: var(--shadow-card-hover);
   animation: toast-in var(--ease);
 }
+.toast-success { border-left-color: var(--green); }
+.toast-success .toast-icon { color: var(--green); }
+.toast-error { border-left-color: var(--red); }
+.toast-error .toast-icon { color: var(--red); }
+.toast-info { border-left-color: var(--primary); }
+.toast-info .toast-icon { color: var(--primary); }
+.toast-icon { flex: none; font-weight: 700; line-height: 1.5; }
+.toast-msg { flex: 1; min-width: 0; line-height: 1.45; }
+.toast-action {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 2px;
+  text-decoration: underline;
+}
+.toast-close {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.toast-close:hover { color: var(--text); }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
 }
 
 /* ── 모델 카탈로그 ── */
@@ -1277,13 +1394,15 @@ dialog.modal.modal-wide { width: min(860px, 94vw); }
 .policy-verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: var(--sp-3); }
 @media (max-width: 900px) { .policy-row { grid-template-columns: 1fr; } }
 
-/* 알림 드로어 (#19) */
-.drawer-scrim { position: fixed; inset: 0; background: rgba(16,24,40,0.25); z-index: 60; }
-.drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 92vw); z-index: 61;
-  background: var(--surface); border-left: 1px solid var(--border); box-shadow: var(--shadow-card-hover);
-  display: flex; flex-direction: column;
+/* 알림 드로어 (#19) — 비-모달 네이티브 <dialog>.show()(IMP-31).
+   보조 피드라 배경을 가리지 않음(::backdrop·scrim 없음). top-layer 로 다른 콘텐츠 위에 표시. */
+dialog.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; left: auto; width: min(380px, 92vw); z-index: 61;
+  margin: 0; padding: 0; max-height: 100%; height: 100%; color: inherit;
+  background: var(--surface); border: 0; border-left: 1px solid var(--border); box-shadow: var(--shadow-card-hover);
+  flex-direction: column;
 }
+dialog.drawer[open] { display: flex; }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .drawer-head h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: var(--sp-2); }
 .drawer-count { background: var(--primary); color: #fff; border-radius: 999px; font-size: var(--fs-xs); padding: 1px 7px; }
@@ -1363,20 +1482,21 @@ dialog.modal.modal-wide { width: min(860px, 94vw); }
 .bar-row.clickable:hover { background: var(--surface-2); }
 .bar-row.clickable:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 
-/* 마스터-디테일 우측 슬라이드 패널 */
-.slide-overlay {
-  position: fixed; inset: 0; z-index: 60;
-  background: rgba(16, 24, 40, 0.28);
-  display: flex; justify-content: flex-end;
-  animation: slide-fade var(--ease);
-}
-@keyframes slide-fade { from { opacity: 0; } to { opacity: 1; } }
-.slide-panel {
-  background: var(--surface); height: 100%; max-width: 92vw;
+/* 마스터-디테일 우측 슬라이드 패널 — 네이티브 <dialog>.showModal() 기반(IMP-31).
+   top-layer 가 배경 inert·포커스 트랩 처리. 오른쪽 정렬은 margin, 배경 어둡힘은 ::backdrop. */
+dialog.slide-panel {
+  border: 0; padding: 0; color: inherit;
+  position: fixed; inset: 0 0 0 auto; /* 우측 정렬 */
+  height: 100%; max-height: 100%; max-width: 92vw;
+  background: var(--surface);
   box-shadow: -4px 0 24px rgba(16, 24, 40, 0.16);
-  display: flex; flex-direction: column;
+  flex-direction: column;
+}
+dialog.slide-panel[open] {
+  display: flex;
   animation: slide-in 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+dialog.slide-panel::backdrop { background: rgba(16, 24, 40, 0.28); }
 @keyframes slide-in { from { transform: translateX(24px); opacity: 0.6; } to { transform: translateX(0); opacity: 1; } }
 .slide-head {
   display: flex; align-items: flex-start; gap: var(--sp-3);
@@ -1910,3 +2030,11 @@ tr.row-sel { background: var(--primary-weak) !important; }
   border: 1px solid var(--border, #d8dce3); border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
+
+/* ── 의미론적 유틸 (IMP-19) ──
+   일회성 인라인 style 의 raw-px/하드코딩 색을 토큰으로 수렴하기 위한 최소 유틸.
+   상수-토큰 유틸(.mt-1 등)은 만들지 않는다(Pajamas deprecated). 반복 의도가
+   뚜렷한 의미론적 클래스만. 추가형 — 기존 토큰/.muted 와 충돌 없음. */
+.u-label-xs { font-size: var(--fs-xs); color: var(--text-dim); }
+.row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.stack-sm { display: flex; flex-direction: column; gap: var(--sp-2); }

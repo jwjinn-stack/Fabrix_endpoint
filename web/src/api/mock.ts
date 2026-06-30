@@ -13,7 +13,7 @@ import type {
   EnginePipeline, EvalResult, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
   GuardAuditRow, GuardDecision, GuardPolicy, GuardVerdict, HarborModel, HarborStatus,
   ImportResult, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
-  OrgTree, ProxyStats, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
+  OrgTree, ProxyStats, Score, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
   SpanKind, ThirdPartyCred, TimePoint, TimeRange, Timeseries,
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
@@ -482,6 +482,48 @@ function genPipeline(): EnginePipeline {
 
 // ───────────────────────── 분산 트레이스 생성기 ─────────────────────────
 // trace_id 에 seed 를 인코딩 → 목록·상세가 동일 seed 로 일관 재구성.
+// ── 평가 점수 합성 (Langfuse Scores) — synth.go 와 동일 로직 ──
+const SCORE_DIMENSIONS: { name: string; rationale: string }[] = [
+  { name: "정확성", rationale: "사실관계가 질문과 일치하며 근거가 명확함" },
+  { name: "간결성", rationale: "불필요한 군더더기 없이 핵심을 전달" },
+  { name: "근거제시", rationale: "출처·근거를 명시해 신뢰도가 높음" },
+  { name: "안전성", rationale: "정책 위반 표현 없이 안전하게 응답" },
+];
+// 결정적으로 0~2개의 점수를 만든다(numeric + 가끔 categorical). source=llm-judge.
+function synthScores(seed: number, traceId: string, sessionId: string, observationId: string): Score[] {
+  const r = rng(seed ^ 0x5f356495);
+  const n = Math.floor(r() * 2.6); // 0,1,2
+  if (n === 0) return [];
+  const ts = new Date().toISOString();
+  const out: Score[] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    let di = Math.floor(r() * SCORE_DIMENSIONS.length);
+    if (used.has(di)) di = (di + 1) % SCORE_DIMENSIONS.length;
+    used.add(di);
+    const d = SCORE_DIMENSIONS[di];
+    if (r() > 0.82) {
+      const labels = ["긍정", "중립", "부정"];
+      out.push({ name: "감성", value: 0, string_value: labels[Math.floor(r() * labels.length)], data_type: "categorical",
+        comment: "응답 톤 분류", source: "llm-judge", trace_id: traceId, observation_id: observationId || undefined, session_id: sessionId || undefined, ts });
+      continue;
+    }
+    out.push({ name: d.name, value: Math.round(2 + r() * 3), data_type: "numeric", comment: d.rationale,
+      source: "llm-judge", trace_id: traceId, observation_id: observationId || undefined, session_id: sessionId || undefined, ts });
+  }
+  return out;
+}
+// p50(중앙값, nearest-rank) / 평균(반올림).
+function p50i(vals: number[]): number {
+  if (!vals.length) return 0;
+  const s = [...vals].sort((a, b) => a - b);
+  return s[Math.floor((s.length - 1) / 2)];
+}
+function avgi(vals: number[]): number {
+  if (!vals.length) return 0;
+  return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+}
+
 function traceFromSeed(seed: number, ts: string): TraceSummary {
   const r = rng(seed);
   const model = CHAT_MODELS[Math.floor(r() * CHAT_MODELS.length)];
@@ -514,11 +556,15 @@ function traceFromSeed(seed: number, ts: string): TraceSummary {
   // 비용: Langfuse Worker 서버측 계산을 모사 (입력=신규+캐시, 출력). 단가는 등록 모델 단가(§5).
   const inputCost = ((prompt - cached) * model.price_in + cached * model.price_cached) / 1_000_000;
   const outputCost = (completionTok * model.price_out) / 1_000_000;
+  const traceId = `tr_${(seed >>> 0).toString(36)}`;
+  const sessionId = `sess_${(seed % 1e5).toString(36)}`;
+  // 차단건은 응답이 없어 평가 대상 아님.
+  const scores = decision === "blocked" ? undefined : synthScores(seed, traceId, sessionId, "");
   return {
-    trace_id: `tr_${(seed >>> 0).toString(36)}`, ts,
+    trace_id: traceId, ts,
     model: model.id, endpoint: ep?.name ?? model.id, app_id: app.app_id, dept_id: app.dept_id,
     api_key_id: key?.api_key_id ?? "ak_unknown",
-    user_id: `u#${(hash(app.app_id) % 9000 + 1000)}`, session_id: `sess_${(seed % 1e5).toString(36)}`, route: "local-vllm",
+    user_id: `u#${(hash(app.app_id) % 9000 + 1000)}`, session_id: sessionId, route: "local-vllm",
     total_ms: Math.round(decision === "blocked" ? ttft : total),
     ttft_ms: Math.round(ttft), queue_ms: Math.round(queue), decode_ms: Math.round(decision === "blocked" ? 0 : decode),
     prompt_tokens: prompt, completion_tokens: completionTok, cached_tokens: cached,
@@ -526,6 +572,7 @@ function traceFromSeed(seed: number, ts: string): TraceSummary {
     total_cost_krw: +(inputCost + outputCost).toFixed(2), input_cost_krw: +inputCost.toFixed(2), output_cost_krw: +outputCost.toFixed(2),
     status: errored ? "error" : "ok", decision, finish_reason: finish,
     http_status: decision === "blocked" ? 403 : errored ? 500 : 200, stream: r() > 0.3,
+    scores,
   };
 }
 
@@ -542,9 +589,12 @@ function spansFromSeed(seed: number, s: TraceSummary): TraceSpan[] {
     spans.push({ ...sp, span_id: id });
     return id;
   };
+  // observation-level: root generation 에 trace 점수 부착(특정 span eval).
+  const rootScores = (s.scores ?? []).map((sc) => ({ ...sc, observation_id: root }));
   // root = Langfuse GENERATION (LLM 호출). 토큰·비용·TTFT 귀속.
   push({ span_id: root, name: `chat ${s.model}`, kind: "generation", source: "langfuse", parent_id: undefined,
     start_ms: 0, duration_ms: s.total_ms, status: s.status, level: errored ? "ERROR" : "DEFAULT", model: s.model, cost_krw: s.total_cost_krw,
+    scores: rootScores.length ? rootScores : undefined,
     attributes: { "gen_ai.request.model": s.model, "gen_ai.request.stream": s.stream,
       // Langfuse usageDetails / costDetails (v2 필드명)
       "usageDetails.input": s.prompt_tokens, "usageDetails.output": s.completion_tokens, "usageDetails.cache_read_input_tokens": s.cached_tokens,
@@ -620,6 +670,21 @@ function genTraceDetail(traceId: string): TraceDetail {
   };
 }
 
+// 평가 점수 기록(IMP-18) — mock: 본문을 정규화된 Score 로 echo(영속 저장 없음, 스키마/흐름 잠금).
+function recordScoreMock(traceId: string, body: Record<string, unknown>): Score {
+  const dtRaw = String(body.data_type ?? "numeric");
+  const data_type = (["numeric", "categorical", "boolean"].includes(dtRaw) ? dtRaw : "numeric") as Score["data_type"];
+  const srcRaw = String(body.source ?? "api");
+  const source = (["human", "llm-judge", "api"].includes(srcRaw) ? srcRaw : "api") as Score["source"];
+  return {
+    name: String(body.name ?? ""), value: Number(body.value ?? 0),
+    string_value: body.string_value ? String(body.string_value) : undefined,
+    data_type, comment: body.comment ? String(body.comment) : undefined, source,
+    trace_id: traceId, observation_id: body.observation_id ? String(body.observation_id) : undefined,
+    session_id: body.session_id ? String(body.session_id) : undefined, ts: new Date().toISOString(),
+  };
+}
+
 // ───────────────────────── 세션 생성기 (Langfuse Sessions) ─────────────────────────
 const SESSION_PROMPTS = [
   "이번 분기 영업 실적 요약 메일 초안 작성해줘.",
@@ -668,6 +733,10 @@ function genSessionSummary(seed: number, now: number): { summary: SessionSummary
     total_cost_krw: +turns.reduce((s, t) => s + t.cost_krw, 0).toFixed(2),
     blocked: turns.filter((t) => t.decision === "blocked").length,
     duration_ms: new Date(turns[turns.length - 1].ts).getTime() - new Date(turns[0].ts).getTime(),
+    // 세션-레벨 지연 롤업.
+    ttft_p50_ms: p50i(turns.map((t) => t.ttft_ms)),
+    ttft_avg_ms: avgi(turns.map((t) => t.ttft_ms)),
+    latency_p50_ms: p50i(turns.map((t) => t.total_ms)),
   };
   return { summary, turns };
 }
@@ -687,7 +756,8 @@ function genSessionList(range: TimeRange, app?: string): SessionListReport {
 function genSessionDetail(sessionId: string): SessionDetail {
   const seed = parseInt(sessionId.replace(/^sess_/, ""), 36) >>> 0;
   const { summary, turns } = genSessionSummary(seed, Date.now());
-  return { summary, turns };
+  const scores = synthScores(seed, "", sessionId, "");
+  return { summary, turns, scores: scores.length ? scores : undefined };
 }
 
 // ───────────────────────── 라우터 ─────────────────────────
@@ -1014,6 +1084,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (one.configured && one.reachable && one.request) one.probe = mkProbeTrace(one);
     return ok(one);
   }
+  if (method === "POST" && (m = path.match(/^\/traces\/([^/]+)\/scores$/))) { return ok(recordScoreMock(m[1], body as Record<string, unknown>)); }
   if (method === "GET" && (m = path.match(/^\/traces\/(.+)$/))) { return ok(genTraceDetail(m[1])); }
   if (method === "GET" && (m = path.match(/^\/sessions\/(.+)$/))) { return ok(genSessionDetail(m[1])); }
   if (method === "DELETE" && (m = path.match(/^\/keys\/(.+)$/))) { KEYS = KEYS.filter((k) => k.api_key_id !== m![1]); return ok({}, 204); }

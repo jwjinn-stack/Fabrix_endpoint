@@ -146,7 +146,7 @@ export default function Credentials() {
                   <label className="pg-field">
                     <span>{k.valueLabel}{c?.set ? " (비워두면 기존 값 유지)" : ""}</span>
                     <input type="password" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} placeholder={k.ph} autoComplete="off" />
-                    {c?.set && <span className="cred-help" style={{ marginTop: 4 }}>비워두면 기존 값이 유지됩니다. 새 값을 입력하면 교체됩니다.</span>}
+                    {c?.set && <span className="cred-help" style={{ marginTop: "var(--sp-1)" }}>비워두면 기존 값이 유지됩니다. 새 값을 입력하면 교체됩니다.</span>}
                   </label>
                   <div className="modal-actions">
                     <button type="button" className="btn-ghost" onClick={() => setEdit(null)}>취소</button>
@@ -162,7 +162,7 @@ export default function Credentials() {
         })}
       </div>
 
-      <p className="slide-note" style={{ marginTop: 16 }}>
+      <p className="slide-note" style={{ marginTop: "var(--sp-4)" }}>
         값은 클러스터 Secret(fabrix-endpoint/fabrix-thirdparty)에 저장되며 화면에는 마스킹되어 표시됩니다. 모델 임포트 잡이 이 토큰을 사용해 Hugging Face 에서 다운로드합니다.
       </p>
     </>

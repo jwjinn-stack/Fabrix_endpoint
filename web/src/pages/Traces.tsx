@@ -1,13 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchTrace, fetchTraces } from "../api/client";
-import type { SpanKind, TimeRange, TraceDetail, TraceListReport, TraceSpan } from "../api/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchTrace, fetchTraces, recordScore } from "../api/client";
+import VirtualRows from "../components/VirtualRows";
+import type { Score, SpanKind, TimeRange, TraceDetail, TraceListReport, TraceSpan } from "../api/types";
 import Badge, { type BadgeTone } from "../components/Badge";
+import { ScoreBadges, ScorePanel } from "../components/ScoreBadge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import ExportButton from "../components/ExportButton";
-import { queryParam } from "../router";
+import ViewBar from "../components/ViewBar";
+import { useUrlState, decodeState, strField, enumField, rangeField } from "../urlState";
+import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+
+// IMP-24: 필터·기간을 URL 단일 출처로(시드+되쓰기 통합). 미세조정은 replaceState.
+const TRACE_SCHEMA = {
+  range: rangeField,
+  decision: enumField(["all", "allowed", "flagged", "blocked"] as const, "all"),
+  status: enumField(["all", "ok", "error"] as const, "all"),
+  model: strField("all"),
+  app: strField("all"),
+} as const;
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -50,22 +63,27 @@ function p95(vals: number[]): number {
 const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hour12: false });
 
 export default function Traces() {
-  // L2→L3 drill-through: 도착 시 URL 쿼리(model/decision/range)로 초기 필터를 시드한다.
-  const qModel = queryParam("model");
-  const qDecision = queryParam("decision");
-  const [range, setRange] = useState<TimeRange>(() => (queryParam("range") as TimeRange) || "24h");
+  // IMP-24: 필터·기간·드릴다운 컨텍스트가 URL 단일 출처로 산다(시드+되쓰기 통합).
+  // L2→L3 drill-through 로 넘어온 model/decision/range 쿼리도 그대로 복원된다.
+  const [st, patch] = useUrlState(TRACE_SCHEMA);
+  const { range, decision, status, model, app } = st;
+  const setRange = (r: TimeRange) => patch({ range: r });
+  const filters = useMemo(() => ({ decision, status, model, app }), [decision, status, model, app]);
+  const cap = useCap();
+  const canSave = !cap.caps.readonly; // 뷰 저장(쓰기)은 manage 프로파일만 — 링크 복사는 항상 허용
+  const canEval = cap.can("eval"); // 평가 점수 기록(인라인 "이거 평가")은 eval cap(manage)만
   const { density, setDensity } = useTableDensity("traces");
-  const [filters, setFilters] = useState({ decision: qDecision || "all", status: "all", model: qModel || "all", app: "all" });
   const [data, setData] = useState<TraceListReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // 들어온 model 을 옵션 모집단에 시드(필터≠all 이면 옵션 갱신이 막히므로 빈 select 방지).
-  const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: qModel ? [qModel] : [], apps: [] });
+  const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: model !== "all" ? [model] : [], apps: [] });
 
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [openSpan, setOpenSpan] = useState<string | null>(null);
+  const vScrollRef = useRef<HTMLDivElement | null>(null); // IMP-30: 세로 windowing 스크롤 컨테이너
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -117,7 +135,10 @@ export default function Traces() {
     errored: traces.filter((t) => t.status === "error").length,
   }), [traces]);
 
-  const setFilter = (k: keyof typeof filters, v: string) => setFilters((f) => ({ ...f, [k]: v }));
+  const setFilter = (k: keyof typeof filters, v: string) => patch({ [k]: v } as Partial<typeof st>);
+  const resetFilters = () => patch({ decision: "all", status: "all", model: "all", app: "all" });
+  // 저장된 뷰 적용: querystring → 화면 state 복원(+URL 되쓰기).
+  const applyView = (query: string) => patch(decodeState(TRACE_SCHEMA, query));
 
   return (
     <>
@@ -184,8 +205,10 @@ export default function Traces() {
             </select>
           </label>
           {(filters.decision !== "all" || filters.status !== "all" || filters.model !== "all" || filters.app !== "all") && (
-            <button type="button" className="btn-ghost btn-sm" onClick={() => setFilters({ decision: "all", status: "all", model: "all", app: "all" })}>필터 초기화</button>
+            <button type="button" className="btn-ghost btn-sm" onClick={resetFilters}>필터 초기화</button>
           )}
+          <span className="spacer" style={{ flex: 1 }} />
+          <ViewBar page="traces" canSave={canSave} onApply={applyView} />
         </div>
 
         {error && <div className="state error" role="alert">트레이스를 불러오지 못했습니다. ({error})</div>}
@@ -195,16 +218,19 @@ export default function Traces() {
         {traces.length > 0 && (
           <div className="tbl-scroll">
             <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
+            {/* IMP-30: 세로 스크롤 컨테이너 — 행 수가 많으면 보이는 행만 windowing 렌더 */}
+            <div ref={vScrollRef} className="vrow-viewport">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
                   <th>시각</th><th>모델</th><th>앱</th><th>엔드포인트</th>
                   <th className="num">TTFT</th><th className="num">Decode</th><th className="num">E2E</th>
-                  <th className="num">토큰(in→out)</th><th className="num">tok/s</th><th>종료</th><th>판정</th>
+                  <th className="num">토큰(in→out)</th><th className="num">tok/s</th><th>평가</th><th>종료</th><th>판정</th>
                 </tr>
               </thead>
               <tbody>
-                {traces.map((t) => (
+                <VirtualRows items={traces} colSpan={12} scrollRef={vScrollRef}>
+                  {(t) => (
                   <tr key={t.trace_id} onClick={() => setSelId(t.trace_id)} className={`row-click ${selId === t.trace_id ? "row-sel" : ""}`} tabIndex={0}
                     onKeyDown={(e) => { if (e.key === "Enter") setSelId(t.trace_id); }}>
                     <td>{timeFmt(t.ts)}</td>
@@ -216,15 +242,18 @@ export default function Traces() {
                     <td className="num"><b>{fmtMs(t.total_ms)}</b></td>
                     <td className="num cell-dim">{fmtTokens(t.prompt_tokens)}→{fmtTokens(t.completion_tokens)}</td>
                     <td className="num">{t.tokens_per_sec || "—"}</td>
+                    <td>{t.scores && t.scores.length > 0 ? <ScoreBadges scores={t.scores} /> : <span className="cell-dim">—</span>}</td>
                     <td><span className={`finish-tag finish-${t.finish_reason}`}>{t.finish_reason}</span></td>
                     <td>
                       <Badge tone={decisionTone(t.decision)} dot>{t.decision === "blocked" ? "차단" : t.decision === "flagged" ? "표시" : "통과"}</Badge>
                       {t.status === "error" && <Badge tone="red" dot>에러</Badge>}
                     </td>
                   </tr>
-                ))}
+                  )}
+                </VirtualRows>
               </tbody>
             </table>
+            </div>
             </div>
           </div>
         )}
@@ -238,7 +267,7 @@ export default function Traces() {
         onClose={() => setSelId(null)}
       >
         {detailLoading && <div className="state" role="status">트레이스 스팬을 불러오는 중…</div>}
-        {detail && <TraceDetailView detail={detail} openSpan={openSpan} onToggleSpan={(id) => setOpenSpan((s) => (s === id ? null : id))} />}
+        {detail && <TraceDetailView detail={detail} openSpan={openSpan} onToggleSpan={(id) => setOpenSpan((s) => (s === id ? null : id))} canEval={canEval} onScoreAdded={(sc) => setDetail((d) => (d ? { ...d, summary: { ...d.summary, scores: [...(d.summary.scores ?? []), sc] } } : d))} />}
       </SlidePanel>
     </>
   );
@@ -265,11 +294,32 @@ function spanDepth(sp: TraceSpan, byId: Map<string, TraceSpan>): number {
 }
 
 // ───────────────────────── 상세: 요약 + waterfall + 속성 ─────────────────────────
-function TraceDetailView({ detail, openSpan, onToggleSpan }: { detail: TraceDetail; openSpan: string | null; onToggleSpan: (id: string) => void }) {
+function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded }: { detail: TraceDetail; openSpan: string | null; onToggleSpan: (id: string) => void; canEval: boolean; onScoreAdded: (sc: Score) => void }) {
   const s = detail.summary;
   const total = Math.max(1, s.total_ms);
   const ttftPct = (s.ttft_ms / total) * 100;
   const children = detail.spans.filter((sp) => sp.parent_id);
+
+  // IMP-18: 인라인 "이거 평가" — 선택 trace 에 점수를 기록(mock, source=llm-judge).
+  const [evalBusy, setEvalBusy] = useState(false);
+  const [evalErr, setEvalErr] = useState<string | null>(null);
+  const runInlineEval = async () => {
+    if (evalBusy) return;
+    setEvalBusy(true);
+    setEvalErr(null);
+    try {
+      // mock-stage: LLM-as-judge 결과를 모사한 점수 1건을 trace 에 부착.
+      const sc = await recordScore(s.trace_id, {
+        name: "정확성", value: 4, data_type: "numeric", source: "llm-judge",
+        comment: "트레이스 행에서 인라인 평가(LLM-as-judge) 실행", session_id: s.session_id,
+      });
+      onScoreAdded(sc);
+    } catch (e) {
+      setEvalErr(humanizeError((e as Error).message));
+    } finally {
+      setEvalBusy(false);
+    }
+  };
 
   // O-01: 타임라인(시간순 waterfall) ↔ 트리(계층 들여쓰기) 토글.
   const [view, setView] = useState<"timeline" | "tree">("timeline");
@@ -346,6 +396,29 @@ function TraceDetailView({ detail, openSpan, onToggleSpan }: { detail: TraceDeta
         <div><span className="tt-label">캐시 적중</span><b style={{ color: "var(--teal)" }}>{s.cached_tokens.toLocaleString()}</b></div>
         <div><span className="tt-label">출력</span><b>{s.completion_tokens.toLocaleString()}</b></div>
         <div className="tt-cost"><span className="tt-label">비용 (Langfuse)</span><b>₩{s.total_cost_krw.toLocaleString()}</b><span className="tt-cost-sub">입력 ₩{s.input_cost_krw} · 출력 ₩{s.output_cost_krw}</span></div>
+      </div>
+
+      {/* IMP-18: 비용·지연 배너 (이 요청 한눈에) */}
+      <div className="trace-cost-banner" style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", flexWrap: "wrap", padding: "var(--sp-2) var(--sp-3)", margin: "var(--sp-2) 0", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)", fontSize: "var(--fs-sm)" }}>
+        <span>이 요청: <b>₩{s.total_cost_krw.toLocaleString()}</b></span>
+        <span>· TTFT <b>{s.ttft_ms}ms</b></span>
+        <span>· E2E <b>{fmtMs(s.total_ms)}</b></span>
+        <span>· {fmtTokens(s.prompt_tokens)}→{fmtTokens(s.completion_tokens)} tok</span>
+      </div>
+
+      {/* IMP-18: 평가 점수 패널 (Langfuse scores 부착) + 인라인 "이거 평가" */}
+      <div className="trace-scores" style={{ margin: "var(--sp-2) 0" }}>
+        <div className="span-wf-head" style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+          <span>평가 점수 {s.scores && s.scores.length ? `(${s.scores.length})` : ""}</span>
+          <span className="spacer" style={{ flex: 1 }} />
+          {canEval && (
+            <button type="button" className="btn-ghost btn-sm" onClick={runInlineEval} disabled={evalBusy} title="LLM-as-judge 로 이 트레이스를 평가해 점수를 부착(mock)">
+              {evalBusy ? "평가 중…" : "이거 평가"}
+            </button>
+          )}
+        </div>
+        {evalErr && <div className="state error" role="alert">{evalErr}</div>}
+        <ScorePanel scores={s.scores} />
       </div>
 
       {/* Span waterfall / tree */}

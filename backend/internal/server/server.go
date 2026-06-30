@@ -141,6 +141,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	if can(capability.Eval) {
 		mux.HandleFunc("POST /api/v1/eval/run", s.handleEvalRun)
+		mux.HandleFunc("POST /api/v1/traces/{id}/scores", s.handleRecordScore) // 평가 점수를 라이브 trace 에 부착(IMP-18)
 	}
 
 	// 가드레일 증적(4-3) — Semantic Router 판정 → ClickHouse guard_audit. 조회는 read cap.

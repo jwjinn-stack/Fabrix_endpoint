@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
 	"github.com/maymust/fabrix-endpoint/internal/httpx"
@@ -50,6 +52,52 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.JSON(w, http.StatusOK, d)
+}
+
+// recordScoreRequest 는 라이브 trace/session 에 평가 점수를 기록하는 본문(Langfuse scores 정합).
+type recordScoreRequest struct {
+	Name          string  `json:"name"`
+	Value         float64 `json:"value"`
+	StringValue   string  `json:"string_value"`
+	DataType      string  `json:"data_type"` // numeric|categorical|boolean
+	Comment       string  `json:"comment"`
+	Source        string  `json:"source"` // human|llm-judge|api
+	ObservationID string  `json:"observation_id"`
+	SessionID     string  `json:"session_id"`
+}
+
+// handleRecordScore 는 POST /api/v1/traces/{id}/scores — 선택 trace 에 평가 점수를 부착(mock).
+// eval.go 의 LLM-as-judge 결과(또는 사람 평가)를 라이브 trace 에 기록하는 경로. mock-stage 에서는
+// 영속 저장 없이 정규화된 Score 를 echo 한다(스키마/흐름 잠금). 실연동 시 Langfuse ingestion 으로 대체.
+func (s *Server) handleRecordScore(w http.ResponseWriter, r *http.Request) {
+	traceID := r.PathValue("id")
+	if traceID == "" {
+		httpx.Error(w, http.StatusBadRequest, "trace_id 누락")
+		return
+	}
+	var req recordScoreRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
+		httpx.Error(w, http.StatusBadRequest, "잘못된 요청 본문")
+		return
+	}
+	if req.Name == "" {
+		httpx.Error(w, http.StatusBadRequest, "name 은 필수입니다")
+		return
+	}
+	dt := domain.ScoreDataType(req.DataType)
+	if dt != "numeric" && dt != "categorical" && dt != "boolean" {
+		dt = "numeric"
+	}
+	src := domain.ScoreSource(req.Source)
+	if src != "human" && src != "llm-judge" && src != "api" {
+		src = "api"
+	}
+	sc := domain.Score{
+		Name: req.Name, Value: req.Value, StringValue: req.StringValue, DataType: dt,
+		Comment: req.Comment, Source: src, TraceID: traceID,
+		ObservationID: req.ObservationID, SessionID: req.SessionID, TS: time.Now().UTC().Format(time.RFC3339),
+	}
+	httpx.JSON(w, http.StatusOK, sc)
 }
 
 // handleGuardContent 는 GET /api/v1/guard/content?trace_id= (차단 프롬프트 원문 — Langfuse GUARDRAIL observation.input).

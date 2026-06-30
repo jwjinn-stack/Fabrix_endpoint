@@ -11,7 +11,17 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { useCap } from "../capabilities";
 import InfoTip from "../components/InfoTip";
 import ExportButton from "../components/ExportButton";
+import ViewBar from "../components/ViewBar";
+import { useUrlState, decodeState, enumField, rangeField } from "../urlState";
 import { humanizeError } from "../utils/errors";
+
+// IMP-24: 가드레일 탭·동작·유형·기간을 URL 단일 출처로(공유 링크가 같은 탭·필터로 착지).
+const GUARD_SCHEMA = {
+  tab: enumField(["overview", "audit", "policy", "masking"] as const, "overview"),
+  range: rangeField,
+  decision: enumField(["all", "blocked", "flagged", "allowed"] as const, "all"),
+  type: enumField(["all", "pii", "jailbreak"] as const, "all"),
+} as const;
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -85,10 +95,14 @@ function piiLabel(code: string): string {
 // 요약 카드 + 필터 + 증적 테이블 + 상세 모달(trace_id·정책버전·PII 유형).
 export default function Guard() {
   const canPolicy = useCap().can("guard.write"); // 정책 변경(PUT) 권한 — observe 에선 정책 탭 숨김
-  const [range, setRange] = useState<TimeRange>("24h");
-  const [decision, setDecision] = useState("all");
-  const [type, setType] = useState("all");
-  const [tab, setTab] = useState<"overview" | "audit" | "policy" | "masking">("overview");
+  const canSave = !useCap().caps.readonly; // 뷰 저장(쓰기)은 manage 만 — 링크 복사는 항상 허용
+  const [st, patch] = useUrlState(GUARD_SCHEMA);
+  const { range, decision, type, tab } = st;
+  const setRange = (r: TimeRange) => patch({ range: r });
+  const setDecision = (v: string) => patch({ decision: v as (typeof GUARD_SCHEMA)["decision"]["default"] });
+  const setType = (v: string) => patch({ type: v as (typeof GUARD_SCHEMA)["type"]["default"] });
+  const setTab = (v: (typeof GUARD_SCHEMA)["tab"]["default"]) => patch({ tab: v });
+  const applyView = (query: string) => patch(decodeState(GUARD_SCHEMA, query));
   const [report, setReport] = useState<GuardAuditReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -178,6 +192,7 @@ export default function Guard() {
                 { key: "jb_confidence", header: "jb_confidence", get: (r) => r.jb_confidence },
               ]}
             />
+            <ViewBar page="guard" canSave={canSave} onApply={applyView} />
             <button type="button" className="refresh-btn" onClick={() => load()} aria-label="증적 새로고침">
               <span className="spin" aria-hidden="true">⟳</span>
               새로고침

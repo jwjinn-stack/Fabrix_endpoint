@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { classifyGuard, fetchGuardPolicy, setGuardPolicy } from "../api/client";
 import type { GuardPolicy as Policy, GuardVerdict, PolicyRule } from "../api/types";
 import InfoTip from "./InfoTip";
+import { humanizeError } from "../utils/errors";
+import { useToast } from "../toast";
 
 const AXES: { key: keyof Policy; label: string; desc: string }[] = [
   { key: "pii", label: "PII 탐지", desc: "주민번호·계좌·여권·이메일 등 개인식별정보 (SR ModernBERT + 한국어 정규식)" },
@@ -29,11 +31,11 @@ function modePatch(m: Mode): Partial<PolicyRule> {
 
 // 가드레일 정책 카탈로그 + 토글 (#12) — Portkey/Kong/NeMo 패턴. PII 외 다축을 토글/동작 지정 + 라이브 테스트.
 export default function GuardPolicyPanel() {
+  const toast = useToast(); // 전역 토스트(IMP-29) — 정책 저장 피드백 일원화
   const [policy, setPolicy] = useState<Policy | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [testText, setTestText] = useState("내 주민번호는 901201-1234567 입니다");
   const [verdict, setVerdict] = useState<GuardVerdict | null>(null);
   const [testing, setTesting] = useState(false);
@@ -57,7 +59,6 @@ export default function GuardPolicyPanel() {
     if (!policy) return;
     setPolicy({ ...policy, [key]: { ...policy[key], ...patch } });
     setDirty(true);
-    setNotice(null);
   };
 
   const save = async () => {
@@ -68,9 +69,9 @@ export default function GuardPolicyPanel() {
       const p = await setGuardPolicy(policy);
       setPolicy(p);
       setDirty(false);
-      setNotice("정책이 저장되었습니다. 이후 모든 요청에 즉시 적용됩니다.");
+      toast.success("정책이 저장되었습니다. 이후 모든 요청에 즉시 적용됩니다.");
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setSaving(false);
     }
@@ -94,7 +95,6 @@ export default function GuardPolicyPanel() {
   return (
     <>
       {err && <div className="state error" role="alert">{err}</div>}
-      {notice && <div className="state" role="status">{notice}</div>}
 
       <div className="card">
         <div className="card-head">

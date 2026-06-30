@@ -11,8 +11,14 @@ import UsageTrendChart from "../components/UsageTrendChart";
 import LatencyPanel from "../components/LatencyPanel";
 import RankCard from "../components/RankCard";
 import InfoTip from "../components/InfoTip";
+import ViewBar from "../components/ViewBar";
+import { useUrlState, decodeState, enumField } from "../urlState";
+import { useCap } from "../capabilities";
 import { RangeSelect, useTimeRange } from "../timeRange";
 import { humanizeError } from "../utils/errors";
+
+// IMP-24: 그룹 차원(model/dept/app/api_key)을 URL 단일 출처로(기간은 G-05 전역 컨텍스트 공유).
+const USAGE_SCHEMA = { group: enumField(["model", "dept", "app", "api_key"] as const, "model") } as const;
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
@@ -49,7 +55,10 @@ function toCSV(report: UsageReport, group: string): string {
 export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
   // 기간은 전역 컨텍스트 공유(G-05) — 관제·트레이스 화면과 동일 선택 유지.
   const { range } = useTimeRange();
-  const [group, setGroup] = useState("model");
+  const [{ group }, patch] = useUrlState(USAGE_SCHEMA);
+  const setGroup = (v: string) => patch({ group: v as (typeof USAGE_SCHEMA)["group"]["default"] });
+  const applyView = (query: string) => patch(decodeState(USAGE_SCHEMA, query));
+  const canSave = !useCap().caps.readonly;
   const [report, setReport] = useState<UsageReport | null>(null);
   const [trend, setTrend] = useState<UsageTrend | null>(null);
   const [overview, setOverview] = useState<DashboardOverview | null>(null); // 추론 성능·토큰·Top5 소스(기간 기준)
@@ -133,6 +142,7 @@ export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
           ))}
         </select>
         <RangeSelect />
+        <ViewBar page="usage" canSave={canSave} onApply={applyView} />
         <button type="button" className="refresh-btn" onClick={exportCSV} disabled={!report || rows.length === 0}>
           CSV 내보내기
         </button>

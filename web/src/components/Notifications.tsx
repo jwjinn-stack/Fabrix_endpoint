@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGuardAudit, fetchOverview } from "../api/client";
 
 interface Note {
@@ -10,9 +10,14 @@ interface Note {
 
 // 알림 드로어 (#19) — 대시보드 알람 + 최근 가드레일 차단을 비동기로 모아 표시.
 // 상단 🔔 에서 토글. Backend.AI Notifications 패턴.
+//
+// IMP-31 — 네이티브 <dialog> 기반. 단, 알림 피드는 🔔 로 여는 *보조* 패널이라 페이지 작업을
+// 막을 이유가 없다 → 비-모달 show()(top-layer 승격·dialog 시맨틱은 얻되 배경 inert·포커스 트랩 없음).
+// 비-모달은 cancel/Escape 가 자동 발생하지 않으므로 Escape→onClose 를 수동 보강, 열 때 패널로 포커스 진입.
 export default function NotificationsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(false);
+  const ref = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -42,11 +47,29 @@ export default function NotificationsDrawer({ open, onClose }: { open: boolean; 
     return () => ctrl.abort();
   }, [open, load]);
 
+  // 비-모달 <dialog> 열기/닫기 동기화 + 열 때 포커스 진입.
+  useEffect(() => {
+    const dlg = ref.current;
+    if (!dlg) return;
+    if (open && !dlg.open) {
+      dlg.show(); // 비-모달: 배경 inert/포커스 트랩 없음 — 페이지 상호작용 허용
+      dlg.focus();
+    }
+  }, [open]);
+
+  // 비-모달은 cancel/Escape 자동 발생 안 함 → 수동 Escape→onClose 보강.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <>
-      <div className="drawer-scrim" onClick={onClose} aria-hidden="true" />
-      <aside className="drawer" role="dialog" aria-label="알림" aria-modal="true">
+    <dialog ref={ref} className="drawer" aria-label="알림" tabIndex={-1}>
         <div className="drawer-head">
           <h3>알림 {notes.length > 0 && <span className="drawer-count">{notes.length}</span>}</h3>
           <button type="button" className="icon-dark" aria-label="닫기" onClick={onClose}>✕</button>
@@ -67,7 +90,6 @@ export default function NotificationsDrawer({ open, onClose }: { open: boolean; 
             </div>
           ))}
         </div>
-      </aside>
-    </>
+    </dialog>
   );
 }

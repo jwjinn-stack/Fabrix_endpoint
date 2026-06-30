@@ -11,6 +11,9 @@ import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
 import InfoTip from "../components/InfoTip";
 import { humanizeError } from "../utils/errors";
+import { useToast } from "../toast";
+import { useFieldValidation, required } from "../utils/useFieldValidation";
+import FieldError from "../components/FieldError";
 
 // 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
 function BrandColorCard() {
@@ -41,7 +44,7 @@ function BrandColorCard() {
                 borderRadius: 8, padding: "7px 12px", background: "var(--surface)", font: "inherit", fontSize: "var(--fs-sm)",
               }}
             >
-              <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", background: p.primary, border: "1px solid rgba(0,0,0,0.1)", flex: "none" }} />
+              <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", background: p.primary, border: "1px solid var(--border)", flex: "none" }} />
               <span style={{ color: "var(--text)" }}>{p.name}</span>
               {active && <span aria-hidden="true" style={{ color: "var(--primary)", fontWeight: 700 }}>✓</span>}
             </button>
@@ -68,7 +71,7 @@ function BrandColorCard() {
           {brand.id === "custom" && <code style={{ fontSize: "var(--fs-xs)" }}>{brand.primary}</code>}
         </label>
       </div>
-      <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: 8 }}>링크 예시</a></div>
+      <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: "var(--sp-2)" }}>링크 예시</a></div>
     </div>
   );
 }
@@ -97,23 +100,27 @@ const PERMS: { label: string; admin: boolean; super: boolean; user: boolean }[] 
 export default function Settings() {
   const canWrite = useCap().can("users.write"); // 사용자 추가·역할 변경·삭제 권한
   const canConfig = useCap().can("credentials"); // 연동 설정 재구성(민감) — manage 전용
+  const toast = useToast(); // 전역 토스트(IMP-29) — 성공/오류 일원화
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<string[]>(["admin", "user", "super"]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); // 초기 로드 실패만 인라인 표시
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState({ email: "", name: "", role: "user", dept_id: "" });
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState<User | null>(null);
-  const [notice, setNotice] = useState<string | null>(null); // 성공 토스트
   const [confirmRole, setConfirmRole] = useState<{ user: User; role: string } | null>(null); // 권한 상향 확인
   const [confirmDel, setConfirmDel] = useState<User | null>(null); // 사용자 삭제 확인
 
-  // 토스트 — 3초 후 자동 소거.
-  const toast = useCallback((msg: string) => {
-    setNotice(msg);
-    setTimeout(() => setNotice(null), 3000);
-  }, []);
+  // IMP-22 — 사용자 추가 폼 인라인 검증(이메일·이름 필수, 이메일 형식). 짧은 폼 → 첫 오류필드 포커스.
+  const fv = useFieldValidation(form, {
+    email: (v) => {
+      const s = String(v).trim();
+      if (!s) return "이메일을 입력하세요.";
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? undefined : "올바른 이메일 형식이 아닙니다.";
+    },
+    name: required("이름을 입력하세요."),
+  });
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -147,9 +154,9 @@ export default function Settings() {
     try {
       await updateUser(u.user_id, { role, dept_id: u.dept_id, status: u.status });
       setConfirmRole(null);
-      toast(`${u.name}님의 역할을 ${ROLE_LABEL[role] ?? role}(으)로 변경했습니다.`);
+      toast.success(`${u.name}님의 역할을 ${ROLE_LABEL[role] ?? role}(으)로 변경했습니다.`);
       load();
-    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
   const remove = async () => {
@@ -157,23 +164,27 @@ export default function Settings() {
     setBusy(true);
     try {
       await deleteUser(confirmDel.user_id);
-      toast(`${confirmDel.name}님을 삭제했습니다.`);
+      toast.success(`${confirmDel.name}님을 삭제했습니다.`);
       setConfirmDel(null);
       load();
-    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
 
-  const submit = async () => {
-    if (!form.email.trim() || !form.name.trim()) return;
+  const submit = () => fv.handleSubmit(doSubmit);
+
+  const doSubmit = async () => {
     setBusy(true);
     try {
       await createUser(form);
       setModal(false);
-      toast(`${form.name}님을 추가했습니다.`);
+      fv.reset();
+      toast.success(`${form.name}님을 추가했습니다.`);
       setForm({ email: "", name: "", role: "user", dept_id: "" });
       load();
-    } catch (e) { setError(humanizeError((e as Error).message)); } finally { setBusy(false); }
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
   };
+
+  const openAddUser = () => { fv.reset(); setForm({ email: "", name: "", role: "user", dept_id: "" }); setModal(true); };
 
   return (
     <>
@@ -182,11 +193,10 @@ export default function Settings() {
         <span className="crumb">설정 / RBAC · Users</span>
         <div className="spacer" />
         <span className="updated">{users.length}명</span>
-        {canWrite && <button type="button" className="btn-primary" onClick={() => setModal(true)}>+ 사용자 추가</button>}
+        {canWrite && <button type="button" className="btn-primary" onClick={openAddUser}>+ 사용자 추가</button>}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
-      {notice && <div className="toast" role="status">{notice}</div>}
       {canConfig && <ReconfigurePanel />}
 
       <div className="card">
@@ -286,9 +296,11 @@ export default function Settings() {
       {modal && (
         <Modal open onClose={() => setModal(false)} title="사용자 추가">
             <label className="pg-field"><span>이메일 *</span>
-              <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@maymust.com" /></label>
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@maymust.com" {...fv.fieldProps("email")} />
+              <FieldError id={fv.errorId("email")} message={fv.showError("email")} /></label>
             <label className="pg-field"><span>이름 *</span>
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="홍길동" /></label>
+              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="홍길동" {...fv.fieldProps("name")} />
+              <FieldError id={fv.errorId("name")} message={fv.showError("name")} /></label>
             <div className="pg-field-row">
               <label className="pg-field"><span>역할</span>
                 <select className="range-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
@@ -299,7 +311,7 @@ export default function Settings() {
             </div>
             <div className="modal-actions">
               <button type="button" className="btn-ghost" onClick={() => setModal(false)}>취소</button>
-              <button type="button" className="btn-primary" onClick={submit} disabled={busy || !form.email.trim() || !form.name.trim()}>{busy ? "추가 중…" : "추가"}</button>
+              <button type="button" className="btn-primary" onClick={submit} disabled={busy}>{busy ? "추가 중…" : "추가"}</button>
             </div>
         </Modal>
       )}

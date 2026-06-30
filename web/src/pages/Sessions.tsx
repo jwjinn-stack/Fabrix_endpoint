@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchSession, fetchSessions } from "../api/client";
+import VirtualRows from "../components/VirtualRows";
 import type { SessionDetail, SessionListReport, SessionTurn, TimeRange } from "../api/types";
 import Badge, { type BadgeTone } from "../components/Badge";
+import { ScorePanel } from "../components/ScoreBadge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import ViewBar from "../components/ViewBar";
+import { useUrlState, decodeState, strField, rangeField } from "../urlState";
+import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+
+// IMP-24: 세션 화면도 기간·앱 필터를 URL 단일 출처로.
+const SESSION_SCHEMA = { range: rangeField, app: strField("all") } as const;
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -26,9 +34,13 @@ const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hou
 const decTone = (d: string): BadgeTone => (d === "blocked" ? "red" : d === "flagged" ? "amber" : "green");
 
 export default function Sessions() {
-  const [range, setRange] = useState<TimeRange>("24h");
+  const [st, patch] = useUrlState(SESSION_SCHEMA);
+  const { range, app } = st;
+  const setRange = (r: TimeRange) => patch({ range: r });
+  const setApp = (v: string) => patch({ app: v });
+  const applyView = (query: string) => patch(decodeState(SESSION_SCHEMA, query));
+  const canSave = !useCap().caps.readonly;
   const { density, setDensity } = useTableDensity("sessions");
-  const [app, setApp] = useState("all");
   const [data, setData] = useState<SessionListReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +49,7 @@ export default function Sessions() {
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const vScrollRef = useRef<HTMLDivElement | null>(null); // IMP-30: 세로 windowing 스크롤 컨테이너
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -108,6 +121,8 @@ export default function Sessions() {
             </select>
           </label>
           {app !== "all" && <button type="button" className="btn-ghost btn-sm" onClick={() => setApp("all")}>필터 초기화</button>}
+          <span className="spacer" style={{ flex: 1 }} />
+          <ViewBar page="sessions" canSave={canSave} onApply={applyView} />
         </div>
 
         {error && <div className="state error" role="alert">세션을 불러오지 못했습니다. ({error})</div>}
@@ -117,15 +132,18 @@ export default function Sessions() {
         {sessions.length > 0 && (
           <div className="tbl-scroll">
             <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
+            {/* IMP-30: 세로 스크롤 컨테이너 — 행 수가 많으면 보이는 행만 windowing 렌더 */}
+            <div ref={vScrollRef} className="vrow-viewport">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
                   <th>세션</th><th>시작</th><th className="num">턴</th><th>사용자</th><th>앱</th>
-                  <th>모델</th><th className="num">토큰</th><th className="num">비용</th><th className="num">길이</th><th>차단</th>
+                  <th>모델</th><th className="num">토큰</th><th className="num">비용</th><th className="num">지연 p50</th><th className="num">길이</th><th>차단</th>
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
+                <VirtualRows items={sessions} colSpan={11} scrollRef={vScrollRef}>
+                  {(s) => (
                   <tr key={s.session_id} className={`row-click ${selId === s.session_id ? "row-sel" : ""}`} tabIndex={0}
                     onClick={() => setSelId(s.session_id)} onKeyDown={(e) => { if (e.key === "Enter") setSelId(s.session_id); }}>
                     <td className="cell-dim"><code>{s.session_id}</code></td>
@@ -136,12 +154,15 @@ export default function Sessions() {
                     <td className="cell-dim">{s.models.join(", ")}</td>
                     <td className="num">{fmtTok(s.total_tokens)}</td>
                     <td className="num">₩{s.total_cost_krw.toLocaleString()}</td>
+                    <td className="num" title={`TTFT p50 ${s.ttft_p50_ms}ms · avg ${s.ttft_avg_ms}ms`}>{fmtMs(s.latency_p50_ms)}</td>
                     <td className="num">{fmtDur(s.duration_ms)}</td>
                     <td>{s.blocked > 0 ? <Badge tone="red" dot>{s.blocked}건</Badge> : <Badge tone="green">없음</Badge>}</td>
                   </tr>
-                ))}
+                  )}
+                </VirtualRows>
               </tbody>
             </table>
+            </div>
             </div>
           </div>
         )}
@@ -210,6 +231,12 @@ function SessionDetailView({ detail }: { detail: SessionDetail }) {
 
   return (
     <>
+      {/* IMP-18: 세션 롤업 헤더 — 이 대화 한눈에(비용·턴·지연 p50). */}
+      <div className="sess-rollup" style={{ padding: "var(--sp-2) var(--sp-3)", margin: "0 0 var(--sp-2)", border: "1px solid var(--primary-weak)", borderLeft: "3px solid var(--primary)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)", fontSize: "var(--fs-sm)" }}>
+        이 대화: <b>₩{s.total_cost_krw.toLocaleString()}</b> · <b>{s.turns}</b>턴 · p50 <b>{fmtMs(s.latency_p50_ms)}</b>
+        <span style={{ color: "var(--text-dim)" }}> · TTFT p50 {s.ttft_p50_ms}ms / avg {s.ttft_avg_ms}ms</span>
+      </div>
+
       <div className="trace-summary">
         <DetailRow label="사용자">{s.user_id}</DetailRow>
         <DetailRow label="앱 / 부서">{s.app_id} · {s.dept_id}</DetailRow>
@@ -218,6 +245,14 @@ function SessionDetailView({ detail }: { detail: SessionDetail }) {
         <DetailRow label="총 비용">₩{s.total_cost_krw.toLocaleString()}</DetailRow>
         <DetailRow label="세션 길이">{fmtDur(s.duration_ms)}</DetailRow>
       </div>
+
+      {/* IMP-18: 세션 단위 평가 점수 */}
+      {detail.scores && detail.scores.length > 0 && (
+        <div className="sess-scores" style={{ margin: "var(--sp-2) 0" }}>
+          <div className="sess-timeline-head">세션 평가 점수 ({detail.scores.length})</div>
+          <ScorePanel scores={detail.scores} />
+        </div>
+      )}
 
       {/* O-06 리플레이 컨트롤 */}
       <div

@@ -14,6 +14,10 @@ import { useCap } from "../capabilities";
 import InfoTip from "../components/InfoTip";
 import Modal from "../components/Modal";
 import { humanizeError } from "../utils/errors";
+import { useToast } from "../toast";
+import { useFieldValidation } from "../utils/useFieldValidation";
+import FieldError from "../components/FieldError";
+import FormErrorSummary from "../components/FormErrorSummary";
 
 const CUSTOM = "__custom__";
 
@@ -62,6 +66,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
   const { can } = useCap(); // 쓰기 권한: 생성·삭제 endpoints.write / 키 발급 keys.write
   const canDeploy = can("endpoints.write");
   const canIssueKey = can("keys.write");
+  const toast = useToast(); // 전역 토스트(IMP-29) — mutation 성공/오류 일원화
   const [eps, setEps] = useState<Endpoint[]>([]);
   const [available, setAvailable] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,7 +75,6 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
   const [form, setForm] = useState<EndpointSpec>(empty);
   const [preview, setPreview] = useState<EndpointPreview | null>(null);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [detail, setDetail] = useState<Endpoint | null>(null);
   const [confirmDel, setConfirmDel] = useState<Endpoint | null>(null); // 삭제 확인 대상(비가역)
   const { density, setDensity } = useTableDensity("endpoints");
@@ -90,6 +94,22 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
   const [logBusy, setLogBusy] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const logTimer = useRef<number | null>(null);
+
+  // IMP-22 — 생성 위저드(긴 폼 → 상단 에러 SUMMARY + 포커스 이동) 인라인 검증.
+  const wfv = useFieldValidation(form, {
+    name: (v) => (String(v).trim() ? undefined : "엔드포인트 이름을 입력하세요."),
+    model: (v) => (String(v).trim() ? undefined : "모델을 선택하거나 HuggingFace id 를 입력하세요."),
+    replicas: (v) => (Number(v) >= 1 ? undefined : "replica 는 1 이상이어야 합니다."),
+    gpu: (v) => (Number(v) >= 1 ? undefined : "GPU 슬라이스는 1 이상이어야 합니다."),
+  }, { summary: true });
+
+  // IMP-22 — 엔드포인트 키 발급 모달(짧은 폼 → 첫 오류필드 포커스) 인라인 검증.
+  const kfv = useFieldValidation(keyForm, {
+    app_name: () => (keyAppMode === "custom" && !keyForm.app_name.trim() ? "새 앱 이름을 입력하세요." : undefined),
+    app_id: () => (keyAppMode === "select" && !keyForm.app_id ? "앱을 선택하세요." : undefined),
+    quota_rpm: (v) => (String(v).trim() && Number(v) < 0 ? "0 이상의 값을 입력하세요." : undefined),
+    quota_tpd: (v) => (String(v).trim() && Number(v) < 0 ? "0 이상의 값을 입력하세요." : undefined),
+  });
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -152,7 +172,9 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
     setPreview(null);
   };
 
-  const doPreview = async () => {
+  const doPreview = () => wfv.handleSubmit(runPreview);
+
+  const runPreview = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -166,16 +188,18 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
 
   const doCreate = async () => {
     setBusy(true);
-    setError(null);
+    // 생성→롤아웃은 비동기 적용 — 진행형(pending) 토스트로 동일 ID 전이(IMP-29).
+    const tid = toast.info(`엔드포인트 “${form.name}” 생성·적용 중…`, { id: `ep-create-${form.name}`, duration: 0 });
     try {
       const r = await createEndpoint(form, true);
-      setNotice(`엔드포인트 생성 적용됨: ${r.result}`);
+      toast.success(`엔드포인트 생성 적용됨: ${r.result}`, { id: tid });
       setWizard(false);
       setForm(empty);
       setPreview(null);
+      wfv.reset();
       load();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message), { id: tid });
     } finally {
       setBusy(false);
     }
@@ -187,11 +211,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
     setBusy(true);
     try {
       await deleteEndpoint(ns, name);
-      setNotice(`삭제됨: ${name}`);
+      toast.success(`삭제됨: ${name}`);
       setConfirmDel(null);
       load();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -247,6 +271,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       quota_tpd: "",
     });
     setIssued(null);
+    kfv.reset();
     setKeyModal(endpoint);
   };
 
@@ -261,9 +286,9 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
     setKeyForm((f) => ({ ...f, app_id: value, app_name: app?.name ?? value, dept_id: app?.dept_id ?? "" }));
   };
 
-  const issueEndpointKey = async () => {
-    if (keyAppMode === "custom" && !keyForm.app_name.trim()) return;
-    if (keyAppMode === "select" && !keyForm.app_id) return;
+  const issueEndpointKey = () => kfv.handleSubmit(doIssueEndpointKey);
+
+  const doIssueEndpointKey = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -277,10 +302,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
         quota_tpd: keyForm.quota_tpd ? Number(keyForm.quota_tpd) : undefined,
       });
       setIssued(k);
-      setNotice(`API 키 발급됨: ${keyForm.app_name || keyForm.app_id} → ${keyForm.model_scope}`);
+      // 평문 키는 별도 1회성 카드로만 표시 — 토스트엔 키 값을 넣지 않는다(보안).
+      toast.success(`API 키 발급됨: ${keyForm.app_name || keyForm.app_id} → ${keyForm.model_scope}`);
       loadChoices();
     } catch (e) {
-      setError(humanizeError((e as Error).message));
+      toast.error(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -295,14 +321,13 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
         <span className="updated">{eps.length}개</span>
         <DensityToggle density={density} onChange={setDensity} />
         {canDeploy && (
-          <button type="button" className="btn-primary" onClick={() => { setWizard(true); setPreview(null); }} disabled={!available}>
+          <button type="button" className="btn-primary" onClick={() => { setWizard(true); setPreview(null); wfv.reset(); }} disabled={!available}>
             + 엔드포인트 생성
           </button>
         )}
       </div>
 
       {error && <div className="state error" role="alert">{error}</div>}
-      {notice && <div className="state" role="status">{notice}</div>}
       {!available && (
         <div className="state" role="status">
           kubectl 미구성으로 엔드포인트 기능이 비활성입니다. (백엔드 FABRIX_KUBECTL/권한 확인)
@@ -428,6 +453,14 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
 
       {wizard && (
         <Modal open onClose={() => setWizard(false)} title="엔드포인트 생성 위저드" className="modal-wide">
+            <FormErrorSummary
+              summaryRef={wfv.summaryRef}
+              items={wfv.visibleErrors.map((e) => ({
+                label: { name: "이름", model: "모델", replicas: "replica", gpu: "GPU 슬라이스" }[e.name as string] ?? String(e.name),
+                message: e.message,
+                focus: () => wfv.focusField(e.name),
+              }))}
+            />
             <div className="preset-cards">
               {PRESETS.map((p) => {
                 const active = form.pattern === p.set.pattern && form.replicas === p.set.replicas && form.gpu === p.set.gpu && form.max_model_len === p.set.max_model_len;
@@ -448,7 +481,8 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
             </div>
             <div className="pg-field-row">
               <label className="pg-field"><span>이름 *</span>
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="예: qwen3-mini-agg" /></label>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="예: qwen3-mini-agg" {...wfv.fieldProps("name")} />
+                <FieldError id={wfv.errorId("name")} message={wfv.showError("name")} /></label>
               <label className="pg-field"><span>패턴</span>
                 <select className="range-select" value={form.pattern} onChange={(e) => setForm({ ...form, pattern: e.target.value })}>
                   {PATTERNS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
@@ -469,7 +503,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
                         )}
                       </div>
                     ) : (
-                      <select className="range-select" value={form.harbor_ref ? form.harbor_ref.replace(/:[^/:]+$/, "") : ""} onChange={(e) => pickHarborModel(e.target.value)}>
+                      <select className="range-select" value={form.harbor_ref ? form.harbor_ref.replace(/:[^/:]+$/, "") : ""} onChange={(e) => pickHarborModel(e.target.value)} {...wfv.fieldProps("model")}>
                         <option value="">— 모델 선택 —</option>
                         {harborModels.map((m) => (
                           <option key={m.full_ref} value={m.full_ref}>
@@ -478,6 +512,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
                         ))}
                       </select>
                     )}
+                    <FieldError id={wfv.errorId("model")} message={wfv.showError("model")} />
                   </label>
                   <label className="pg-field"><span>노출명 (served name)</span>
                     <input value={form.served_name} onChange={(e) => setForm({ ...form, served_name: e.target.value })} placeholder="예: qwen3-mini" /></label>
@@ -495,7 +530,8 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
               <>
                 <div className="pg-field-row">
                   <label className="pg-field"><span>모델 (HF id) *</span>
-                    <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value, harbor_ref: "" })} placeholder="예: Qwen/Qwen3-0.6B" /></label>
+                    <input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value, harbor_ref: "" })} placeholder="예: Qwen/Qwen3-0.6B" {...wfv.fieldProps("model")} />
+                    <FieldError id={wfv.errorId("model")} message={wfv.showError("model")} /></label>
                   <label className="pg-field"><span>노출명 (served name)</span>
                     <input value={form.served_name} onChange={(e) => setForm({ ...form, served_name: e.target.value })} placeholder="예: qwen3-mini" /></label>
                 </div>
@@ -515,9 +551,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
             </p>
             <div className="pg-field-row">
               <label className="pg-field"><span>replica</span>
-                <input type="number" min={1} value={form.replicas} onChange={(e) => setForm({ ...form, replicas: +e.target.value })} /></label>
+                <input type="number" min={1} value={form.replicas} onChange={(e) => setForm({ ...form, replicas: +e.target.value })} {...wfv.fieldProps("replicas")} />
+                <FieldError id={wfv.errorId("replicas")} message={wfv.showError("replicas")} /></label>
               <label className="pg-field"><span>GPU/MIG 슬라이스</span>
-                <input type="number" min={1} value={form.gpu} onChange={(e) => setForm({ ...form, gpu: +e.target.value })} /></label>
+                <input type="number" min={1} value={form.gpu} onChange={(e) => setForm({ ...form, gpu: +e.target.value })} {...wfv.fieldProps("gpu")} />
+                <FieldError id={wfv.errorId("gpu")} message={wfv.showError("gpu")} /></label>
               <label className="pg-field"><span>max_model_len</span>
                 <input type="number" min={1024} step={1024} value={form.max_model_len} onChange={(e) => setForm({ ...form, max_model_len: +e.target.value })} /></label>
             </div>
@@ -576,7 +614,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
 
             <div className="modal-actions">
               <button type="button" className="btn-ghost" onClick={() => setWizard(false)}>취소</button>
-              <button type="button" className="btn-ghost" onClick={doPreview} disabled={busy || !form.name || !form.model}>
+              <button type="button" className="btn-ghost" onClick={doPreview} disabled={busy}>
                 {busy ? "검증 중…" : "미리보기 / 검증"}
               </button>
               <button type="button" className="btn-primary" onClick={doCreate} disabled={busy || !preview?.dry_run_ok}>
@@ -596,7 +634,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
             </div>
             <label className="pg-field">
               <span>앱 *</span>
-              <select className="range-select" value={keyAppMode === "custom" ? CUSTOM : keyForm.app_id} onChange={(e) => onKeyAppChange(e.target.value)}>
+              <select className="range-select" value={keyAppMode === "custom" ? CUSTOM : keyForm.app_id} onChange={(e) => onKeyAppChange(e.target.value)} {...kfv.fieldProps("app_id")}>
                 {orgApps.map((a) => (
                   <option key={a.app_id} value={a.app_id}>
                     {a.name} ({a.app_id}){a.dept_id ? ` · ${a.dept_id}` : " · 미귀속"}
@@ -604,11 +642,13 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
                 ))}
                 <option value={CUSTOM}>+ 새 앱 만들기</option>
               </select>
+              <FieldError id={kfv.errorId("app_id")} message={kfv.showError("app_id")} />
             </label>
             {keyAppMode === "custom" && (
               <label className="pg-field">
                 <span>새 앱 이름 *</span>
-                <input value={keyForm.app_name} onChange={(e) => setKeyForm({ ...keyForm, app_name: e.target.value })} placeholder="예: demo" />
+                <input value={keyForm.app_name} onChange={(e) => setKeyForm({ ...keyForm, app_name: e.target.value })} placeholder="예: demo" {...kfv.fieldProps("app_name")} />
+                <FieldError id={kfv.errorId("app_name")} message={kfv.showError("app_name")} />
               </label>
             )}
             <label className="pg-field">
@@ -629,11 +669,13 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
             <div className="pg-field-row">
               <label className="pg-field">
                 <span>쿼터 rpm</span>
-                <input type="number" min={0} value={keyForm.quota_rpm} onChange={(e) => setKeyForm({ ...keyForm, quota_rpm: e.target.value })} placeholder="무제한" />
+                <input type="number" min={0} value={keyForm.quota_rpm} onChange={(e) => setKeyForm({ ...keyForm, quota_rpm: e.target.value })} placeholder="무제한" {...kfv.fieldProps("quota_rpm")} />
+                <FieldError id={kfv.errorId("quota_rpm")} message={kfv.showError("quota_rpm")} />
               </label>
               <label className="pg-field">
                 <span>쿼터 tpd</span>
-                <input type="number" min={0} value={keyForm.quota_tpd} onChange={(e) => setKeyForm({ ...keyForm, quota_tpd: e.target.value })} placeholder="무제한" />
+                <input type="number" min={0} value={keyForm.quota_tpd} onChange={(e) => setKeyForm({ ...keyForm, quota_tpd: e.target.value })} placeholder="무제한" {...kfv.fieldProps("quota_tpd")} />
+                <FieldError id={kfv.errorId("quota_tpd")} message={kfv.showError("quota_tpd")} />
               </label>
             </div>
             {issued && (
@@ -644,7 +686,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
             )}
             <div className="modal-actions">
               <button type="button" className="btn-ghost" onClick={() => setKeyModal(null)}>닫기</button>
-              <button type="button" className="btn-primary" onClick={issueEndpointKey} disabled={busy || (keyAppMode === "select" ? !keyForm.app_id : !keyForm.app_name.trim())}>
+              <button type="button" className="btn-primary" onClick={issueEndpointKey} disabled={busy}>
                 {busy ? "발급 중…" : "키 발급"}
               </button>
             </div>

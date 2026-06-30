@@ -121,7 +121,7 @@ export default function Layout({
         {caps.readonly && (
           <span
             title="읽기 전용 관제 모드 — 생성·변경·삭제 기능이 비활성화되어 있습니다"
-            style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#fff", background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 999, padding: "2px 9px", letterSpacing: ".02em", whiteSpace: "nowrap" }}
+            style={{ marginLeft: "var(--sp-2)", fontSize: "var(--fs-xs)", fontWeight: 700, color: "#fff", background: "rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.5)", borderRadius: 999, padding: "2px 9px", letterSpacing: ".02em", whiteSpace: "nowrap" }}
           >
             관제 전용
           </span>

@@ -63,9 +63,9 @@ function BootScreen() {
     <div style={{ display: "grid", placeItems: "center", height: "100vh" }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontWeight: 800, fontSize: 22, color: "var(--brand-fabrix)", letterSpacing: ".02em" }}>
-          FABRIX<sup style={{ fontSize: 11 }}>AI</sup>
+          FABRIX<sup style={{ fontSize: "var(--fs-xs)" }}>AI</sup>
         </div>
-        <div style={{ marginTop: 10, fontSize: 13, color: "#8a8f98" }}>구성을 불러오는 중…</div>
+        <div style={{ marginTop: "var(--sp-3)", fontSize: "var(--fs-body)", color: "var(--text-faint)" }}>구성을 불러오는 중…</div>
       </div>
       <span className="sr-only" role="status" aria-live="polite">구성을 불러오는 중입니다.</span>
     </div>
