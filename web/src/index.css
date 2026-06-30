@@ -1702,6 +1702,20 @@ dialog.slide-panel::backdrop { background: rgba(16, 24, 40, 0.28); }
 .note-reason { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.12); color: inherit; opacity: 0.85; }
 .note-reason.guard { background: rgba(200,30,30,0.2); }
 
+/* IMP-38 인시던트 인박스 — 상태 필터 탭·상태 배지·발생횟수·시각·액션 */
+.inc-tabs { margin: var(--sp-2) var(--sp-3) 0; }
+.inc-tabs button { flex: 1; }
+.note.inc { flex-direction: row; align-items: flex-start; }
+.note.inc .note-body { flex: 1; min-width: 0; }
+.inc-state { font-size: 10px; font-weight: 600; padding: 1px 6px; border: 1px solid var(--border); }
+.inc-state.inc-triggered { color: var(--red, #c8281e); border-color: var(--red, #c8281e); background: var(--red-weak, rgba(200,40,30,0.1)); }
+.inc-state.inc-acked { color: var(--primary); border-color: var(--primary); background: var(--primary-weak); }
+.inc-state.inc-snoozed { color: var(--text-faint); }
+.inc-state.inc-resolved { color: var(--ok, #1a7f5a); border-color: var(--ok, #1a7f5a); background: color-mix(in srgb, var(--ok, #1a7f5a) 10%, transparent); }
+.inc-count { font-size: var(--fs-xs); font-weight: 700; color: var(--text-faint); }
+.inc-times { display: flex; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px; }
+.inc-actions { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-2); }
+
 /* P4-1 추론 지연 3분할 게이지 패널 */
 .lat-panel .lat-body { display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-2); }
 .lat-row { position: relative; }

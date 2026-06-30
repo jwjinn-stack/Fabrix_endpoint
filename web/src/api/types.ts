@@ -662,6 +662,43 @@ export interface AlertSendRecord {
   reason?: string;
 }
 
+// 알림 인시던트 라이프사이클(IMP-38) — OnCall/PagerDuty 모델.
+export type IncidentState = "triggered" | "acked" | "resolved" | "snoozed";
+
+export interface IncidentOccurrence {
+  ts: string;
+}
+
+export interface IncidentAuditEntry {
+  ts: string;
+  from: IncidentState;
+  to: IncidentState;
+  by: string;
+  note?: string;
+}
+
+export interface Incident {
+  id: string;
+  dedup_key: string;
+  severity: AlarmSeverity;
+  title: string;
+  state: IncidentState;
+  first_seen: string;
+  last_seen: string;
+  count: number;
+  occurrences?: IncidentOccurrence[];
+  acked_by?: string;
+  resolved_by?: string;
+  silenced_until?: string;
+  note?: string;
+  audit?: IncidentAuditEntry[];
+}
+
+export interface IncidentList {
+  incidents: Incident[];
+  counts: Record<string, number>; // triggered|acked|resolved|snoozed → count
+}
+
 export interface Endpoint {
   name: string;
   namespace: string;

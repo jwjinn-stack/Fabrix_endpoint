@@ -15,6 +15,7 @@ import (
 	"github.com/maymust/fabrix-endpoint/internal/diag"
 	"github.com/maymust/fabrix-endpoint/internal/guard"
 	"github.com/maymust/fabrix-endpoint/internal/harbor"
+	"github.com/maymust/fabrix-endpoint/internal/incident"
 	"github.com/maymust/fabrix-endpoint/internal/httpx"
 	"github.com/maymust/fabrix-endpoint/internal/k8s"
 	"github.com/maymust/fabrix-endpoint/internal/langfuse"
@@ -34,6 +35,7 @@ type Server struct {
 	quota      *quota.Limiter
 	alerts     *alerting.Dispatcher // 예산·임계 초과 아웃바운드 통지(IMP-15). observe 는 발송 비활성.
 	alertNotify sync.Map             // map[apiKeyID]bool — 키별 '초과 시 통지' 토글(인메모리)
+	incidents  *incident.Store      // 알림 인시던트 라이프사이클(IMP-38) — ack/resolve/snooze·group-merge(인메모리)
 	k8s        *k8s.Client
 	harbor     *harbor.Client
 	pstats     *proxystats.Collector
@@ -69,6 +71,7 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 		usage:      us,
 		quota:      q,
 		alerts:     alerts,
+		incidents:  incident.NewStore(),
 		k8s:        kc,
 		harbor:     hc,
 		pstats:     proxystats.New(),
@@ -122,6 +125,9 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 			EventMessage: alertMessage(kind, ratio),
 		})
 	})
+	// IMP-38 — 인시던트 인박스 seed(mockstore 정합·결정적). 운영 연동 시 quota/guard 교차 hook 이
+	// srv.incidents.Observe/AutoResolve 를 호출하도록 교체하면 되고, 핸들러·모델은 불변이다.
+	srv.seedIncidents()
 	return srv
 }
 
@@ -204,6 +210,20 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/guard/content", s.handleGuardContent)
 		// 마스킹 정책 조회 — 게이트웨이 글루가 폴링(ingestion 전 캡처/마스킹 적용).
 		mux.HandleFunc("GET /api/v1/masking/policy", s.handleGetMaskingPolicy)
+	}
+
+	// 알림 인시던트 라이프사이클(IMP-38) — 인박스 조회는 Guard read(observe·manage 공통).
+	// ack 는 incident.ack(observe 기본 on, ack-only), resolve/snooze 는 incident.write(=manage).
+	// 미등록이 실제 차단을 담당한다(observe 는 write 라우트 미등록 → 404).
+	if can(capability.Guard) {
+		mux.HandleFunc("GET /api/v1/incidents", s.handleListIncidents)
+	}
+	if can(capability.IncidentAck) {
+		mux.HandleFunc("POST /api/v1/incidents/{id}/ack", s.handleAckIncident)
+	}
+	if can(capability.IncidentWrite) {
+		mux.HandleFunc("POST /api/v1/incidents/{id}/resolve", s.handleResolveIncident)
+		mux.HandleFunc("POST /api/v1/incidents/{id}/snooze", s.handleSnoozeIncident)
 	}
 	// 정책 변경(PUT)·분류 테스트(POST) — guard.write cap. observe 는 GET 만 노출.
 	if can(capability.GuardWrite) {

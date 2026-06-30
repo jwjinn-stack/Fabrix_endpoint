@@ -12,7 +12,7 @@ import type {
   APIKeyView, Capabilities, ConfigStatus, ConfigView, DiagReport, DiagStatus, ChatResponse, DashboardOverview, Endpoint, EndpointPreview,
   EnginePipeline, EvalResult, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
   GuardAuditRow, GuardDecision, GuardPolicy, GuardVerdict, HarborModel, HarborStatus,
-  ImportResult, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
+  ImportResult, Incident, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
   OrgTree, ProxyStats, Score, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
   SpanKind, ThirdPartyCred, TimePoint, TimeRange, Timeseries,
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
@@ -140,6 +140,63 @@ let MASKING_POLICY: MaskingPolicy = {
     { type: "address", label: "주소", action: "mask" },
   ],
 };
+
+// ───────────────────────── 인시던트 인박스(IMP-38) ─────────────────────────
+// OnCall/PagerDuty 모델: group-merge dedup + ack/resolve/snooze. 모듈 상태에 반영(QA 데이터 흐름).
+const INCIDENTS: Incident[] = [
+  { id: "inc_seed_ep", dedup_key: "endpoint:qwen25-vl-7b:not-ready", severity: "critical", title: "qwen25-vl-7b 엔드포인트 NotReady — 파드 기동 실패", state: "triggered", first_seen: isoMinusHours(3), last_seen: isoMinusHours(0.1), count: 1, occurrences: [{ ts: isoMinusHours(0.1) }] },
+  { id: "inc_seed_q", dedup_key: "scheduler:queue-backpressure", severity: "warning", title: "대기 큐 적체 — 스케줄러 backpressure", state: "triggered", first_seen: isoMinusHours(1.5), last_seen: isoMinusHours(0.05), count: 2, occurrences: [{ ts: isoMinusHours(1.5) }, { ts: isoMinusHours(0.05) }] },
+  { id: "inc_seed_g", dedup_key: "guard:pii-jailbreak-spike", severity: "info", title: "가드레일 차단 급증 (PII·Jailbreak)", state: "acked", first_seen: isoMinusHours(2), last_seen: isoMinusHours(0.8), count: 5, acked_by: "hjkim", occurrences: [{ ts: isoMinusHours(0.8) }] },
+];
+
+function incidentTick(): void {
+  // snooze 만료 → triggered 자동 re-fire(silenced_until 경과).
+  const now = Date.now();
+  for (const i of INCIDENTS) {
+    if (i.state === "snoozed" && i.silenced_until && new Date(i.silenced_until).getTime() <= now) {
+      i.state = "triggered";
+      i.silenced_until = undefined;
+    }
+  }
+}
+
+function incidentCounts(): Record<string, number> {
+  const c: Record<string, number> = { triggered: 0, acked: 0, resolved: 0, snoozed: 0 };
+  for (const i of INCIDENTS) c[i.state] = (c[i.state] ?? 0) + 1;
+  return c;
+}
+
+function listIncidents(state?: string, severity?: string): Response {
+  incidentTick();
+  let rows = [...INCIDENTS];
+  if (state) rows = rows.filter((i) => i.state === state);
+  if (severity) rows = rows.filter((i) => i.severity === severity);
+  rows.sort((a, b) => (a.last_seen < b.last_seen ? 1 : -1));
+  return ok({ incidents: rows, counts: incidentCounts() });
+}
+
+function actIncident(id: string, action: string, body: Record<string, unknown>): Response {
+  incidentTick();
+  const inc = INCIDENTS.find((i) => i.id === id);
+  if (!inc) return notFound(`/incidents/${id}`);
+  const now = new Date().toISOString();
+  if (inc.state === "resolved" && action !== "snooze") return ok({ error: "이미 해소된 인시던트입니다" }, 409);
+  switch (action) {
+    case "ack":
+      inc.state = "acked"; inc.acked_by = "operator"; inc.silenced_until = undefined; break;
+    case "resolve":
+      inc.state = "resolved"; inc.resolved_by = "operator"; inc.silenced_until = undefined; break;
+    case "snooze": {
+      const minutes = Number(body.minutes);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return ok({ error: "snooze 시간(minutes)은 1~1440 사이여야 합니다" }, 400);
+      inc.state = "snoozed"; inc.silenced_until = new Date(Date.now() + minutes * 60_000).toISOString(); break;
+    }
+    default:
+      return notFound(`/incidents/${id}/${action}`);
+  }
+  inc.last_seen = now;
+  return ok({ incident: inc });
+}
 
 // ───────────────────────── 시계열/요약 생성기 ─────────────────────────
 const rangeBuckets: Record<TimeRange, { n: number; stepSec: number }> = {
@@ -1098,6 +1155,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /org": return ok(genOrg());
     case "POST /users": return ok(createUser(body as Record<string, unknown>));
     case "POST /endpoints": return ok(createEndpoint(body as Record<string, unknown>, q.get("apply") === "true"));
+    case "GET /incidents": return listIncidents(q.get("state") ?? undefined, q.get("severity") ?? undefined);
     case "GET /traces": return ok(genTraceList(parseRange(q), { decision: q.get("decision") ?? undefined, status: q.get("status") ?? undefined, model: q.get("model") ?? undefined, app: q.get("app") ?? undefined, q: q.get("q") ?? undefined }));
     case "GET /sessions": return ok(genSessionList(parseRange(q), q.get("app") ?? undefined));
   }
@@ -1111,6 +1169,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (one.configured && one.reachable && one.request) one.probe = mkProbeTrace(one);
     return ok(one);
   }
+  if (method === "POST" && (m = path.match(/^\/incidents\/([^/]+)\/(ack|resolve|snooze)$/))) { return actIncident(m[1], m[2], (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/traces\/([^/]+)\/scores$/))) { return ok(recordScoreMock(m[1], body as Record<string, unknown>)); }
   if (method === "GET" && (m = path.match(/^\/traces\/(.+)$/))) { return ok(genTraceDetail(m[1])); }
   if (method === "GET" && (m = path.match(/^\/sessions\/(.+)$/))) { return ok(genSessionDetail(m[1])); }

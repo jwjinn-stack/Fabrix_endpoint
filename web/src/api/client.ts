@@ -28,6 +28,8 @@ import type {
   ImportResult,
   IssuedKey,
   AlertConfig,
+  Incident,
+  IncidentList,
   ModelCatalog,
   ModelMetricsReport,
   OrgTree,
@@ -359,6 +361,48 @@ export async function setAlertWebhook(url: string): Promise<{ webhook_configured
     throw new Error(msg);
   }
   return (await res.json()) as { webhook_configured: boolean; warnings?: string[] };
+}
+
+// 알림 인시던트 라이프사이클(IMP-38) — 인박스 조회 + ack/resolve/snooze.
+export function fetchIncidents(
+  filter?: { state?: string; severity?: string },
+  signal?: AbortSignal,
+): Promise<IncidentList> {
+  const qs = new URLSearchParams();
+  if (filter?.state) qs.set("state", filter.state);
+  if (filter?.severity) qs.set("severity", filter.severity);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return getJSON<IncidentList>(`/incidents${suffix}`, signal);
+}
+
+async function incidentAction(id: string, action: string, body?: unknown): Promise<Incident> {
+  const res = await fetch(`${BASE}/incidents/${encodeURIComponent(id)}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = `API ${res.status}`;
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j.error) msg = j.error;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  const j = (await res.json()) as { incident: Incident };
+  return j.incident;
+}
+
+export function ackIncident(id: string): Promise<Incident> {
+  return incidentAction(id, "ack");
+}
+
+export function resolveIncident(id: string): Promise<Incident> {
+  return incidentAction(id, "resolve");
+}
+
+export function snoozeIncident(id: string, minutes: number): Promise<Incident> {
+  return incidentAction(id, "snooze", { minutes });
 }
 
 export async function playgroundChat(
