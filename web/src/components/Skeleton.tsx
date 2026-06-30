@@ -12,7 +12,7 @@ export function SkeletonCards({ count = 4 }: { count?: number }) {
         {Array.from({ length: count }).map((_, i) => (
           <div key={i} className="card" style={{ padding: "var(--sp-4)" }}>
             <Skeleton w={90} h={12} />
-            <div style={{ display: "flex", gap: 24, marginTop: 16 }}>
+            <div style={{ display: "flex", gap: "var(--sp-5)", marginTop: "var(--sp-4)" }}>
               <Skeleton w={70} h={28} />
               <Skeleton w={50} h={28} />
             </div>
@@ -30,7 +30,7 @@ export function SkeletonRows({ rows = 6, cols = 5 }: { rows?: number; cols?: num
   return (
     <div aria-hidden="true">
       {Array.from({ length: rows }).map((_, r) => (
-        <div key={r} style={{ display: "flex", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
+        <div key={r} style={{ display: "flex", gap: "var(--sp-4)", padding: "10px 0", borderBottom: "1px solid var(--border)" }}>
           {Array.from({ length: cols }).map((_, c) => (
             <Skeleton key={c} w={c === 0 ? 120 : `${Math.round(60 / cols)}%`} h={12} />
           ))}

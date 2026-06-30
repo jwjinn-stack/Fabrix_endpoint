@@ -1986,3 +1986,11 @@ tr.row-sel { background: var(--primary-weak) !important; }
   border: 1px solid var(--border, #d8dce3); border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
+
+/* ── 의미론적 유틸 (IMP-19) ──
+   일회성 인라인 style 의 raw-px/하드코딩 색을 토큰으로 수렴하기 위한 최소 유틸.
+   상수-토큰 유틸(.mt-1 등)은 만들지 않는다(Pajamas deprecated). 반복 의도가
+   뚜렷한 의미론적 클래스만. 추가형 — 기존 토큰/.muted 와 충돌 없음. */
+.u-label-xs { font-size: var(--fs-xs); color: var(--text-dim); }
+.row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.stack-sm { display: flex; flex-direction: column; gap: var(--sp-2); }

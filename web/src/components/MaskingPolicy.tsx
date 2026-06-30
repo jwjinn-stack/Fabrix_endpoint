@@ -120,7 +120,7 @@ export default function MaskingPolicyPanel() {
           <h3>캡처 정책 (Langfuse 트레이스 보존)</h3>
           <InfoTip>프롬프트·응답을 트레이스에 어떻게 보존할지. 게이트웨이 글루가 ingestion 전 적용.</InfoTip>
           <span className="spacer" />
-          <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, marginRight: 12 }}>
+          <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, marginRight: "var(--sp-3)" }}>
             <input type="checkbox" checked={policy.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
             마스킹 적용
           </label>

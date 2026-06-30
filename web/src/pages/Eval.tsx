@@ -89,7 +89,7 @@ export default function Eval() {
             </select></label>
         </div>
         <label className="pg-field"><span>프롬프트</span>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} style={{ font: "inherit", padding: 8, border: "1px solid var(--border-strong)", borderRadius: 6, resize: "vertical" }} /></label>
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} style={{ font: "inherit", padding: "var(--sp-2)", border: "1px solid var(--border-strong)", borderRadius: "var(--radius-sm)", resize: "vertical" }} /></label>
         <label className="pg-field"><span>채점 기준(선택)</span>
           <input value={criteria} onChange={(e) => setCriteria(e.target.value)} placeholder="예: 정확성·간결성·근거 제시" /></label>
         {err && <div className="state error" role="alert">{err}</div>}

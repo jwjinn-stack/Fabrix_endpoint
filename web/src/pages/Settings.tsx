@@ -44,7 +44,7 @@ function BrandColorCard() {
                 borderRadius: 8, padding: "7px 12px", background: "var(--surface)", font: "inherit", fontSize: "var(--fs-sm)",
               }}
             >
-              <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", background: p.primary, border: "1px solid rgba(0,0,0,0.1)", flex: "none" }} />
+              <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: "50%", background: p.primary, border: "1px solid var(--border)", flex: "none" }} />
               <span style={{ color: "var(--text)" }}>{p.name}</span>
               {active && <span aria-hidden="true" style={{ color: "var(--primary)", fontWeight: 700 }}>✓</span>}
             </button>
@@ -71,7 +71,7 @@ function BrandColorCard() {
           {brand.id === "custom" && <code style={{ fontSize: "var(--fs-xs)" }}>{brand.primary}</code>}
         </label>
       </div>
-      <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: 8 }}>링크 예시</a></div>
+      <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: "var(--sp-2)" }}>링크 예시</a></div>
     </div>
   );
 }

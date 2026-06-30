@@ -62,7 +62,7 @@ export default function PipelineWaterfall({ stats }: { stats: ProxyStats }) {
           {stages.map((st, i) => {
             const perc = Math.round((st.ms / total) * 100);
             return (
-              <div key={st.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "3px 0", paddingLeft: 4 + i * 18, fontSize: "var(--fs-sm)" }}>
+              <div key={st.label} style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", padding: "3px 0", paddingLeft: 4 + i * 18, fontSize: "var(--fs-sm)" }}>
                 <span aria-hidden="true" style={{ color: "var(--text-faint)" }}>{i === 0 ? "▸" : "└"}</span>
                 <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: 2, background: st.color, flex: "none" }} />
                 <span style={{ color: "var(--text)" }}>{st.label}</span>

@@ -89,7 +89,7 @@ export default function ReconfigurePanel() {
           </div>
         </div>
       ) : (
-        <p className="muted" style={{ fontSize: 13, marginTop: -2 }}>
+        <p className="muted" style={{ fontSize: "var(--fs-body)", marginTop: -2 }}>
           연동 대상(URL/네임스페이스)을 고치고 저장하면 <code>{view.namespace}/{view.deployment}</code> 가 새 설정으로 재기동됩니다. 비밀번호·키는 자격증명 화면에서 관리합니다.
         </p>
       )}
