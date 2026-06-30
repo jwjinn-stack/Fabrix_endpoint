@@ -1065,6 +1065,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /usage/trend": return ok(genUsageTrend(parseRange(q)));
     case "GET /metrics/breakdown": return ok(genMetricsBreakdown(parseRange(q), q.get("dim") ?? "model"));
     case "GET /metrics/dimensions": return ok({ dimensions: METRIC_DIMENSIONS, metrics: METRIC_CATALOG });
+    case "POST /mcp": return ok(mcpRpc(body as { id?: unknown; method?: string }));
     case "GET /models": return ok({ generated_at: new Date().toISOString(), models: MODELS.map(modelInfo) } satisfies ModelCatalog);
     case "GET /models/metrics": return ok(genModelMetrics());
     case "GET /guard/audit": return ok(genGuardAudit(parseRange(q), q.get("decision") ?? undefined, q.get("type") ?? undefined));
@@ -1269,6 +1270,29 @@ function genLogs(name: string, component: string): { logs: string; components: s
     return `${t} [${component || "worker"}] INFO vllm.engine: running=${2 + (i % 5)} waiting=${i % 3} gpu_cache_usage=${(0.3 + (i % 10) / 20).toFixed(2)} req=${name}-${1000 + i}`;
   });
   return { logs: lines.join("\n"), components: comps, ok: true };
+}
+
+// ───────────────────────── FABRIX MCP(JSON-RPC) mock ─────────────────────────
+// 백엔드 server/mcp.go 의 tools/list·resources/list 응답 형태를 미러링(IMP-5 패널이 mock 에서도 렌더).
+const MCP_TOOLS = [
+  { name: "list_dimensions", description: "groupby 가능한 차원과 메트릭 카탈로그(의미·단위·임계치)를 반환한다. 다른 tool 호출 전에 먼저 본다." },
+  { name: "groupby_metric", description: "트래픽/품질 메트릭을 한 차원(model|endpoint|namespace)으로 분해해 반환한다." },
+  { name: "top_outliers", description: "차원별 분해에서 카탈로그 임계치를 위반한(이상) 그룹만 추려 사유와 함께 반환한다." },
+  { name: "summarize_endpoint_health", description: "전체 추론 서빙 건강도 요약(QPS·TTFT p95·ITL·캐시적중·차단·알람)을 자연어로 반환한다." },
+];
+const MCP_RESOURCES = [
+  { uri: "fabrix://metric-catalog", name: "메트릭 카탈로그", description: "메트릭별 의미·단위·방향·임계치(AI grounding)", mimeType: "application/json" },
+  { uri: "fabrix://dimensions", name: "groupby 차원", description: "분해 가능한 차원과 Prometheus 라벨 매핑", mimeType: "application/json" },
+];
+function mcpRpc(req: { id?: unknown; method?: string }): Json {
+  const base = { jsonrpc: "2.0", id: req.id ?? null };
+  switch (req.method) {
+    case "initialize":
+      return { ...base, result: { protocolVersion: "2024-11-05", capabilities: { tools: {}, resources: {} }, serverInfo: { name: "fabrix-endpoint", version: "0.1.0" } } };
+    case "tools/list": return { ...base, result: { tools: MCP_TOOLS } };
+    case "resources/list": return { ...base, result: { resources: MCP_RESOURCES } };
+    default: return { ...base, error: { code: -32601, message: `method not found: ${req.method ?? ""}` } };
+  }
 }
 
 // ───────────────────────── fetch 인터셉터 설치 ─────────────────────────

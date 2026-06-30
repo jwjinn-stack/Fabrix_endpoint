@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchDiagnostics, probeOne } from "../api/client";
+import { fetchDiagnostics, probeOne, mcpListTools, mcpListResources, type McpTool, type McpResource } from "../api/client";
 import type { DiagNetwork, DiagReport, DiagSample, DiagStatus, DiagTiming, FailKind } from "../api/types";
 import type { Page } from "../components/Layout";
 import Badge, { type BadgeTone } from "../components/Badge";
@@ -7,6 +7,8 @@ import { SkeletonRows } from "../components/Skeleton";
 import InspectDrawer from "../components/InspectDrawer";
 import InfoTip from "../components/InfoTip";
 import { humanizeError } from "../utils/errors";
+import { useCap } from "../capabilities";
+import { useToast } from "../toast";
 
 // 지연경고 임계 — 도달은 하지만 느린 경우 warn 으로 강조(O-07).
 const SLOW_MS = 400;
@@ -285,8 +287,162 @@ function NetworkPanel({ net }: { net: DiagNetwork }) {
   );
 }
 
+// ── AI 연동(MCP) ──────────────────────────────────────────────────────────
+// 읽기 전용 FABRIX MCP 서버(POST /api/v1/mcp, JSON-RPC)의 발견·연결 진입점(IMP-5).
+// dashboard cap 안에 등록(IMP-2 정합) — cap-off 면 "비활성"으로 표기.
+
+// 엔드포인트 URL — 동일 오리진 가정(배포). SSR/null 오리진 폴백.
+function mcpEndpointUrl(): string {
+  const origin = typeof window !== "undefined" && window.location.origin && window.location.origin !== "null"
+    ? window.location.origin
+    : "http://localhost:8080";
+  return `${origin}/api/v1/mcp`;
+}
+
+// per-client connect 스니펫. 1순위=npx mcp-remote stdio-bridge(이 브랜치에서 실제 동작),
+// 네이티브 Streamable HTTP 커넥터는 IMP-9(coming soon)로만 표기.
+function connectSnippet(client: McpClient, url: string): string {
+  switch (client) {
+    case "claude":
+      return `claude mcp add fabrix -- npx -y mcp-remote ${url}`;
+    case "cursor":
+      // ~/.cursor/mcp.json (또는 프로젝트 .cursor/mcp.json)
+      return JSON.stringify({ mcpServers: { fabrix: { command: "npx", args: ["-y", "mcp-remote", url] } } }, null, 2);
+    case "generic":
+    default:
+      // 임의 MCP 클라이언트(JSON config) — stdio 로 mcp-remote 를 띄워 HTTP 백엔드에 브리지.
+      return JSON.stringify({ mcpServers: { fabrix: { command: "npx", args: ["-y", "mcp-remote", url] } } }, null, 2);
+  }
+}
+
+type McpClient = "claude" | "cursor" | "generic";
+const MCP_CLIENTS: { id: McpClient; label: string }[] = [
+  { id: "claude", label: "Claude Code" },
+  { id: "cursor", label: "Cursor" },
+  { id: "generic", label: "Vercel · 일반" },
+];
+
+function McpPanel({ enabled }: { enabled: boolean }) {
+  const toast = useToast();
+  const url = mcpEndpointUrl();
+  const [tools, setTools] = useState<McpTool[] | null>(null);
+  const [resources, setResources] = useState<McpResource[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [catErr, setCatErr] = useState<string | null>(null);
+  const [client, setClient] = useState<McpClient>("claude");
+
+  useEffect(() => {
+    if (!enabled) return;
+    const ac = new AbortController();
+    setLoading(true);
+    setCatErr(null);
+    Promise.all([mcpListTools(ac.signal), mcpListResources(ac.signal)])
+      .then(([t, r]) => { setTools(t); setResources(r); setLoading(false); })
+      .catch((e) => {
+        if (ac.signal.aborted) return;
+        setCatErr(humanizeError((e as Error).message));
+        setLoading(false);
+      });
+    return () => ac.abort();
+  }, [enabled]);
+
+  const copy = (text: string, what: string) => {
+    navigator.clipboard?.writeText(text).then(
+      () => toast.success(`${what} 복사됨`),
+      () => toast.error("복사 실패 — 브라우저 권한을 확인하세요."),
+    );
+  };
+
+  const snippet = connectSnippet(client, url);
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>AI 연동 (MCP)</h3>
+        <Badge tone="blue" dot>읽기 전용</Badge>
+        <InfoTip>FABRIX 대시보드의 메트릭·차원·인사이트를 AI 에이전트(Claude·Cursor 등)에 읽기 전용 MCP 로 노출합니다. 자격증명은 노출되지 않으며, 조회만 가능합니다.</InfoTip>
+      </div>
+
+      {!enabled ? (
+        <div className="state" role="status" style={{ marginTop: "var(--sp-2)" }}>
+          이 프로파일에서는 AI 연동(MCP)이 <b>비활성</b>입니다(대시보드 조회 권한 필요).
+        </div>
+      ) : (
+        <>
+          {/* (a) 엔드포인트 URL + 복사 */}
+          <div className="diag-sec-h">엔드포인트</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap" }}>
+            <code style={{ fontSize: "var(--fs-xs)", wordBreak: "break-all", flex: 1, minWidth: 200 }}>{url}</code>
+            <button type="button" className="btn-ghost btn-sm" onClick={() => copy(url, "엔드포인트 URL")}>복사</button>
+          </div>
+          <p className="muted" style={{ fontSize: "var(--fs-xs)", marginTop: "var(--sp-1)" }}>
+            JSON-RPC 2.0 over HTTP POST. 읽기 전용 — 모든 tool 은 조회만 수행합니다.
+          </p>
+
+          {/* (b) LIVE 카탈로그 — 서버 tools/list + resources/list */}
+          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>노출 tool · resource (라이브)</div>
+          {loading ? (
+            <SkeletonRows rows={4} cols={2} />
+          ) : catErr ? (
+            <div className="state error" role="alert">카탈로그를 불러오지 못했습니다 — {catErr}</div>
+          ) : (
+            <>
+              <dl className="diag-detail">
+                {(tools ?? []).map((t) => (
+                  <span key={t.name} style={{ display: "contents" }}>
+                    <dt><code>{t.name}</code></dt>
+                    <dd>{t.description ?? "—"}</dd>
+                  </span>
+                ))}
+                {(tools ?? []).length === 0 && <span style={{ display: "contents" }}><dt>—</dt><dd>노출된 tool 이 없습니다.</dd></span>}
+              </dl>
+              {(resources ?? []).length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: "var(--sp-2)" }}>
+                  {(resources ?? []).map((r) => (
+                    <span key={r.uri} className="pill" title={r.description}>{r.name ?? r.uri}</span>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* (c) per-client connect 스니펫 */}
+          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>연결 방법</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: "var(--sp-2)" }} role="tablist" aria-label="클라이언트">
+            {MCP_CLIENTS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={client === c.id}
+                className={`pill ${client === c.id ? "active" : ""}`}
+                onClick={() => setClient(c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--sp-2)" }}>
+            <pre style={{ flex: 1, margin: 0, padding: "var(--sp-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: 6, fontSize: "var(--fs-xs)", overflowX: "auto", whiteSpace: "pre" }}>{snippet}</pre>
+            <button type="button" className="btn-ghost btn-sm" onClick={() => copy(snippet, "연결 스니펫")}>복사</button>
+          </div>
+          <p className="muted" style={{ fontSize: "var(--fs-xs)", marginTop: "var(--sp-1)" }}>
+            <code>npx mcp-remote</code> 가 로컬 stdio 를 이 HTTP 엔드포인트로 브리지합니다(권장). 네이티브 Streamable HTTP 커넥터(<code>claude mcp add --transport http</code>)는 <b>coming soon (IMP-9)</b> 입니다.
+          </p>
+
+          {/* (d) 보안/신뢰 노트 */}
+          <div className="state" role="note" style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-xs)" }}>
+            🔒 읽기 전용입니다 — tool 은 메트릭·인사이트를 조회만 합니다(쓰기·삭제 없음). 자격증명·시크릿은 노출되지 않습니다. 이 엔드포인트는 사내 네트워크에서만 접근 가능해야 합니다.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // 연동 상태 — 외부 의존성 능동 프로브 + 통신 디버깅(실사이트 연동·디버깅용). GET /api/v1/diagnostics.
 export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => void }) {
+  const { can } = useCap();
   const [report, setReport] = useState<DiagReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -366,6 +522,8 @@ export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => v
           </div>
         )}
       </div>
+
+      <McpPanel enabled={can("dashboard")} />
 
       <InspectDrawer status={inspect} onClose={() => setInspect(null)} />
     </>
