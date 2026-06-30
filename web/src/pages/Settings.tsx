@@ -9,6 +9,7 @@ import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
 import InfoTip from "../components/InfoTip";
+import { humanizeError } from "../utils/errors";
 
 // 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
 function BrandColorCard() {
@@ -77,16 +78,6 @@ const ROLE_TONE: Record<string, BadgeTone> = { admin: "red", super: "pink", user
 const ROLE_RANK: Record<string, number> = { user: 0, super: 1, admin: 2 };
 const isEscalation = (from: string, to: string) => (ROLE_RANK[to] ?? 0) > (ROLE_RANK[from] ?? 0);
 
-// 백엔드 에러를 사람이 읽고 조치 가능한 문장으로 변환.
-function humanizeError(msg: string): string {
-  const m = msg.toLowerCase();
-  if (m.includes("already exists") || m.includes("duplicate")) return "이미 등록된 이메일입니다. 다른 이메일을 사용하세요.";
-  if (m.includes("invalid email") || m.includes("email")) return "이메일 형식이 올바르지 않습니다.";
-  if (m.includes("forbidden") || m.includes("permission") || m.includes("403")) return "권한이 없습니다. 관리자에게 문의하세요.";
-  if (m.includes("network") || m.includes("failed to fetch")) return "서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요.";
-  return msg;
-}
-
 function roleTag(role: string) {
   return <Badge tone={ROLE_TONE[role] ?? "neutral"}>{ROLE_LABEL[role] ?? role}</Badge>;
 }
@@ -130,7 +121,7 @@ export default function Settings() {
       setRoles(r.roles);
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }

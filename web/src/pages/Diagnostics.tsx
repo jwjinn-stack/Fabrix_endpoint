@@ -6,6 +6,7 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonRows } from "../components/Skeleton";
 import InspectDrawer from "../components/InspectDrawer";
 import InfoTip from "../components/InfoTip";
+import { humanizeError } from "../utils/errors";
 
 // 지연경고 임계 — 도달은 하지만 느린 경우 warn 으로 강조(O-07).
 const SLOW_MS = 400;
@@ -124,7 +125,7 @@ function DiagTile({ c, onRetry, onInspect, onNavigate }: { c: DiagStatus; onRetr
     setTesting(true);
     probeOne(c.name)
       .then((st) => { setLive(st); setTested(true); setOpen(true); })
-      .catch((e) => { setLive({ ...data, reachable: false, fail_kind: "unreachable", error: (e as Error).message }); setTested(true); setOpen(true); })
+      .catch((e) => { setLive({ ...data, reachable: false, fail_kind: "unreachable", error: humanizeError((e as Error).message) }); setTested(true); setOpen(true); })
       .finally(() => setTesting(false));
   };
 
@@ -302,7 +303,7 @@ export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => v
       })
       .catch((e) => {
         if (signal?.aborted) return;
-        setError((e as Error).message);
+        setError(humanizeError((e as Error).message));
         setLoading(false);
       });
   }, [verbose]);

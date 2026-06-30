@@ -3,6 +3,7 @@ import { fetchModels, runEval } from "../api/client";
 import type { EvalResult, ModelInfo } from "../api/types";
 import Sparkline from "../components/Sparkline";
 import InfoTip from "../components/InfoTip";
+import { humanizeError } from "../utils/errors";
 
 // 프롬프트/평가 관리 (#17) — LLM-as-judge. 대상 모델 응답을 심판 모델이 1~5점 채점.
 export default function Eval() {
@@ -35,7 +36,7 @@ export default function Eval() {
       const r = await runEval({ model, judge_model: judge, prompt, criteria });
       setResults((prev) => [r, ...prev]);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }

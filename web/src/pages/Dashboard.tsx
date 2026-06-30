@@ -11,6 +11,7 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
 import { RANGES, RangeSelect, useTimeRange } from "../timeRange";
+import { humanizeError } from "../utils/errors";
 
 const REFRESH_MS = 15_000;
 
@@ -105,7 +106,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
         setLastLoaded(Date.now());
         setError(null);
       } catch (e) {
-        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+        if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
       } finally {
         setLoading(false);
         setRefreshing(false);

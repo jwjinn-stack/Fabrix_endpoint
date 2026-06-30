@@ -9,6 +9,7 @@ import EnginePipelinePanel from "../components/EnginePipelinePanel";
 import DimensionBreakdown from "../components/DimensionBreakdown";
 import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
+import { humanizeError } from "../utils/errors";
 
 const REFRESH_MS = 10_000;
 const nf = new Intl.NumberFormat("ko-KR");
@@ -59,7 +60,7 @@ export default function Traffic() {
       setLastLoaded(Date.now());
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }

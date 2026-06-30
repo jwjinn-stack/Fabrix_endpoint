@@ -5,6 +5,7 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import { humanizeError } from "../utils/errors";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -46,7 +47,7 @@ export default function Sessions() {
         setError(null);
         if (app === "all") setApps([...new Set(d.sessions.map((s) => s.app_id))].sort());
       } catch (e) {
-        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+        if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
       } finally {
         setLoading(false);
       }

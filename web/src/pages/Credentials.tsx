@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchCredentials, setCredential } from "../api/client";
 import type { ThirdPartyCred } from "../api/types";
 import { useCap } from "../capabilities";
+import { humanizeError } from "../utils/errors";
 
 // 서드파티 자격증명 — HF Model Hub 토큰 · NVIDIA NGC 키 (모델 임포트 다운로드에 사용).
 // Nutanix Enterprise AI "Settings · Third Party Credentials" 패턴. 값은 마스킹 저장(k8s Secret).
@@ -42,7 +43,7 @@ export default function Credentials() {
       setAvailable(r.available);
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -86,7 +87,7 @@ export default function Credentials() {
       setEdit(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }

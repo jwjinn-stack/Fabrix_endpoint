@@ -5,6 +5,7 @@ import type { NavFn } from "../router";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge from "../components/Badge";
 import { useCap } from "../capabilities";
+import { humanizeError } from "../utils/errors";
 
 // 서빙 중 모델 메트릭을 Harbor 레포 이름에 매칭(정규화 후 부분일치).
 function norm(s: string): string {
@@ -62,7 +63,7 @@ export default function Models({ onNavigate }: { onNavigate: NavFn }) {
       setMetrics(mm?.models ?? []);
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }

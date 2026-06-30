@@ -13,6 +13,7 @@ import type { MetricsBreakdownRow } from "../api/types";
 import { useCap } from "../capabilities";
 import InfoTip from "../components/InfoTip";
 import Modal from "../components/Modal";
+import { humanizeError } from "../utils/errors";
 
 const CUSTOM = "__custom__";
 
@@ -97,7 +98,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setAvailable(r.available);
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -157,7 +158,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
     try {
       setPreview(await previewEndpoint(form));
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -174,7 +175,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setPreview(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -190,7 +191,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setConfirmDel(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -203,7 +204,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       const r = await fetchEndpointLogs(ep.namespace, ep.name, component, 200);
       setLogs(r);
     } catch (e) {
-      setLogs({ logs: "", components: [], ok: false, error: (e as Error).message });
+      setLogs({ logs: "", components: [], ok: false, error: humanizeError((e as Error).message) });
     } finally {
       setLogBusy(false);
     }
@@ -279,7 +280,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setNotice(`API 키 발급됨: ${keyForm.app_name || keyForm.app_id} → ${keyForm.model_scope}`);
       loadChoices();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }

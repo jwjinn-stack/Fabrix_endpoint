@@ -8,6 +8,7 @@ import Sparkline from "../components/Sparkline";
 import GpuLedGrid from "../components/GpuLedGrid";
 import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
+import { humanizeError } from "../utils/errors";
 
 const REFRESH_MS = 15_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -54,7 +55,7 @@ export default function Gpu() {
       setLastLoaded(Date.now());
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }

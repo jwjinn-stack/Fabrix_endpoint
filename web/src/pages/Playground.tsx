@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchModels, playgroundChat } from "../api/client";
 import type { ChatMessage, ChatResponse, ModelInfo } from "../api/types";
 import Modal from "../components/Modal";
+import { humanizeError } from "../utils/errors";
 
 // M-01 — 6상태(+idle) 머신. 메시지/요청 생애주기를 enum 으로 명시.
 //   idle → queued → thinking → streaming → complete
@@ -303,7 +304,7 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
           const r = await playgroundChat(m.id, msgs, { maxTokens, temperature });
           return { model: m.display_name, content: r.content, latency: r.latency_ms, tps: r.tokens_per_sec, ptoks: r.prompt_tokens, ctoks: r.completion_tokens, blocked: r.guard?.decision === "blocked" };
         } catch (e) {
-          return { model: m.display_name, content: "", latency: 0, tps: 0, ptoks: 0, ctoks: 0, blocked: false, error: (e as Error).message };
+          return { model: m.display_name, content: "", latency: 0, tps: 0, ptoks: 0, ctoks: 0, blocked: false, error: humanizeError((e as Error).message) };
         }
       }),
     );

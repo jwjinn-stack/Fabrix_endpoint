@@ -7,6 +7,7 @@ import Modal from "../components/Modal";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import SummaryStrip from "../components/SummaryStrip";
 import { useCap } from "../capabilities";
+import { humanizeError } from "../utils/errors";
 
 const CUSTOM = "__custom__";
 const nf = new Intl.NumberFormat("ko-KR");
@@ -76,7 +77,7 @@ export default function Keys() {
       setApps([...byID.values()].sort((a, b) => a.name.localeCompare(b.name)));
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -110,7 +111,7 @@ export default function Keys() {
       setForm({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80" });
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -124,7 +125,7 @@ export default function Keys() {
       setConfirmRevoke(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }

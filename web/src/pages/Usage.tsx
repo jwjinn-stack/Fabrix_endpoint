@@ -12,6 +12,7 @@ import LatencyPanel from "../components/LatencyPanel";
 import RankCard from "../components/RankCard";
 import InfoTip from "../components/InfoTip";
 import { RangeSelect, useTimeRange } from "../timeRange";
+import { humanizeError } from "../utils/errors";
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
@@ -70,7 +71,7 @@ export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
         setOverview(o);
         setError(null);
       } catch (e) {
-        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+        if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
       } finally {
         setLoading(false);
       }

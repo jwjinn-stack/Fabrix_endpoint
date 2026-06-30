@@ -31,7 +31,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-23 | compete | 데이터 내보내기(CSV/JSON)가 Usage 한 화면에만 — 트레이스·세션·가드 증적·키 표는 반출 경로 없음 | medium | M | high | grounded | 2026-06-30 |
 | IMP-24 | compete | 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가 | medium | M | high | grounded | 2026-06-30 |
 | IMP-25 | aesthetic | 차트 시각언어가 화면마다 손수 SVG로 제각각 — 호버 크로스헤어/툴팁 readout 부재로 Grafana/Datadog 대비 빈약 | medium | L | high | grounded | 2026-06-30 |
-| IMP-26 | code | 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출 | low | S | medium | proposed | 2026-06-30 |
+| IMP-26 | code | 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출 | low | S | medium | done | 2026-06-30 |
 | IMP-27 | aesthetic | 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도 | low | M | medium | proposed | 2026-06-30 |
 
 ## Details
@@ -294,6 +294,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: 미연구 (low ambiguity, 코드로 갭 확인 — Settings.tsx:82-84 만 매핑, 타 페이지는 raw message 노출). IMP-16(타입드 에러)·IMP-10(ErrorBoundary)·IMP-22(폼 검증 메시지)와 결이 같아 함께 정합화 권장.
 - **Sources**: (코드 검증 — 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (구현 직행 — IMP-16 타입드 에러 도입 후 status 기반 매핑이 더 정확)
+- **Result** (2026-06-30, done · security-light: clean): 공용 `utils/errors.ts humanizeError`(network/timeout/429/403/404/409/5xx/invalid-email) 신설, Settings local 제거·통합, 15개 페이지 bare error 노출을 일괄 래핑. 단위테스트 6건 추가(총 17 green). tsc·lint·build green. spec: `specs/2026-06-30/IMP-26-error-humanize.md`.
 
 ### IMP-27 — 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도
 - **Type**: aesthetic (sev=low, effort=M)
