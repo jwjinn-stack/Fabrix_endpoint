@@ -1863,3 +1863,19 @@ tr.row-sel { background: var(--primary-weak) !important; }
   border-radius: 2px;
 }
 .usage-table th.sortable.active button.th-sort { color: var(--primary, #4a6da7); font-weight: 600; }
+
+/* IMP-4: 접근 가능한 toggletip(InfoTip) — 네이티브 title 대체(WCAG 1.4.13) */
+.infotip { position: relative; display: inline-flex; }
+.infotip-trigger {
+  font: inherit; background: none; border: 0; cursor: help;
+  color: var(--text-muted, #9aa1ac); padding: 0 2px; line-height: 1;
+}
+.infotip-trigger:focus-visible { outline: 2px solid var(--primary, #4a6da7); outline-offset: 2px; border-radius: 2px; }
+.infotip-bubble {
+  position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px;
+  width: max-content; max-width: 280px; padding: 8px 10px;
+  font-size: 0.8rem; line-height: 1.5; font-weight: 400; text-align: left;
+  color: var(--text, #1f2530); background: var(--surface, #fff);
+  border: 1px solid var(--border, #d8dce3); border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}

@@ -9,7 +9,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | done |
 | IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done |
 | IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | done |
-| IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | grounded |
+| IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | done |
 | IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
 | IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done |
 | IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | done |
@@ -56,6 +56,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 네이티브 title 은 키보드 접근 불가·터치 미표시·SR 비일관(특히 라벨 옆 ⓘ 케이스)·지연·무스타일(Sarah Higley). WCAG 1.4.13(AA, 2018~)은 hover/focus 콘텐츠에 Dismissable/Hoverable/Persistent 를 요구하는데 native title 은 셋 다 불만족 → 진짜 AA 갭. 동일 출처가 hover 툴팁은 비필수·텍스트·비대화형만 담아야 함을 강조 → 카탈로그/AI-grounding 은 toggletip/disclosure 로. role="tooltip" 단독은 무의미, `aria-describedby` 가 load-bearing. OSS: Radix(headless+ARIA 정확, post-WorkOS 가속) 권장, Floating UI 는 positioning only, Tippy.js 는 신규 React 회피.
 - **Sources**: https://sarahmhigley.com/writing/tooltips-in-wcag-21/ , https://www.w3.org/WAI/WCAG21/Understanding/content-on-hover-or-focus.html , https://www.radix-ui.com/primitives/docs/components/tooltip , https://www.pkgpulse.com/blog/floating-ui-vs-tippyjs-vs-radix-tooltip-popover-2026
 - **Deep-dive suggestion**: oss-evaluate (Radix vs Floating UI vs in-house — 미니멀 스택 제약 하 비용/이점 정량화)
+- **Result** (2026-06-30, done · 부분): 무의존 `InfoTip` toggletip 컴포넌트(button + 클릭/Enter/Space 토글, Esc·바깥클릭 닫기, aria-expanded/controls, role=tooltip) 신설 + DimensionBreakdown ⓘ 적용. index.css `.infotip*` 추가. tsc 통과. 전 페이지 `title=` 34곳 마이그레이션·Radix 도입은 follow-up(oss-evaluate). 시각/AT QA 는 앱 구동 시. spec: `specs/2026-06-30/IMP-4-accessible-toggletip.md`.
 
 ### IMP-5 — FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음
 - **Type**: ux (sev=medium, effort=M)

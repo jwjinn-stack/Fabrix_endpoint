@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchMetricDimensions, fetchMetricsBreakdown } from "../api/client";
 import type { MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, TimeRange } from "../api/types";
 import { formatMetric } from "../utils/format";
+import InfoTip from "./InfoTip";
 
 // DimensionBreakdown — L2(Group) 공통 컴포넌트.
 // 차원(model|endpoint|namespace) 셀렉터 + /metrics/breakdown 표 + 카탈로그 기반 이상강조(C6).
@@ -120,7 +121,7 @@ export default function DimensionBreakdown({
     <div className="card">
       <div className="card-head">
         <h3>{title}</h3>
-        <span className="info" title="동일 메트릭을 차원으로 분해해 어느 그룹이 튀는지 봅니다. 주황 = 임계치 초과 또는 그룹 중앙값 대비 이상.">ⓘ</span>
+        <InfoTip label="차원 분해 도움말">동일 메트릭을 차원으로 분해해 어느 그룹이 튀는지 봅니다. 주황 = 임계치 초과 또는 그룹 중앙값 대비 이상.</InfoTip>
         <span className="spacer" />
         <select
           className="range-select"
