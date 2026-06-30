@@ -11,7 +11,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | grounded |
 | IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | grounded |
 | IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
-| IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | grounded |
+| IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done |
 | IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | grounded |
 | IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | grounded |
 | IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded |
@@ -72,6 +72,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (코드로 확인, not separately researched — low ambiguity) — `grep -rln 'handleMCP|mcpCallTool|outliers|summarizeOverview|MetricsBreakdown' **/*_test.go` 결과 0건. 기존 테스트는 range_test.go/reconfigure_test.go 뿐이라 신규 핵심 분기 미커버.
 - **Sources**: (코드 검증 — 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (구현 직행)
+- **Result** (2026-06-30, done): `mcp_dispatch_test.go`(파스에러 -32700·미지원 method -32601·notifications 202·resources list/read/미지원 -32602) + `breakdown_test.go`(outliers 양방향 임계·cache=0 가드) 추가. 서버 패키지 10건 통과. spec: `specs/2026-06-30/IMP-6-tests-mcp-breakdown.md`.
 
 ### IMP-7 — 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현
 - **Type**: code (sev=medium, effort=M)
