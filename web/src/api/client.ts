@@ -54,19 +54,56 @@ function apiPath(path: string): string {
   return new URL(`${BASE}${path}`, origin).toString();
 }
 
+// GET 전송 계층 견고성(IMP-16). 폴링형 관제 콘솔이 느린/플랩 백엔드에 무한 대기·단발 실패하지
+// 않도록 타임아웃 + 멱등 재시도를 둔다. SWR/TanStack(IMP-8) 도입 시 재시도 책임은 그쪽으로 이관.
+const DEFAULT_TIMEOUT_MS = 12_000;
+const MAX_RETRY = 2; // 총 3시도. 폴링 다음 틱과 겹치지 않게 작게.
+const BASE_BACKOFF_MS = 300;
+
+function isRetriableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 async function getJSON<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(apiPath(path), { signal });
-  if (!res.ok) {
-    let detail = "";
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+    // 외부 취소 신호 + 시도별 타임아웃을 합성(둘 중 먼저 발화하면 abort). 외부 signal 의 취소 의미 보존.
+    const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+    const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
     try {
-      const body = (await res.json()) as { error?: string };
-      detail = body.error ? `: ${body.error}` : "";
-    } catch {
-      /* 본문 파싱 실패는 무시 */
+      const res = await fetch(apiPath(path), { signal: composed });
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const body = (await res.json()) as { error?: string };
+          detail = body.error ? `: ${body.error}` : "";
+        } catch {
+          /* 본문 파싱 실패는 무시 */
+        }
+        // 5xx·429 만 일시 오류로 재시도. 4xx 클라이언트 오류는 즉시 throw.
+        if (isRetriableStatus(res.status) && attempt < MAX_RETRY) {
+          lastErr = new Error(`API ${res.status}${detail}`);
+          await sleep(BASE_BACKOFF_MS * 3 ** attempt + Math.floor(Math.random() * 100));
+          continue;
+        }
+        throw new Error(`API ${res.status}${detail}`);
+      }
+      return (await res.json()) as T;
+    } catch (e) {
+      // 호출부가 명시적으로 취소한 경우(외부 signal abort)는 재시도 없이 즉시 중단.
+      if (signal?.aborted) throw e;
+      // 네트워크 오류·타임아웃 abort 는 일시 오류로 간주해 재시도(여유 있으면).
+      lastErr = e;
+      if (attempt < MAX_RETRY) {
+        await sleep(BASE_BACKOFF_MS * 3 ** attempt + Math.floor(Math.random() * 100));
+        continue;
+      }
+      throw e;
     }
-    throw new Error(`API ${res.status}${detail}`);
   }
-  return (await res.json()) as T;
+  throw lastErr instanceof Error ? lastErr : new Error("API 요청 실패");
 }
 
 // 배포 프로파일·기능 집합. 부팅 시 1회 받아 NAV·버튼·접근을 토글한다.

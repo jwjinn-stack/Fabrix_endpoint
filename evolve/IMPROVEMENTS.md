@@ -21,7 +21,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | grounded | 2026-06-30 |
 | IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
 | IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded | 2026-06-30 |
-| IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | grounded | 2026-06-30 |
+| IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | done | 2026-06-30 |
 | IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | grounded | 2026-06-30 |
 | IMP-18 | compete | 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨 | medium | L | high | grounded | 2026-06-30 |
 | IMP-19 | aesthetic | 인라인 style={{}} 175곳(36개 파일)이 토큰/유틸 체계를 잠식 — 일회성 스타일을 유틸 클래스로 수렴 | low | M | high | grounded | 2026-06-30 |
@@ -195,6 +195,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (코드로 확인, not separately researched — low ambiguity) — client.ts:57 `async function getJSON<T>(path, signal?) { const res = await fetch(apiPath(path), { signal }); ... }` — timeout/retry/backoff 전무, signal 만. 다수 페이지가 setInterval 폴링(Dashboard 15s 등). AbortSignal.timeout/any 는 표준 웹 API(추가 의존성 0).
 - **Sources**: (코드 검증 — 외부 출처 없음); 참고 표준 https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/timeout_static
 - **Deep-dive suggestion**: 없음 (low ambiguity, 구현 직행 — IMP-8 SWR 결정과 조율; SWR 채택 시 이 항목 축소)
+- **Result** (2026-06-30, done · security-light: clean): `getJSON` 에 시도별 `AbortSignal.timeout(12s)` + 외부 signal 과 `AbortSignal.any` 합성(취소 의미 보존), 최대 2회 지수 백오프 재시도 추가. 재시도 대상=네트워크/타임아웃/429/5xx, 금지=4xx·외부 abort. 시그니처 불변(호출부 무수정). tsc 통과. 단위테스트는 IMP-13 러너 도입 후. spec: `specs/2026-06-30/IMP-16-fetch-timeout-retry.md`.
 
 ### IMP-17 — 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험
 - **Type**: ux (sev=medium, effort=S)
