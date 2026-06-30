@@ -18,7 +18,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-10 | code | 전역 React ErrorBoundary 부재 — 한 페이지의 렌더 throw가 관제 콘솔 전체를 백스크린 | high | S | high | done | 2026-06-30 |
 | IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | grounded | 2026-06-30 |
 | IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | grounded | 2026-06-30 |
-| IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | grounded | 2026-06-30 |
+| IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | done | 2026-06-30 |
 | IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
 | IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | grounded | 2026-06-30 |
 | IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | done | 2026-06-30 |
@@ -168,6 +168,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Sources**: https://vitest.dev/guide/ , https://react.dev/reference/eslint-plugin-react-hooks , https://www.npmjs.com/package/eslint-plugin-react-hooks , https://testing-library.com/docs/
 - **OSS note**: 전부 1군 OSS, 라이선스 클린(상업 무제한). vitest: MIT(Vite 팀 생태계, Vite 8 호환 Vitest 3.x). @testing-library/react & jest-dom & user-event: MIT(공식, React 19 지원). jsdom: MIT. eslint + typescript-eslint(통합 메타패키지): MIT, 활발. eslint-plugin-react-hooks: MIT(React 팀 직접, v7.1.1 2026-04, react.dev 공식 문서). eslint-plugin-react-refresh: MIT. eslint-plugin-jsx-a11y: MIT(jsx-eslint). 공급망 리스크 낮음. 주의: react-hooks recommended-latest 는 실험적 컴파일러 규칙 → recommended 부터.
 - **Deep-dive suggestion**: 없음 (oss-evaluate 수준의 검증 이미 완료; 구현 직행 — IMP-11 과 묶음)
+- **Result** (2026-06-30, done · security-light: clean): Vitest+RTL+jsdom+jest-dom+user-event 도입, vite.config `test`(jsdom·globals·setup), `src/test/setup.ts`. ESLint flat(`eslint.config.js`: js+ts-eslint+react-hooks+react-refresh+jsx-a11y), `_` 미사용인자 허용, 기존 위반 다수 jsx-a11y 상호작용 규칙은 baseline warn. scripts test/lint 추가. 시드 테스트 11건(format util 8 + InfoTip a11y 3) 통과. **게이트 전부 green**: lint exit0(0 errors·77 warnings)·tsc0·test0·build0. spec: `specs/2026-06-30/IMP-13-frontend-test-lint.md`.
 
 ### IMP-14 — 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만
 - **Type**: ux (sev=medium, effort=M)

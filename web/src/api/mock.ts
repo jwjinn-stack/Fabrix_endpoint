@@ -104,7 +104,7 @@ let USERS: User[] = [
   { user_id: "u-sales", email: "jung@fabrix.ai", name: "정영업", role: "user", dept_id: "d-sales", status: "disabled", created_at: isoMinusHours(600) },
 ];
 
-let CREDS: ThirdPartyCred[] = [
+const CREDS: ThirdPartyCred[] = [
   { kind: "hf", name: "fabrix-hf", masked: "hf_****x9QF", set: true },
   { kind: "ngc", name: "", masked: "", set: false },
 ];
