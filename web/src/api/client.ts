@@ -13,6 +13,10 @@ import type {
   EndpointSpec,
   EnginePipeline,
   EvalResult,
+  EvalDataset,
+  EvalDatasetItem,
+  Experiment,
+  ExperimentConfig,
   GPUReport,
   GPUTimeseries,
   GuardAuditReport,
@@ -536,6 +540,35 @@ export async function runEval(body: { model: string; judge_model?: string; promp
   const res = await fetch(`${BASE}/eval/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`API ${res.status}`);
   return (await res.json()) as EvalResult;
+}
+
+// ── eval suite (IMP-39) — 데이터셋·실험·회귀 비교 ──
+export function fetchDatasets(signal?: AbortSignal): Promise<{ datasets: EvalDataset[] }> {
+  return getJSON<{ datasets: EvalDataset[] }>(`/eval/datasets`, signal);
+}
+
+export async function createDataset(body: { name: string; items: EvalDatasetItem[] }): Promise<EvalDataset> {
+  const res = await fetch(`${BASE}/eval/datasets`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as EvalDataset;
+}
+
+export function fetchExperiments(signal?: AbortSignal): Promise<{ experiments: Experiment[] }> {
+  return getJSON<{ experiments: Experiment[] }>(`/eval/experiments`, signal);
+}
+
+export async function runExperiment(body: { dataset_id: string; config: ExperimentConfig }): Promise<Experiment> {
+  const res = await fetch(`${BASE}/eval/experiments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as Experiment;
 }
 
 export function fetchUsers(signal?: AbortSignal): Promise<{ users: User[]; roles: string[] }> {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/server"
 	"github.com/maymust/fabrix-endpoint/internal/usage"
 )
 
@@ -64,6 +65,12 @@ type Store struct {
 	masking  domain.MaskingPolicy
 	keySeq   int
 	userSeq  int
+
+	// IMP-39 — eval suite(데이터셋·실험). 키/유저 경로와 독립된 별도 mutex 로 보호(server.EvalStore 구현, eval.go).
+	evalMu      sync.Mutex
+	datasets    []server.EvalDataset
+	experiments []server.Experiment
+	evalSeq     int
 }
 
 // New 는 시드 데이터를 채운 인메모리 스토어를 만든다.

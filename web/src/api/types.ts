@@ -497,6 +497,48 @@ export interface EvalResult {
   guard?: GuardVerdict;
 }
 
+// ── eval suite (IMP-39) — 데이터셋·실험·회귀 비교. backend server.Eval* 와 1:1 ──
+export interface EvalDatasetItem {
+  id: string;
+  input: string;
+  expected_output?: string; // OPTIONAL — reference-free 허용(golden answer 강제 금지)
+  criteria?: string;        // 케이스별 채점 기준(선택)
+  metadata?: string;
+}
+export interface EvalDataset {
+  id: string;
+  name: string;
+  version: number;
+  items: EvalDatasetItem[];
+  created_at: string;
+  updated_at: string;
+}
+export interface ExperimentConfig {
+  model: string;
+  judge_model: string;
+  prompt_version?: string;
+  criteria: string;
+}
+export interface ExperimentCaseResult {
+  item_id: string;
+  input: string;
+  response: string;
+  score: number; // 0..5 (0=차단/실패)
+  rationale: string;
+  blocked: boolean;
+}
+export interface Experiment {
+  id: string;
+  dataset_id: string;
+  dataset_name: string;
+  dataset_version: number;
+  config: ExperimentConfig; // pinned config snapshot
+  cases: ExperimentCaseResult[];
+  mean_score: number;
+  pass_rate: number;
+  created_at: string;
+}
+
 export interface User {
   user_id: string;
   email: string;

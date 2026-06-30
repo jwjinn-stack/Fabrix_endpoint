@@ -29,6 +29,7 @@ type Server struct {
 	dashboard  provider.Dashboard
 	catalog    *catalog.Catalog
 	store      DataStore // nil 가능(DB 미구성 시 키 기능 비활성). live=*store.Store / mock=mockstore
+	evalStore  EvalStore // 평가 데이터셋·실험(IMP-39). nil 가능 → 미구성 시 503. store 가 EvalStore 면 자동 주입.
 	guard      *guard.Client
 	audit      *audit.Sink
 	usage      UsageSource // live=*usage.Sink / mock=mockstore
@@ -128,6 +129,11 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 	// IMP-38 — 인시던트 인박스 seed(mockstore 정합·결정적). 운영 연동 시 quota/guard 교차 hook 이
 	// srv.incidents.Observe/AutoResolve 를 호출하도록 교체하면 되고, 핸들러·모델은 불변이다.
 	srv.seedIncidents()
+	// IMP-39 — 주입된 DataStore 가 EvalStore(데이터셋·실험)도 구현하면 자동 연결.
+	// mockstore.Store 는 양쪽을 모두 구현한다. 미구현(또는 store==nil)이면 eval suite 엔드포인트는 503.
+	if es, ok := st.(EvalStore); ok {
+		srv.evalStore = es
+	}
 	return srv
 }
 
@@ -199,6 +205,11 @@ func (s *Server) Handler() http.Handler {
 	if can(capability.Eval) {
 		mux.HandleFunc("POST /api/v1/eval/run", s.handleEvalRun)
 		mux.HandleFunc("POST /api/v1/traces/{id}/scores", s.handleRecordScore) // 평가 점수를 라이브 trace 에 부착(IMP-18)
+		// IMP-39 — eval suite: 데이터셋·실험(배치 채점)·회귀 비교. 동일 Eval cap 게이트.
+		mux.HandleFunc("GET /api/v1/eval/datasets", s.handleListDatasets)
+		mux.HandleFunc("POST /api/v1/eval/datasets", s.handleCreateDataset)
+		mux.HandleFunc("GET /api/v1/eval/experiments", s.handleListExperiments)
+		mux.HandleFunc("POST /api/v1/eval/experiments", s.handleRunExperiment)
 	}
 
 	// 가드레일 증적(4-3) — Semantic Router 판정 → ClickHouse guard_audit. 조회는 read cap.
