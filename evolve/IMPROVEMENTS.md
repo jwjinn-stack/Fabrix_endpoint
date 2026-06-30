@@ -6,7 +6,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 
 | ID | Type | Title | Severity | Effort | Confidence | Status |
 |----|------|-------|----------|--------|------------|--------|
-| IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | grounded |
+| IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | done |
 | IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done |
 | IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | grounded |
 | IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | grounded |
@@ -26,6 +26,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — 코드로 정확히 확인. traces.go:15 의 `Filters{Decision, Status, Model, App}` 에 endpoint/namespace 없음, Usage.tsx:183·Endpoints.tsx:326 의 onDrill 은 `model: dim==="model" ? row.key : undefined` 만 시드 → dim 이 endpoint/namespace 일 때 모든 필터 undefined 로 무필터 점프. DimensionBreakdown.tsx:164-166 은 dim 무관하게 모든 행에 clickable 커서 + 드릴 툴팁을 붙임. 업계 표준(Grafana 통합 filter+group-by, Honeycomb BubbleUp 'Show only where field is value' → WHERE field=value 재쿼리)이 가설 (1)과 정확히 일치. (2) 폴백은 NN/Norman affordance 이론(실동작 없는 clickable signifier 는 false affordance, 비활성화 시 이유 설명) 지지.
 - **Sources**: https://grafana.com/whats-new/2026-04-14-faster-dashboard-exploration-with-quick-filters-and-grouping/ , https://docs.honeycomb.io/investigate/analyze/identify-outliers , https://www.uxpin.com/studio/blog/affordances-user-interaction/
 - **Deep-dive suggestion**: deep-research-lite (드릴스루 필터 보존 + 활성 필터 칩 UX 패턴 정밀화)
+- **Result** (2026-06-30, done · 안전 수정): DimensionBreakdown 에 `drillableDims` 프롭 추가 → drillable 차원(model)만 clickable/드릴 툴팁/onClick, 미지원 차원(endpoint/namespace)은 false affordance 제거 + 안내문. 호출부(Usage·Endpoints) `drillableDims={["model"]}` + onDrill 일반화. **무필터 점프(데이터 손실) 차단.** tsc 통과. endpoint 트레이스 필터 정공법·namespace trace 모델 확장은 follow-up. spec: `specs/2026-06-30/IMP-1-drilldown-false-affordance.md`.
 
 ### IMP-2 — MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐
 - **Type**: code (sev=high, effort=S)

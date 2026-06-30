@@ -38,11 +38,13 @@ export default function DimensionBreakdown({
   initialDim = "model",
   title = "차원별 분해 (L2)",
   onDrill,
+  drillableDims,
 }: {
   range: TimeRange;
   initialDim?: string;
   title?: string;
   onDrill?: (row: MetricsBreakdownRow, dim: string) => void;
+  drillableDims?: string[]; // 트레이스 드릴다운이 실제 동작하는 차원(미지정=전부). 그 외엔 false affordance 제거.
 }) {
   const [dims, setDims] = useState<MetricDimension[]>([]);
   const [catalog, setCatalog] = useState<MetricMeta[]>([]);
@@ -99,6 +101,8 @@ export default function DimensionBreakdown({
   }, [data, sortKey]);
 
   const dimTitle = dims.find((d) => d.key === dim)?.title ?? dim;
+  // 현재 차원에서 트레이스 드릴다운이 실제로 동작하는가 — 미지원 차원의 false affordance 방지(IMP-1).
+  const canDrill = !!onDrill && (!drillableDims || drillableDims.includes(dim));
 
   return (
     <div className="card">
@@ -122,6 +126,12 @@ export default function DimensionBreakdown({
       {error && <div className="empty" role="alert">분해를 불러오지 못했습니다. ({error})</div>}
       {!error && loading && !data && <div className="empty">불러오는 중…</div>}
       {!error && data && rows.length === 0 && <div className="empty">선택한 기간/차원에 데이터가 없습니다.</div>}
+
+      {!error && rows.length > 0 && onDrill && !canDrill && (
+        <div className="muted" style={{ fontSize: "0.8rem", paddingBottom: "0.5rem" }}>
+          이 차원({dimTitle})은 트레이스 드릴다운을 지원하지 않습니다.
+        </div>
+      )}
 
       {!error && rows.length > 0 && (
         <table className="usage-table">
@@ -148,9 +158,9 @@ export default function DimensionBreakdown({
             {rows.map((r) => (
               <tr
                 key={r.key}
-                className={onDrill ? "clickable" : undefined}
-                onClick={onDrill ? () => onDrill(r, dim) : undefined}
-                title={onDrill ? "트레이스로 드릴다운" : undefined}
+                className={canDrill ? "clickable" : undefined}
+                onClick={canDrill ? () => onDrill!(r, dim) : undefined}
+                title={canDrill ? "트레이스로 드릴다운" : undefined}
               >
                 <td>{r.key}</td>
                 {cols.map((k) => {

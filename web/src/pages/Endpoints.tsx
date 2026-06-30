@@ -322,8 +322,9 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
         range="24h"
         title="엔드포인트 차원 분해 (L2 · 최근 24시간)"
         initialDim="endpoint"
+        drillableDims={["model"]}
         onDrill={(row: MetricsBreakdownRow, dim: string) =>
-          onNavigate?.("traces", { range: "24h", model: dim === "model" ? row.key : undefined })
+          onNavigate?.("traces", { range: "24h", ...(dim === "model" ? { model: row.key } : {}) })
         }
       />
 

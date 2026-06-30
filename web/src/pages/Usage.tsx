@@ -179,8 +179,9 @@ export default function Usage({ onNavigate }: { onNavigate?: NavFn }) {
       <DimensionBreakdown
         range={range}
         title="성능 차원 분해 (L2)"
+        drillableDims={["model"]}
         onDrill={(row: MetricsBreakdownRow, dim: string) =>
-          onNavigate?.("traces", { range, model: dim === "model" ? row.key : undefined })
+          onNavigate?.("traces", { range, ...(dim === "model" ? { model: row.key } : {}) })
         }
       />
 
