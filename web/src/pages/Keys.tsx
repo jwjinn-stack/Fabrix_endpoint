@@ -10,6 +10,8 @@ import { SkeletonRows } from "../components/Skeleton";
 import ExportButton from "../components/ExportButton";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+import { useFieldValidation } from "../utils/useFieldValidation";
+import FieldError from "../components/FieldError";
 
 const CUSTOM = "__custom__";
 const nf = new Intl.NumberFormat("ko-KR");
@@ -57,6 +59,20 @@ export default function Keys() {
   const [confirmRevoke, setConfirmRevoke] = useState<APIKeyView | null>(null); // 회수 확인(비가역)
   const { density, setDensity } = useTableDensity("keys");
 
+  // IMP-22 — 인라인 검증. 앱 귀속(모드별 필수) + 쿼터·임계 형식 검증. 짧은 폼 → 첫 오류필드 포커스.
+  const fv = useFieldValidation(form, {
+    app_name: () => (appMode === "custom" && !form.app_name.trim() ? "새 앱 이름을 입력하세요." : undefined),
+    app_id: () => (appMode === "select" && !form.app_id ? "앱을 선택하세요." : undefined),
+    quota_rpm: (v) => (String(v).trim() && Number(v) < 0 ? "0 이상의 값을 입력하세요." : undefined),
+    quota_tpd: (v) => (String(v).trim() && Number(v) < 0 ? "0 이상의 값을 입력하세요." : undefined),
+    alert_threshold: (v) => {
+      const s = String(v).trim();
+      if (!s) return undefined;
+      const n = Number(v);
+      return Number.isNaN(n) || n < 0 || n > 100 ? "0–100 사이의 값을 입력하세요." : undefined;
+    },
+  });
+
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const r = await fetchKeys("24h", signal);
@@ -92,9 +108,9 @@ export default function Keys() {
     return () => ctrl.abort();
   }, [load]);
 
-  const submit = async () => {
-    if (appMode === "custom" && !form.app_name.trim()) return;
-    if (appMode === "select" && !form.app_id) return;
+  const submit = () => fv.handleSubmit(doSubmit);
+
+  const doSubmit = async () => {
     setBusy(true);
     try {
       const k = await issueKey({
@@ -109,6 +125,7 @@ export default function Keys() {
       });
       setIssued(k);
       setModal(false);
+      fv.reset();
       setAppMode("select");
       setForm({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80" });
       load();
@@ -146,6 +163,7 @@ export default function Keys() {
       quota_tpd: "",
       alert_threshold: "80",
     });
+    fv.reset();
     setModal(true);
   };
 
@@ -324,7 +342,7 @@ export default function Keys() {
         <Modal open onClose={() => setModal(false)} title="API 키 발급">
             <label className="pg-field">
               <span>앱 귀속 *</span>
-              <select className="range-select" value={appMode === "custom" ? CUSTOM : form.app_id} onChange={(e) => onAppChange(e.target.value)}>
+              <select className="range-select" value={appMode === "custom" ? CUSTOM : form.app_id} onChange={(e) => onAppChange(e.target.value)} {...fv.fieldProps("app_id")}>
                 {apps.map((a) => (
                   <option key={a.app_id} value={a.app_id}>
                     {a.name} ({a.app_id}){a.dept_id ? ` · ${a.dept_id}` : " · 미귀속"}
@@ -332,11 +350,13 @@ export default function Keys() {
                 ))}
                 <option value={CUSTOM}>+ 새 앱 만들기</option>
               </select>
+              <FieldError id={fv.errorId("app_id")} message={fv.showError("app_id")} />
             </label>
             {appMode === "custom" && (
               <label className="pg-field">
                 <span>새 앱 이름 *</span>
-                <input value={form.app_name} onChange={(e) => setForm({ ...form, app_name: e.target.value })} placeholder="예: WM Advisor Chatbot" />
+                <input value={form.app_name} onChange={(e) => setForm({ ...form, app_name: e.target.value })} placeholder="예: WM Advisor Chatbot" {...fv.fieldProps("app_name")} />
+                <FieldError id={fv.errorId("app_name")} message={fv.showError("app_name")} />
               </label>
             )}
             <label className="pg-field">
@@ -366,17 +386,20 @@ export default function Keys() {
               <div className="pg-field-row">
                 <label className="pg-field">
                   <span>rpm (분당 요청)</span>
-                  <input type="number" min={0} value={form.quota_rpm} onChange={(e) => setForm({ ...form, quota_rpm: e.target.value })} placeholder="무제한" />
+                  <input type="number" min={0} value={form.quota_rpm} onChange={(e) => setForm({ ...form, quota_rpm: e.target.value })} placeholder="무제한" {...fv.fieldProps("quota_rpm")} />
+                  <FieldError id={fv.errorId("quota_rpm")} message={fv.showError("quota_rpm")} />
                 </label>
                 <label className="pg-field">
                   <span>일 토큰 예산 (tpd)</span>
-                  <input type="number" min={0} value={form.quota_tpd} onChange={(e) => setForm({ ...form, quota_tpd: e.target.value })} placeholder="무제한" />
+                  <input type="number" min={0} value={form.quota_tpd} onChange={(e) => setForm({ ...form, quota_tpd: e.target.value })} placeholder="무제한" {...fv.fieldProps("quota_tpd")} />
+                  <FieldError id={fv.errorId("quota_tpd")} message={fv.showError("quota_tpd")} />
                 </label>
               </div>
               <div className="pg-field-row">
                 <label className="pg-field">
                   <span>경고 임계 (%)</span>
-                  <input type="number" min={0} max={100} value={form.alert_threshold} onChange={(e) => setForm({ ...form, alert_threshold: e.target.value })} placeholder="80" />
+                  <input type="number" min={0} max={100} value={form.alert_threshold} onChange={(e) => setForm({ ...form, alert_threshold: e.target.value })} placeholder="80" {...fv.fieldProps("alert_threshold")} />
+                  <FieldError id={fv.errorId("alert_threshold")} message={fv.showError("alert_threshold")} />
                 </label>
                 <label className="pg-field">
                   <span>리셋 주기</span>
@@ -391,7 +414,7 @@ export default function Keys() {
             </fieldset>
             <div className="modal-actions">
               <button type="button" className="btn-ghost" onClick={() => setModal(false)}>취소</button>
-              <button type="button" className="btn-primary" onClick={submit} disabled={busy || (appMode === "select" ? !form.app_id : !form.app_name.trim())}>
+              <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
                 {busy ? "발급 중…" : "발급"}
               </button>
             </div>

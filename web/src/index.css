@@ -725,6 +725,24 @@ body {
   background: var(--surface-2); border-radius: var(--radius-sm);
 }
 .state.error .btn { margin-top: var(--sp-1); }
+/* IMP-22 인라인 폼 검증 — 색상단독 금지(텍스트+⚠ 아이콘 동반, WCAG 1.4.1). */
+.field-error {
+  display: flex; align-items: flex-start; gap: 4px;
+  margin-top: 2px; color: var(--red); font-size: var(--fs-xs); font-weight: 500;
+}
+.field-error > span[aria-hidden] { line-height: 1.2; }
+/* 에러 필드 강조 — 빨간 테두리는 위 텍스트와 함께만 의미를 가진다(단독 아님). */
+input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 1px var(--red);
+}
+/* 위저드·긴 폼 submit 시 상단 에러 요약 — .state.error 톤 재사용. */
+.form-error-summary { margin-bottom: var(--sp-3); }
+.form-error-summary strong { display: block; margin-bottom: var(--sp-1); }
+.form-error-summary ul { margin: 0; padding-left: var(--sp-4); }
+.form-error-summary li { margin: 2px 0; }
+.form-error-summary .link { color: var(--red); }
+.form-error-summary:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 /* 카드 내부 빈 상태 — 데이터 0건일 때 사라지지 않게 */
 .empty {
   padding: var(--sp-5) var(--sp-2);
