@@ -6,8 +6,19 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import ExportButton from "../components/ExportButton";
-import { queryParam } from "../router";
+import ViewBar from "../components/ViewBar";
+import { useUrlState, decodeState, strField, enumField, rangeField } from "../urlState";
+import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+
+// IMP-24: 필터·기간을 URL 단일 출처로(시드+되쓰기 통합). 미세조정은 replaceState.
+const TRACE_SCHEMA = {
+  range: rangeField,
+  decision: enumField(["all", "allowed", "flagged", "blocked"] as const, "all"),
+  status: enumField(["all", "ok", "error"] as const, "all"),
+  model: strField("all"),
+  app: strField("all"),
+} as const;
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -50,17 +61,19 @@ function p95(vals: number[]): number {
 const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hour12: false });
 
 export default function Traces() {
-  // L2→L3 drill-through: 도착 시 URL 쿼리(model/decision/range)로 초기 필터를 시드한다.
-  const qModel = queryParam("model");
-  const qDecision = queryParam("decision");
-  const [range, setRange] = useState<TimeRange>(() => (queryParam("range") as TimeRange) || "24h");
+  // IMP-24: 필터·기간·드릴다운 컨텍스트가 URL 단일 출처로 산다(시드+되쓰기 통합).
+  // L2→L3 drill-through 로 넘어온 model/decision/range 쿼리도 그대로 복원된다.
+  const [st, patch] = useUrlState(TRACE_SCHEMA);
+  const { range, decision, status, model, app } = st;
+  const setRange = (r: TimeRange) => patch({ range: r });
+  const filters = useMemo(() => ({ decision, status, model, app }), [decision, status, model, app]);
+  const canSave = !useCap().caps.readonly; // 뷰 저장(쓰기)은 manage 프로파일만 — 링크 복사는 항상 허용
   const { density, setDensity } = useTableDensity("traces");
-  const [filters, setFilters] = useState({ decision: qDecision || "all", status: "all", model: qModel || "all", app: "all" });
   const [data, setData] = useState<TraceListReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // 들어온 model 을 옵션 모집단에 시드(필터≠all 이면 옵션 갱신이 막히므로 빈 select 방지).
-  const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: qModel ? [qModel] : [], apps: [] });
+  const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: model !== "all" ? [model] : [], apps: [] });
 
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
@@ -117,7 +130,10 @@ export default function Traces() {
     errored: traces.filter((t) => t.status === "error").length,
   }), [traces]);
 
-  const setFilter = (k: keyof typeof filters, v: string) => setFilters((f) => ({ ...f, [k]: v }));
+  const setFilter = (k: keyof typeof filters, v: string) => patch({ [k]: v } as Partial<typeof st>);
+  const resetFilters = () => patch({ decision: "all", status: "all", model: "all", app: "all" });
+  // 저장된 뷰 적용: querystring → 화면 state 복원(+URL 되쓰기).
+  const applyView = (query: string) => patch(decodeState(TRACE_SCHEMA, query));
 
   return (
     <>
@@ -184,8 +200,10 @@ export default function Traces() {
             </select>
           </label>
           {(filters.decision !== "all" || filters.status !== "all" || filters.model !== "all" || filters.app !== "all") && (
-            <button type="button" className="btn-ghost btn-sm" onClick={() => setFilters({ decision: "all", status: "all", model: "all", app: "all" })}>필터 초기화</button>
+            <button type="button" className="btn-ghost btn-sm" onClick={resetFilters}>필터 초기화</button>
           )}
+          <span className="spacer" style={{ flex: 1 }} />
+          <ViewBar page="traces" canSave={canSave} onApply={applyView} />
         </div>
 
         {error && <div className="state error" role="alert">트레이스를 불러오지 못했습니다. ({error})</div>}

@@ -5,7 +5,13 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import ViewBar from "../components/ViewBar";
+import { useUrlState, decodeState, strField, rangeField } from "../urlState";
+import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
+
+// IMP-24: 세션 화면도 기간·앱 필터를 URL 단일 출처로.
+const SESSION_SCHEMA = { range: rangeField, app: strField("all") } as const;
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -26,9 +32,13 @@ const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hou
 const decTone = (d: string): BadgeTone => (d === "blocked" ? "red" : d === "flagged" ? "amber" : "green");
 
 export default function Sessions() {
-  const [range, setRange] = useState<TimeRange>("24h");
+  const [st, patch] = useUrlState(SESSION_SCHEMA);
+  const { range, app } = st;
+  const setRange = (r: TimeRange) => patch({ range: r });
+  const setApp = (v: string) => patch({ app: v });
+  const applyView = (query: string) => patch(decodeState(SESSION_SCHEMA, query));
+  const canSave = !useCap().caps.readonly;
   const { density, setDensity } = useTableDensity("sessions");
-  const [app, setApp] = useState("all");
   const [data, setData] = useState<SessionListReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +118,8 @@ export default function Sessions() {
             </select>
           </label>
           {app !== "all" && <button type="button" className="btn-ghost btn-sm" onClick={() => setApp("all")}>필터 초기화</button>}
+          <span className="spacer" style={{ flex: 1 }} />
+          <ViewBar page="sessions" canSave={canSave} onApply={applyView} />
         </div>
 
         {error && <div className="state error" role="alert">세션을 불러오지 못했습니다. ({error})</div>}
