@@ -16,7 +16,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | done | 2026-06-30 |
 | IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded | 2026-06-30 |
 | IMP-10 | code | 전역 React ErrorBoundary 부재 — 한 페이지의 렌더 throw가 관제 콘솔 전체를 백스크린 | high | S | high | done | 2026-06-30 |
-| IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | grounded | 2026-06-30 |
+| IMP-11 | code | CI가 docker build만 수행 — go test·tsc·lint·프론트 테스트 게이트 전무로 회귀가 무성하게 머지됨 | high | S | high | done | 2026-06-30 |
 | IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | grounded | 2026-06-30 |
 | IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | done | 2026-06-30 |
 | IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | grounded | 2026-06-30 |
@@ -149,6 +149,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (코드로 확인, not separately researched — low ambiguity) — `.github/workflows/` 에 build-and-push.yml 하나뿐, 내용은 docker login/metadata/build-push-action 만(grep 으로 go test/vet/tsc/npm test/lint 0건). `find backend -name "*_test.go"` = 12개 존재(CI 미실행). web/package.json scripts = dev/build/preview 만(test/lint 없음).
 - **Sources**: (코드 검증 — 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (low ambiguity, 구현 직행 — IMP-13 과 묶어 진행 권장)
+- **Result** (2026-06-30, done · security-light: clean): `ci.yml`(PR 트리거) — backend go vet+test / web npm ci+tsc+lint+test 병렬. `build-and-push.yml` 에 `checks` 잡 + `build needs: checks` 로 main 푸시 이미지 빌드도 게이트. 로컬 검증: 백엔드 vet0/test0, 프론트 tsc0/lint0/test0. main 보호규칙 필수체크 등록은 레포 admin 후속. spec: `specs/2026-06-30/IMP-11-ci-gate.md`.
 
 ### IMP-12 — 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락
 - **Type**: ux (sev=high, effort=M)
