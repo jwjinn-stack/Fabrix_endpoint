@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/maymust/fabrix-endpoint/internal/alerting"
+	"github.com/maymust/fabrix-endpoint/internal/alertrules"
 	"github.com/maymust/fabrix-endpoint/internal/audit"
 	"github.com/maymust/fabrix-endpoint/internal/capability"
 	"github.com/maymust/fabrix-endpoint/internal/catalog"
@@ -34,6 +35,7 @@ type Server struct {
 	quota      *quota.Limiter
 	alerts     *alerting.Dispatcher // 예산·임계 초과 아웃바운드 통지(IMP-15). observe 는 발송 비활성.
 	alertNotify sync.Map             // map[apiKeyID]bool — 키별 '초과 시 통지' 토글(인메모리)
+	alertEval   *alertrules.Evaluator // 지표 기반 알림 룰 평가 상태머신(IMP-36). 발송은 alerts 재사용.
 	k8s        *k8s.Client
 	harbor     *harbor.Client
 	pstats     *proxystats.Collector
@@ -69,6 +71,7 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 		usage:      us,
 		quota:      q,
 		alerts:     alerts,
+		alertEval:  alertrules.NewEvaluator(),
 		k8s:        kc,
 		harbor:     hc,
 		pstats:     proxystats.New(),
@@ -162,6 +165,11 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/proxy/pipeline", s.handleEnginePipeline)
 		mux.HandleFunc("GET /api/v1/metrics/breakdown", s.handleMetricsBreakdown) // L2 차원 groupby
 		mux.HandleFunc("GET /api/v1/metrics/dimensions", s.handleMetricDimensions)
+
+		// 지표 기반 알림 룰 — 목록/현재값 preview 는 읽기(Dashboard cap, observe 포함).
+		// 변경(CRUD)은 아래 Credentials(=manage) 게이트에서만 등록 → observe 는 읽기전용.
+		mux.HandleFunc("GET /api/v1/alerts/rules", s.handleListAlertRules)
+		mux.HandleFunc("GET /api/v1/alerts/rules/preview", s.handleAlertRulePreview)
 
 		// FABRIX MCP(C7, read-only) — AI 에이전트가 대시보드 메트릭·차원·인사이트를 질의(JSON-RPC 2.0).
 		// 4개 tool 이 모두 s.dashboard 데이터를 쓰므로 Dashboard cap 게이트 안에 등록한다:
@@ -264,6 +272,11 @@ func (s *Server) Handler() http.Handler {
 		// 아웃바운드 알림 채널(IMP-15) — 예산·임계 초과 Webhook. manage 전용(민감·아웃바운드).
 		mux.HandleFunc("GET /api/v1/alerts/config", s.handleGetAlertConfig)
 		mux.HandleFunc("PUT /api/v1/alerts/webhook", s.handleSetAlertWebhook)
+		// 지표 기반 알림 룰 CRUD(IMP-36) — write=manage. observe 는 미등록(404) → 읽기전용.
+		// 발송은 IMP-15 디스패처 재사용(새 아웃바운드 경로 없음).
+		mux.HandleFunc("POST /api/v1/alerts/rules", s.handleCreateAlertRule)
+		mux.HandleFunc("PUT /api/v1/alerts/rules/{id}", s.handleUpdateAlertRule)
+		mux.HandleFunc("DELETE /api/v1/alerts/rules/{id}", s.handleDeleteAlertRule)
 	}
 
 	// 미들웨어 배선: Logger → CORS → Authn → RateLimit → handlers.

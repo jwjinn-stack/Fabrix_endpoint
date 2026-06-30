@@ -14,6 +14,8 @@ import (
 
 func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
 
+func nowTime() time.Time { return time.Now().UTC() }
+
 func parseIntSafe(s string) (int, error) { return strconv.Atoi(s) }
 
 func emptyUsageReport(rng domain.TimeRange, group string) domain.UsageReport {

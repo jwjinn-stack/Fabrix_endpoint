@@ -28,6 +28,11 @@ import type {
   ImportResult,
   IssuedKey,
   AlertConfig,
+  AlertRule,
+  AlertRulesResponse,
+  AlertRulePreview,
+  AlertMetric,
+  AlertWindow,
   ModelCatalog,
   ModelMetricsReport,
   OrgTree,
@@ -359,6 +364,47 @@ export async function setAlertWebhook(url: string): Promise<{ webhook_configured
     throw new Error(msg);
   }
   return (await res.json()) as { webhook_configured: boolean; warnings?: string[] };
+}
+
+// 지표 기반 알림 룰(IMP-36) — 목록·preview 는 읽기, CRUD 는 manage. 발송은 IMP-15 디스패처 재사용.
+export async function fetchAlertRules(signal?: AbortSignal): Promise<AlertRulesResponse> {
+  const res = await fetch(`${BASE}/alerts/rules`, { signal });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return (await res.json()) as AlertRulesResponse;
+}
+
+export async function fetchAlertRulePreview(metric: AlertMetric, window: AlertWindow, signal?: AbortSignal): Promise<AlertRulePreview> {
+  const res = await fetch(`${BASE}/alerts/rules/preview?metric=${encodeURIComponent(metric)}&window=${encodeURIComponent(window)}`, { signal });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return (await res.json()) as AlertRulePreview;
+}
+
+function alertRuleError(res: Response): Promise<never> {
+  return res.json().then(
+    (j: { error?: string }) => { throw new Error(j.error || `API ${res.status}`); },
+    () => { throw new Error(`API ${res.status}`); },
+  );
+}
+
+export async function createAlertRule(rule: Partial<AlertRule>): Promise<AlertRule> {
+  const res = await fetch(`${BASE}/alerts/rules`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule),
+  });
+  if (!res.ok) return alertRuleError(res);
+  return (await res.json()) as AlertRule;
+}
+
+export async function updateAlertRule(id: string, rule: Partial<AlertRule>): Promise<AlertRule> {
+  const res = await fetch(`${BASE}/alerts/rules/${encodeURIComponent(id)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule),
+  });
+  if (!res.ok) return alertRuleError(res);
+  return (await res.json()) as AlertRule;
+}
+
+export async function deleteAlertRule(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/alerts/rules/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error(`API ${res.status}`);
 }
 
 export async function playgroundChat(

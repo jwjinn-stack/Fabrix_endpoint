@@ -1051,6 +1051,53 @@ function genCapabilities(): Capabilities {
   };
 }
 
+// ── 지표 기반 알림 룰(IMP-36) mock ──
+const ALERT_METRIC_CATALOG = [
+  { key: "ttft_p95", title: "TTFT p95", unit: "ms", lower_better: true },
+  { key: "latency_avg", title: "E2E 지연 p95", unit: "ms", lower_better: true },
+  { key: "error_rate", title: "에러율", unit: "ratio", lower_better: true },
+  { key: "block_rate", title: "가드 차단율", unit: "ratio", lower_better: true },
+  { key: "throughput", title: "처리량(QPS)", unit: "qps", lower_better: false },
+  { key: "count", title: "가드 차단 건수", unit: "count", lower_better: true },
+];
+let ALERT_RULES: Record<string, unknown>[] = [
+  { id: "rule_a1b2", name: "TTFT p95 급증", metric: "ttft_p95", op: "gt", alert_threshold: 800, warn_threshold: 500, window: "5m", severity: "warning", no_data_mode: "no_data", recovery_window: 2, renotify_min: 30, enabled: true, state: "OK", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
+  { id: "rule_c3d4", name: "에러율 임계", metric: "error_rate", op: "gt", alert_threshold: 0.05, warn_threshold: 0.02, window: "5m", severity: "critical", no_data_mode: "no_data", recovery_window: 2, renotify_min: 15, enabled: true, state: "OK", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
+  { id: "rule_e5f6", name: "가드 차단율 급증", metric: "block_rate", op: "gt", alert_threshold: 0.1, window: "1h", severity: "warning", no_data_mode: "no_data", recovery_window: 2, enabled: false, state: "PAUSED", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
+];
+let ALERT_RULE_SEQ = 100;
+
+function alertRulePreviewMock(metric: string, window: string): Record<string, unknown> {
+  const ov = genOverview((["5m", "1h", "1d"].includes(window) ? "1h" : "1h") as TimeRange);
+  let value = 0;
+  let has_data = true;
+  switch (metric) {
+    case "ttft_p95": value = ov.quality.ttft_p95_ms; has_data = value > 0; break;
+    case "latency_avg": value = ov.latency.e2e_p95_ms; has_data = value > 0; break;
+    case "error_rate": value = Math.max(0, 1 - ov.traffic.success_rate); break;
+    case "block_rate": { const denom = ov.guardrail.blocked + ov.traffic.qps * 60; value = denom > 0 ? Math.min(1, ov.guardrail.blocked / denom) : 0; break; }
+    case "throughput": value = ov.traffic.qps; break;
+    case "count": value = ov.guardrail.blocked; break;
+    default: has_data = false;
+  }
+  return { metric, window, value, has_data };
+}
+
+function createAlertRuleMock(b: Record<string, unknown>): Record<string, unknown> {
+  ALERT_RULE_SEQ++;
+  const rule = {
+    ...b,
+    id: `rule_${ALERT_RULE_SEQ.toString(16)}`,
+    no_data_mode: b.no_data_mode || "no_data",
+    recovery_window: b.recovery_window || 2,
+    severity: b.severity || "warning",
+    state: "OK",
+    created_at: new Date().toISOString(),
+  };
+  ALERT_RULES = [...ALERT_RULES, rule];
+  return rule;
+}
+
 async function route(method: string, path: string, q: URLSearchParams, body: Json): Promise<Response> {
   // 사람이 보기엔 의미상 mock 지연(80~220ms) — skeleton/loading 상태가 실제로 보이게.
   await new Promise((res) => setTimeout(res, 80 + Math.random() * 140));
@@ -1100,6 +1147,9 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /endpoints": return ok(createEndpoint(body as Record<string, unknown>, q.get("apply") === "true"));
     case "GET /traces": return ok(genTraceList(parseRange(q), { decision: q.get("decision") ?? undefined, status: q.get("status") ?? undefined, model: q.get("model") ?? undefined, app: q.get("app") ?? undefined, q: q.get("q") ?? undefined }));
     case "GET /sessions": return ok(genSessionList(parseRange(q), q.get("app") ?? undefined));
+    case "GET /alerts/rules/preview": return ok(alertRulePreviewMock(q.get("metric") ?? "", q.get("window") ?? "1h"));
+    case "GET /alerts/rules": return ok({ rules: ALERT_RULES, metrics: ALERT_METRIC_CATALOG, enabled: true });
+    case "POST /alerts/rules": return ok(createAlertRuleMock(body as Record<string, unknown>));
   }
 
   // 패턴 매칭 (path 변수 포함)
@@ -1117,6 +1167,15 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
   if (method === "DELETE" && (m = path.match(/^\/keys\/(.+)$/))) { KEYS = KEYS.filter((k) => k.api_key_id !== m![1]); return ok({}, 204); }
   if (method === "PUT" && (m = path.match(/^\/users\/(.+)$/))) { updateUser(m[1], body as Record<string, unknown>); return ok({}); }
   if (method === "DELETE" && (m = path.match(/^\/users\/(.+)$/))) { USERS = USERS.filter((u) => u.user_id !== m![1]); return ok({}, 204); }
+  if (method === "PUT" && (m = path.match(/^\/alerts\/rules\/([^/]+)$/))) {
+    const id = m[1];
+    const idx = ALERT_RULES.findIndex((r) => r.id === id);
+    if (idx < 0) return notFound(path);
+    const cur = ALERT_RULES[idx];
+    ALERT_RULES = ALERT_RULES.map((r) => (r.id === id ? { ...(body as Record<string, unknown>), id, created_at: cur.created_at, state: cur.state } : r));
+    return ok(ALERT_RULES[idx]);
+  }
+  if (method === "DELETE" && (m = path.match(/^\/alerts\/rules\/([^/]+)$/))) { ALERT_RULES = ALERT_RULES.filter((r) => r.id !== m![1]); return ok({}, 204); }
   if (method === "PUT" && (m = path.match(/^\/apps\/(.+)\/dept$/))) { return ok({}); }
   if (method === "GET" && (m = path.match(/^\/endpoints\/([^/]+)\/([^/]+)\/logs$/))) { return ok(genLogs(m[2], q.get("component") ?? "")); }
   if (method === "DELETE" && (m = path.match(/^\/endpoints\/([^/]+)\/([^/]+)$/))) { ENDPOINTS = ENDPOINTS.filter((e) => !(e.namespace === m![1] && e.name === m![2])); return ok({}, 204); }

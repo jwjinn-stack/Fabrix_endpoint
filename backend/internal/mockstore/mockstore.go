@@ -57,13 +57,15 @@ func seed(s string) uint64 {
 // ── Store (server.DataStore 구현) ──
 
 type Store struct {
-	mu       sync.Mutex
-	keys     []domain.APIKeyView
-	users    []domain.User
-	appDept  map[string]string // appID → deptID (SetAppDept 로 변경 가능)
-	masking  domain.MaskingPolicy
-	keySeq   int
-	userSeq  int
+	mu      sync.Mutex
+	keys    []domain.APIKeyView
+	users   []domain.User
+	appDept map[string]string // appID → deptID (SetAppDept 로 변경 가능)
+	masking domain.MaskingPolicy
+	rules   []domain.AlertRule // 지표 기반 알림 룰(IMP-36)
+	keySeq  int
+	userSeq int
+	ruleSeq int
 }
 
 // New 는 시드 데이터를 채운 인메모리 스토어를 만든다.
@@ -139,7 +141,83 @@ func New() *Store {
 			CreatedAt: now.AddDate(0, 0, -int(seed(u.email)%120)).Format(time.RFC3339),
 		})
 	}
+	// 지표 기반 알림 룰 시드(IMP-36) — latency/error/block 기본 룰 예시.
+	warn := func(v float64) *float64 { return &v }
+	ruleDefs := []domain.AlertRule{
+		{Name: "TTFT p95 급증", Metric: domain.MetricTTFTp95, Op: domain.OpGT, AlertThreshold: 800, WarnThreshold: warn(500), Window: domain.Window5m, Severity: "warning", RenotifyMin: 30, Enabled: true},
+		{Name: "에러율 임계", Metric: domain.MetricErrorRate, Op: domain.OpGT, AlertThreshold: 0.05, WarnThreshold: warn(0.02), Window: domain.Window5m, Severity: "critical", RenotifyMin: 15, Enabled: true},
+		{Name: "가드 차단율 급증", Metric: domain.MetricBlockRate, Op: domain.OpGT, AlertThreshold: 0.1, Window: domain.Window1h, Severity: "warning", Enabled: false},
+	}
+	for _, r := range ruleDefs {
+		s.ruleSeq++
+		r = r.WithDefaults()
+		r.ID = fmt.Sprintf("rule_%04x", seed(r.Name+fmt.Sprint(s.ruleSeq))%0xffff)
+		r.State = domain.StateOK
+		r.CreatedAt = now.AddDate(0, 0, -7).Format(time.RFC3339)
+		s.rules = append(s.rules, r)
+	}
 	return s
+}
+
+// ── 알림 룰 CRUD(IMP-36) — server.AlertRuleStore 구현 ──
+
+func (s *Store) ListAlertRules(_ context.Context) ([]domain.AlertRule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]domain.AlertRule, len(s.rules))
+	copy(out, s.rules)
+	return out, nil
+}
+
+func (s *Store) GetAlertRule(_ context.Context, id string) (domain.AlertRule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.rules {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return domain.AlertRule{}, fmt.Errorf("알림 룰 없음: %s", id)
+}
+
+func (s *Store) CreateAlertRule(_ context.Context, r domain.AlertRule) (domain.AlertRule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ruleSeq++
+	r = r.WithDefaults()
+	r.ID = fmt.Sprintf("rule_%04x", seed(r.Name+fmt.Sprint(s.ruleSeq))%0xffff)
+	r.State = domain.StateOK
+	r.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	s.rules = append(s.rules, r)
+	return r, nil
+}
+
+func (s *Store) UpdateAlertRule(_ context.Context, id string, r domain.AlertRule) (domain.AlertRule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, cur := range s.rules {
+		if cur.ID == id {
+			r = r.WithDefaults()
+			r.ID = id
+			r.CreatedAt = cur.CreatedAt
+			r.State = cur.State
+			s.rules[i] = r
+			return r, nil
+		}
+	}
+	return domain.AlertRule{}, fmt.Errorf("알림 룰 없음: %s", id)
+}
+
+func (s *Store) DeleteAlertRule(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, r := range s.rules {
+		if r.ID == id {
+			s.rules = append(s.rules[:i], s.rules[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("알림 룰 없음: %s", id)
 }
 
 func appName(appID string) string {
