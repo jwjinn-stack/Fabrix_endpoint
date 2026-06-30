@@ -55,7 +55,7 @@ export default function Keys() {
   const [modal, setModal] = useState(false);
   const [issued, setIssued] = useState<IssuedKey | null>(null);
   const [appMode, setAppMode] = useState<"select" | "custom">("select");
-  const [form, setForm] = useState({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80" });
+  const [form, setForm] = useState({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80", notify_on_alert: false });
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [detail, setDetail] = useState<APIKeyView | null>(null);
@@ -127,12 +127,13 @@ export default function Keys() {
         quota_rpm: form.quota_rpm ? Number(form.quota_rpm) : undefined,
         quota_tpd: form.quota_tpd ? Number(form.quota_tpd) : undefined,
         alert_threshold: form.alert_threshold ? Math.min(Math.max(Number(form.alert_threshold) / 100, 0), 1) : undefined,
+        notify_on_alert: form.notify_on_alert,
       });
       setIssued(k);
       setModal(false);
       fv.reset();
       setAppMode("select");
-      setForm({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80" });
+      setForm({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80", notify_on_alert: false });
       // 평문 키는 별도 1회성 카드(issued)로만 표시 — 토스트엔 키 값을 절대 넣지 않는다(보안).
       toast.success(`API 키를 발급했습니다${keyName ? ` — ${keyName}` : ""}.`);
       load();
@@ -171,6 +172,7 @@ export default function Keys() {
       quota_rpm: "",
       quota_tpd: "",
       alert_threshold: "80",
+      notify_on_alert: false,
     });
     fv.reset();
     setModal(true);
@@ -419,6 +421,11 @@ export default function Keys() {
                   <input value="매일 00:00 UTC" disabled title="현재 일 단위 리셋. 주/월 단위는 후속." />
                 </label>
               </div>
+              {/* IMP-15 — 임계/예산 초과 시 외부 채널(Webhook) 통지. 채널은 설정 화면에서 등록. */}
+              <label className="pg-field" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <input type="checkbox" checked={form.notify_on_alert} onChange={(e) => setForm({ ...form, notify_on_alert: e.target.checked })} style={{ width: "auto" }} />
+                <span style={{ margin: 0 }}>초과 시 통지 (등록된 Webhook 으로 발송 · 설정에서 채널 등록)</span>
+              </label>
               {form.quota_tpd && (
                 <p className="budget-hint">
                   예산 <b>{compact(Number(form.quota_tpd))} 토큰/일</b> · 추정 ≈ {won(Number(form.quota_tpd) / 1_000_000 * 375)} (혼합 단가) · {form.alert_threshold || 80}% 도달 시 경고, 100% 초과 시 <b>429 하드캡</b>.

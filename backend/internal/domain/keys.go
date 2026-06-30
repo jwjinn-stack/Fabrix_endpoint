@@ -15,6 +15,8 @@ type IssueKeyRequest struct {
 	QuotaTPD   *int64 `json:"quota_tpd,omitempty"`   // 일당 토큰 한도(미설정=무제한, 하드캡 429)
 	// 예산 폼(P4-5, Portkey 패턴): 경고 임계(0..1, 한도의 N%에서 경고). 미설정=0.8 기본.
 	AlertThreshold *float64 `json:"alert_threshold,omitempty"`
+	// 초과 시 통지(IMP-15): true 면 임계/예산 교차 시 아웃바운드 채널로 통지(manage 전용).
+	NotifyOnAlert bool `json:"notify_on_alert,omitempty"`
 }
 
 // IssuedKey — 발급 응답. plaintext 는 이 순간 1회만 반환(이후 해시만 보관).

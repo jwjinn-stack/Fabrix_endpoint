@@ -646,6 +646,22 @@ export interface IssuedKey {
   key_prefix: string;
 }
 
+// 아웃바운드 알림 채널 설정(IMP-15). webhook URL 원문은 응답에 노출하지 않음(configured 불리언만).
+export interface AlertConfig {
+  enabled: boolean; // profile 게이트(manage=true, observe=false)
+  webhook_configured: boolean;
+  audit: AlertSendRecord[];
+}
+
+export interface AlertSendRecord {
+  ts: string;
+  channel: string;
+  event: string;
+  token: string; // 해시(평문 키 아님)
+  ok: boolean;
+  reason?: string;
+}
+
 export interface Endpoint {
   name: string;
   namespace: string;

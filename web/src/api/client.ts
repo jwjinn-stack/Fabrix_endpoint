@@ -27,6 +27,7 @@ import type {
   HarborStatus,
   ImportResult,
   IssuedKey,
+  AlertConfig,
   ModelCatalog,
   ModelMetricsReport,
   OrgTree,
@@ -320,6 +321,7 @@ export async function issueKey(body: {
   quota_rpm?: number;
   quota_tpd?: number;
   alert_threshold?: number;
+  notify_on_alert?: boolean;
 }): Promise<IssuedKey> {
   const res = await fetch(`${BASE}/keys`, {
     method: "POST",
@@ -333,6 +335,30 @@ export async function issueKey(body: {
 export async function revokeKey(id: string): Promise<void> {
   const res = await fetch(`${BASE}/keys/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`API ${res.status}`);
+}
+
+// 아웃바운드 알림(IMP-15) — 채널 구성 상태/발송 이력 조회 + Webhook URL 등록.
+export async function fetchAlertConfig(signal?: AbortSignal): Promise<AlertConfig> {
+  const res = await fetch(`${BASE}/alerts/config`, { signal });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return (await res.json()) as AlertConfig;
+}
+
+export async function setAlertWebhook(url: string): Promise<{ webhook_configured: boolean; warnings?: string[] }> {
+  const res = await fetch(`${BASE}/alerts/webhook`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    let msg = `API ${res.status}`;
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j.error) msg = j.error;
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  return (await res.json()) as { webhook_configured: boolean; warnings?: string[] };
 }
 
 export async function playgroundChat(
@@ -405,15 +431,18 @@ export function fetchEnginePipeline(signal?: AbortSignal): Promise<EnginePipelin
 
 export function fetchTraces(
   range: TimeRange,
-  filters?: { decision?: string; status?: string; model?: string; app?: string },
+  filters?: { decision?: string; status?: string; model?: string; app?: string; q?: string },
   signal?: AbortSignal,
 ): Promise<TraceListReport> {
-  const q = new URLSearchParams({ range });
+  const sp = new URLSearchParams({ range });
   for (const k of ["decision", "status", "model", "app"] as const) {
     const v = filters?.[k];
-    if (v && v !== "all") q.set(k, v);
+    if (v && v !== "all") sp.set(k, v);
   }
-  return getJSON<TraceListReport>(`/traces?${q.toString()}`, signal);
+  // IMP-32: q 는 가산적 전문검색(빈 문자열은 생략 = 기존 동작). 서버가 화이트리스트 필드만 검색.
+  const qv = filters?.q?.trim();
+  if (qv) sp.set("q", qv);
+  return getJSON<TraceListReport>(`/traces?${sp.toString()}`, signal);
 }
 
 export function fetchTrace(traceId: string, signal?: AbortSignal): Promise<TraceDetail> {

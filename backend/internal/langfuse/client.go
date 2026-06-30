@@ -14,14 +14,50 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
 	"github.com/maymust/fabrix-endpoint/internal/httpx"
 )
 
-// Filters 는 트레이스 목록 필터.
-type Filters struct{ Decision, Status, Model, App string }
+// Filters 는 트레이스 목록 필터. Q 는 자유 텍스트 전문검색(IMP-32, 가산적).
+type Filters struct{ Decision, Status, Model, App, Q string }
+
+// searchableText 는 트레이스의 "검색 가능 필드 화이트리스트"만 모은 lower-case 코퍼스다(IMP-32).
+//
+// 위협 모델(SENSITIVE): 이 코퍼스에는 마스킹/가드레일 차단 원문이 절대 포함되지 않는다.
+//   - 가드레일 차단 원문(domain.GuardContent.Input)은 별도 보호 엔드포인트로만 접근 가능하며
+//     트레이스 요약/목록에 들어있지 않다 → 애초에 여기로 들어올 수 없다.
+//   - 차단 트레이스의 inputPrev 는 원문이 아니라 "[차단됨] …" 플레이스홀더다.
+//   - 마스킹 정책이 가린 원문은 트레이스에 보존되지 않거나 마스킹 형태로만 보존되므로,
+//     "보존된 미리보기 텍스트"만 보는 검색은 원문을 복원·노출할 수 없다.
+// inputPrev/outputPrev 는 호출부가 "트레이스에 보존된(=정책 통과한) 미리보기"만 넘긴다.
+func searchableText(s domain.TraceSummary, inputPrev, outputPrev string) string {
+	// 화이트리스트: 메타 식별자 + 분류 라벨 + 보존된 입출력 미리보기. (그 외는 검색 대상 아님)
+	fields := []string{
+		s.TraceID, s.Model, s.Endpoint, s.AppID, s.DeptID, s.APIKeyID,
+		s.UserID, s.SessionID, s.Route, s.Decision, s.Status, s.FinishReason,
+		inputPrev, outputPrev,
+	}
+	return strings.ToLower(strings.Join(fields, "\n"))
+}
+
+// traceMatchesQ 는 화이트리스트 코퍼스에 대해 q 의 모든 공백구분 토큰이 부분일치하는지(AND) 본다.
+// 대소문자 무시. 빈 q 는 항상 true(= 필터 미적용).
+func traceMatchesQ(s domain.TraceSummary, inputPrev, outputPrev, q string) bool {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return true
+	}
+	hay := searchableText(s, inputPrev, outputPrev)
+	for _, tok := range strings.Fields(strings.ToLower(q)) {
+		if !strings.Contains(hay, tok) {
+			return false
+		}
+	}
+	return true
+}
 
 // Client 는 Langfuse Public API 클라이언트.
 type Client struct {
@@ -188,7 +224,7 @@ func mapTraceSummary(t lfTrace) domain.TraceSummary {
 	return s
 }
 
-func (c *Client) tracesLive(ctx context.Context, rng domain.TimeRange, _ Filters) (domain.TraceListReport, error) {
+func (c *Client) tracesLive(ctx context.Context, rng domain.TimeRange, f Filters) (domain.TraceListReport, error) {
 	var body struct {
 		Data []lfTrace `json:"data"`
 	}
@@ -199,7 +235,26 @@ func (c *Client) tracesLive(ctx context.Context, rng domain.TimeRange, _ Filters
 	}
 	out := make([]domain.TraceSummary, 0, len(body.Data))
 	for _, t := range body.Data {
-		out = append(out, mapTraceSummary(t))
+		s := mapTraceSummary(t)
+		// IMP-32: 드롭다운 필터(AND) — 실연동도 동일 의미. q 는 화이트리스트 코퍼스만.
+		if f.Decision != "" && f.Decision != "all" && s.Decision != f.Decision {
+			continue
+		}
+		if f.Status != "" && f.Status != "all" && s.Status != f.Status {
+			continue
+		}
+		if f.Model != "" && f.Model != "all" && s.Model != f.Model {
+			continue
+		}
+		if f.App != "" && f.App != "all" && s.AppID != f.App {
+			continue
+		}
+		// q 코퍼스: trace.input/output 은 게이트웨이 글루가 마스킹 정책을 적용해 보존한 텍스트다
+		// (가드레일 차단 원문은 별도 보호 경로라 여기 없음 — searchableText 위협 모델 참조).
+		if !traceMatchesQ(s, str(t.Input), str(t.Output), f.Q) {
+			continue
+		}
+		out = append(out, s)
 	}
 	return domain.TraceListReport{Range: rng, GeneratedAt: nowRFC(), Traces: out, Source: "langfuse"}, nil
 }

@@ -25,11 +25,25 @@ type Limiter struct {
 	m     map[string]*window
 	dt    map[string]*dayWindow
 	alert map[string]float64 // 키별 경고 임계(0..1). 미설정=0.8 기본.
+	// crossed 는 (키|kind|day) 당 교차를 이미 통지했는지(1회성 발화 보장 — 같은 날 재발화 안 함).
+	// alerting.Dispatcher 가 키×event 24h dedup 도 별도로 하지만, 여기서도 1회성으로 좁혀 콜백 폭주를 막는다.
+	crossed map[string]bool
+	// onCross 는 임계/예산 교차 시점 1회 호출되는 콜백(아웃바운드 알림 hook). nil 이면 비활성.
+	// 판정 경로를 신설하지 않고, 게이지가 이미 계산하는 ratio 에 디스패치만 건다(IMP-15).
+	onCross func(key, kind string, ratio float64, tpd int64)
 }
 
 // New 는 빈 리미터를 만든다.
 func New() *Limiter {
-	return &Limiter{m: map[string]*window{}, dt: map[string]*dayWindow{}, alert: map[string]float64{}}
+	return &Limiter{m: map[string]*window{}, dt: map[string]*dayWindow{}, alert: map[string]float64{}, crossed: map[string]bool{}}
+}
+
+// OnThresholdCross 는 임계/예산 교차 시점에 호출될 콜백을 등록한다(IMP-15 아웃바운드 알림 hook).
+// kind ∈ {"threshold","budget"}. 콜백은 quota lock 밖에서 호출된다(디스패처는 비차단이어야 함).
+func (l *Limiter) OnThresholdCross(fn func(key, kind string, ratio float64, tpd int64)) {
+	l.mu.Lock()
+	l.onCross = fn
+	l.mu.Unlock()
 }
 
 // SetAlertThreshold 는 키의 예산 경고 임계(0..1)를 설정한다.
@@ -68,6 +82,68 @@ func (l *Limiter) AddTokens(key string, n int) {
 		l.dt[key] = w
 	}
 	w.tokens += int64(n)
+}
+
+// AddTokensWithBudget 는 토큰을 적립하면서, 이번 적립으로 경고 임계(threshold) 또는 예산
+// 한도(budget)를 "처음" 넘었는지(교차)를 판정해 등록된 onCross 콜백을 1회 호출한다.
+//
+// 신규 판정 경로가 아니다 — 게이지(used/tpd vs alert_threshold)와 하드캡(used>=tpd)이 이미
+// 쓰는 동일한 비율을 보고 교차 "edge" 에서만 발화한다. tpd<=0(무제한)이면 발화 없음.
+// 콜백은 lock 밖에서 호출(디스패처는 비차단·비치명적이어야 함).
+func (l *Limiter) AddTokensWithBudget(key string, n int, tpd int64) {
+	if key == "" || key == "-" || n <= 0 {
+		return
+	}
+	d := today()
+	l.mu.Lock()
+	w := l.dt[key]
+	if w == nil || w.day != d {
+		w = &dayWindow{day: d}
+		l.dt[key] = w
+	}
+	prev := w.tokens
+	w.tokens += int64(n)
+	now := w.tokens
+
+	at := 0.8
+	if v, ok := l.alert[key]; ok {
+		at = v
+	}
+	fn := l.onCross
+
+	type fire struct {
+		kind  string
+		ratio float64
+	}
+	var fires []fire
+	if tpd > 0 && fn != nil {
+		// 임계 교차: prev 비율 < at <= now 비율 (edge). day 키로 1회성.
+		thr := int64(float64(tpd) * at)
+		if prev < thr && now >= thr {
+			ck := key + "|threshold|" + i64(d)
+			if !l.crossed[ck] {
+				l.crossed[ck] = true
+				fires = append(fires, fire{"threshold", float64(now) / float64(tpd)})
+			}
+		}
+		// 예산(하드캡) 교차: prev < tpd <= now (edge).
+		if prev < tpd && now >= tpd {
+			ck := key + "|budget|" + i64(d)
+			if !l.crossed[ck] {
+				l.crossed[ck] = true
+				fires = append(fires, fire{"budget", float64(now) / float64(tpd)})
+			}
+		}
+	}
+	l.mu.Unlock()
+
+	for _, f := range fires {
+		fn(key, f.kind, f.ratio, tpd) // lock 밖 — 디스패처는 비동기/비차단
+	}
+}
+
+func i64(v int64) string {
+	return time.Unix(v*86400, 0).UTC().Format("20060102")
 }
 
 // TokensToday 는 키의 오늘 누적 토큰을 반환한다(예산 게이지 표시용).

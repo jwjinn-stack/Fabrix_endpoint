@@ -1,6 +1,45 @@
 # Improvement Backlog
 
-Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MCP 연동). Re-run `/improve` to accumulate; items move proposed → grounded → accepted → done.
+Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MCP 연동). Re-run `/improve` to accumulate.
+
+## 상태(Status) 라이프사이클 & 처리 프로세스
+
+`/evolve`(=`/improve` 리서치 → `/build-next` 빌드)가 각 상태를 다음 프로세스로 처리한다. **기본 원칙: 거의 전부 코드로 빌드 → PR에서 사람이 검토(MERGE가 사람의 게이트).** 빌드 전 질문/보류는 두지 않는다.
+
+| 상태 | 다음 실행 시 프로세스 |
+|------|----------------------|
+| `proposed` | 리서치된 아이디어(증거 약함). 다음 리서치에서 증거가 쌓여 `grounded`로 승격되면 빌드 대상이 됨. |
+| `grounded` | 증거 충분 → **자동 빌드**: spec(`specs/날짜/IMP-N-*.md`) → `/dev-from-spec`(구현+테스트) → QA → 커밋. |
+| `accepted` | 선택되어 **빌드 진행 중**(오케스트레이터 bookkeeping). 실패 시 `accepted`+`Blocked:` 사유로 남고 다음 런에서 재시도. |
+| `done` | 빌드+게이트(tsc/lint/test/build, go vet/test) 통과 + 보안 라이트체크 clean + 커밋 완료. ux/aesthetic은 라이브 시각 QA까지(앱 미기동 시 `visual-QA-deferred` 명시). |
+| `needs-review` | 빌드했으나 보안 라이트체크가 **심각 소견** 발견 → 머지 전 사람 검토 필요(절대 done 아님). |
+| `spike-needed` | **코드 PR로 환원 불가** — 다일짜리 인프라/운영 채택(예: 클러스터에 새 서비스=pod 배포, Helm+DB+air-gapped 이미지 미러링). 코드 대신 `evolve/plans/IMP-N-spike.md`(채택 순서·리스크·go/no-go)를 생성하고 **사람이 직접 실행**. 재실행 시 `done`처럼 다시 안 건드림. |
+
+### 민감(sensitive) 항목 — 빌드하되 머지를 게이트
+인증·과금·PII·아웃바운드·시크릿·마이그레이션·API-contract 변경 항목은 **건너뛰지 않고 똑같이 코드로 빌드**하되, 두 안전장치를 더한다:
+1. diff에 **깊은 보안 리뷰 패스**(`/cso` 또는 집중 위협모델 리뷰) — 라이트체크 위에 추가.
+2. PR에 **`needs-security-signoff` 라벨**(가능하면 자체 브랜치) → 사람이 보안 sign-off 후에만 머지.
+즉 안전 게이트가 "코드를 안 쓴다"가 아니라 **"보안 리뷰 없이 머지 안 한다"** 로 이동. (예: IMP-28 인증·레이트리밋, IMP-32 PII검색, IMP-15 아웃바운드 알림.)
+
+> **참고 — 이전 스킴의 잔재 상태**: `deferred-sensitive`/`needs-poc`/`needs-design`는 초기 버전이 "보류 후 플랜/결정 게이트"로 쓰던 태그다. 현재는 모두 "빌드 → PR 검토"로 흡수됨 — `deferred-sensitive`→위 민감 빌드(+signoff 라벨), `needs-poc`→PoC 브랜치로 빌드 후 사람이 라이브 검증(예: IMP-9 MCP Inspector), `needs-design`→빌드 후 PR/Step 3.7에서 시각 검토. 앞으로 새로 갈리는 분기점은 `spike-needed` 하나뿐.
+
+## 배포 전 보안 확인 (`needs-security-signoff` 체크리스트)
+
+민감 항목은 **코드 빌드 + 보안 리뷰는 끝났지만, 머지/배포 전 아래를 사람이 확인**해야 한다. 대부분 **Go BFF 코드가 아니라 K8s/엣지 배포 설정·운영 정책 확인**이며(딱 1개만 엣지 yaml 수정 필요), 이 목록은 PR이 닫혀도 남도록 여기에 둔다. (`needs-security-signoff` PR과 1:1.)
+
+**IMP-28 — 인증·레이트리밋**
+- [ ] **[CRITICAL · 엣지설정 수정 필요]** 엣지가 클라이언트가 보낸 신원 헤더(`x-auth-request-user`/`x-user-id`/`x-dept-id`/`x-fabrix-app-id`)를 **STRIP** 하는지. ⚠️ 현재 `docs/templates/envoy-session-cookie-to-xuserid.yaml:47-48`은 클라 `x-user-id`를 **존중**(early-return)하므로 위조 가능 → **strip-then-inject**(세션쿠키/SSO 값만 주입)로 고쳐야 함. 검증: 외부에서 `curl -H "x-user-id: spoof@test"` → 백엔드 증적에 미반영 확인. (BFF 코드는 옳음 — 신원은 인가에 미사용, 증적·레이트리밋 키 용도만.)
+- [ ] **[운영 판단]** 멀티 레플리카 시 레이트리밋이 per-pod 인메모리라 실효 한도 ≈ N배. 단일 레플리카/안전장치 수준이면 수용, 정확한 전역 캡 필요하면 Redis 공유 store(후속).
+
+**IMP-32 — 트레이스 전문검색**
+- [ ] **[미래 · 실연동 시]** 실 ClickHouse 도입 시 검색 컬럼 allowlist에 **마스킹/가드 원문 컬럼을 절대 배제** + 누설 테스트. (현 mock/synthetic은 화이트리스트로 안전 — `TestQDoesNotLeakMaskedContent` 단언.)
+
+**IMP-15 — 아웃바운드 알림**
+- [ ] **[확인]** webhook 등록이 manage(KeysWrite) 프로파일만 가능 — 이미 코드로 강제(확인만). 폐쇄망은 내부 relay URL만.
+- [ ] **[선택 강화]** BFF pod에 K8s NetworkPolicy로 egress 대상 제한. DNS rebinding은 타임아웃(4s+9s)·재시도 1회로 폭발반경 제한(수용 판단).
+
+**IMP-9 — MCP go-sdk PoC** (main 머지됨, `/api/v1/mcp/v2` 별도 라우트)
+- [ ] **[라이브 검증]** MCP Inspector/Claude Code로 `/api/v1/mcp/v2` initialize·list·call 확인 + 공급망/라이선스(Apache-2.0/MIT, v1.6.1 핀) sign-off 후 나머지 tool 3개+resource 2개 이전 & 수기 mcp.go 제거(별도 PR).
 
 ## Open
 
@@ -20,7 +59,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-12 | ux | 8개 손수 만든 .modal-overlay 모달이 접근 가능한 다이얼로그 프리미티브를 우회 — 포커스 트랩/복원·aria-modal·Escape 누락 | high | M | high | done | 2026-06-30 |
 | IMP-13 | oss | 프론트엔드에 테스트 러너·린터 전무 — Vitest + React Testing Library + ESLint(flat) 도입 | medium | M | high | done | 2026-06-30 |
 | IMP-14 | ux | 로딩 상태가 페이지마다 제각각 — 일부는 Skeleton, 일부는 평문 '불러오는 중…'만 | medium | M | high | done | 2026-06-30 |
-| IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | deferred-sensitive | 2026-06-30 |
+| IMP-15 | compete | 예산·이상 임계 초과 시 아웃바운드 알림 라우팅 부재 — 임계 '판정'은 있으나 '전달'(Webhook/Slack/Email)이 없음 | medium | L | high | done | 2026-06-30 |
 | IMP-16 | code | API 클라이언트에 요청 타임아웃·일시 오류 재시도 부재 — 폴링형 관제 콘솔이 느린/플랩 백엔드에 취약 | medium | S | high | done | 2026-06-30 |
 | IMP-17 | ux | 넓은 데이터 표가 .table-scroll로 일관 래핑되지 않음 — 좁은 화면·고밀도 표에서 가로 오버플로 위험 | medium | S | high | done | 2026-06-30 |
 | IMP-18 | compete | 온라인 평가 점수를 라이브 트레이스에 부착 + 세션/대화 단위 비용 롤업 — Langfuse 'scores'·Helicone 세션 뷰 대비 분리됨 | medium | L | high | done | 2026-06-30 |
@@ -33,12 +72,12 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-25 | aesthetic | 차트 시각언어가 화면마다 손수 SVG로 제각각 — 호버 크로스헤어/툴팁 readout 부재로 Grafana/Datadog 대비 빈약 | medium | L | high | done | 2026-06-30 |
 | IMP-26 | code | 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출 | low | S | medium | done | 2026-06-30 |
 | IMP-27 | aesthetic | 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도 | low | M | medium | done | 2026-06-30 |
-| IMP-28 | code | BFF 인증·레이트리밋 미들웨어 부재 — x-user-id 헤더를 신뢰만 하고 핸들러마다 ad-hoc 파싱(요청 신원 추상화 없음) | high | M | high | deferred-sensitive | 2026-06-30 |
+| IMP-28 | code | BFF 인증·레이트리밋 미들웨어 부재 — x-user-id 헤더를 신뢰만 하고 핸들러마다 ad-hoc 파싱(요청 신원 추상화 없음) | high | M | high | done | 2026-06-30 |
 | IMP-29 | ux | 전역 토스트/피드백 시스템 부재 — 키 발급·엔드포인트 생성·정책 저장 등 mutation 성공/실패가 페이지마다 제각각 통보 | medium | M | high | done | 2026-06-30 |
 | IMP-30 | code | 넓은 데이터 표(Traces·Sessions·Keys)가 가상화 없이 전량 렌더 — 라이브 데이터 스케일 시 렌더 핫스팟 | medium | M | high | done | 2026-06-30 |
 | IMP-31 | ux | 슬라이드오버 상세 패널(SlidePanel·InspectDrawer·Notifications)이 IMP-12 접근가능 다이얼로그 작업 범위 밖 — 포커스 트랩·복원·Escape 불완전 | medium | M | high | done | 2026-06-30 |
-| IMP-32 | compete | 트레이스 서버사이드 전문(full-text) 검색 부재 — 드롭다운 필터·클라이언트 스팬 검색에 그쳐 Langfuse/Arize Phoenix 대비 뒤처짐 | medium | L | high | deferred-sensitive | 2026-06-30 |
-| IMP-33 | platform | 플레이그라운드·프록시 추론 경로를 검증된 LLM 게이트웨이(LiteLLM)로 백킹 — 키 인증·예산·라우팅을 직접 구현 대신 채택 | medium | L | high | deferred-sensitive | 2026-06-30 |
+| IMP-32 | compete | 트레이스 서버사이드 전문(full-text) 검색 부재 — 드롭다운 필터·클라이언트 스팬 검색에 그쳐 Langfuse/Arize Phoenix 대비 뒤처짐 | medium | L | high | done | 2026-06-30 |
+| IMP-33 | platform | 플레이그라운드·프록시 추론 경로를 검증된 LLM 게이트웨이(LiteLLM)로 백킹 — 키 인증·예산·라우팅을 직접 구현 대신 채택 | medium | L | high | spike-needed | 2026-06-30 |
 | IMP-34 | aesthetic | 트레이스 스팬 워터폴·상세 패널의 시각 완성도가 Langfuse/Arize Phoenix 대비 얇음 — 깊이·정렬·타입 범례 빈약 | low | M | medium | done | 2026-06-30 |
 | IMP-35 | aesthetic | 데이터 테이블 시각 밀도·정돈(zebra·sticky header·정렬 상태·행 호버)이 Linear/Datadog 대비 평범 — 대시보드 외 표 표면 전반 | low | M | medium | done | 2026-06-30 |
 
@@ -46,7 +85,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 
 ### IMP-1 — L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실)
 - **Type**: ux (sev=high, effort=M)
-- **Area**: `web/src/pages/Usage.tsx:182-183` (DimensionBreakdown onDrill) → `web/src/components/DimensionBreakdown.tsx:161-167`; `web/src/pages/Endpoints.tsx:325-326`; `backend/internal/server/traces.go:15`
+- **Area**: `web/src/pages/Usage.tsx:182-183` (DimensionBreakdown onDrill) → `web/src/components/DimensionBreakdown.tsx:161-167`; `web/src/pages/Endpoints.tsx:325-326`; `backend/internal/server/traces.go:15` 
 - **Problem**: 성능 차원 분해(L2)에서 행 클릭 시 onDrill 은 `model: dim === "model" ? row.key : undefined` 로만 트레이스 필터를 시드한다. 사용자가 차원 셀렉터를 endpoint 또는 namespace 로 바꾼 뒤 튀는 행(예: 특정 엔드포인트의 TTFT 이상치)을 클릭하면, 트레이스 화면으로 이동하긴 하지만 아무 필터도 적용되지 않은 전체 목록이 뜬다. 백엔드 traces.go:15 도 `langfuse.Filters{Decision, Status, Model, App}` 만 필터하고 endpoint/namespace 트레이스 필터가 없어, 분해→증적의 핵심 워크플로(어느 그룹이 튀나 → 그 그룹의 실제 요청 보기)가 3개 차원 중 2개에서 조용히 깨진다. 행에는 여전히 '트레이스로 드릴다운' 툴팁과 clickable 커서가 붙어(DimensionBreakdown.tsx:164-166) 클릭을 유도하므로 사용자는 잘못된 결과를 정상으로 오인한다.
 - **Fix**: 1순위(정공법): 백엔드 `langfuse.Filters` 에 Endpoint·Namespace 필드 추가 → traces.go 에서 `q.Get("endpoint")/q.Get("namespace")` 파싱 → Langfuse 쿼리에 반영. 프론트 `client.fetchTraces` 시그니처에 endpoint/namespace 추가. onDrill 을 차원→필터키 매핑으로 일반화(`dimFilterKey = {model:"model", endpoint:"endpoint", namespace:"namespace"}`)하여 `onNavigate("traces", { range, [dimFilterKey[dim]]: row.key })` — model 특수분기 삭제. Grafana 2026/Honeycomb BubbleUp 가 쓰는 '차원값을 필터로 보존' 패턴과 정합. 보너스: 트레이스 화면 상단에 활성 필터 칩(예: `endpoint=foo ✕`)을 보여 'L2에서 무엇을 들고 왔는지' 명시 + 한 번에 해제(가시성·되돌리기). 2순위(백엔드 지연 시 임시): 트레이스 매핑이 없는 차원에서는 행의 clickable 클래스/드릴 툴팁을 제거하고(false affordance 제거), '이 차원은 트레이스 드릴다운 미지원' 을 명시(negative affordance + 설명). 무필터 전체 목록으로의 조용한 점프는 금지.
 - **Evidence**: yes (high) — 코드로 정확히 확인. traces.go:15 의 `Filters{Decision, Status, Model, App}` 에 endpoint/namespace 없음, Usage.tsx:183·Endpoints.tsx:326 의 onDrill 은 `model: dim==="model" ? row.key : undefined` 만 시드 → dim 이 endpoint/namespace 일 때 모든 필터 undefined 로 무필터 점프. DimensionBreakdown.tsx:164-166 은 dim 무관하게 모든 행에 clickable 커서 + 드릴 툴팁을 붙임. 업계 표준(Grafana 통합 filter+group-by, Honeycomb BubbleUp 'Show only where field is value' → WHERE field=value 재쿼리)이 가설 (1)과 정확히 일치. (2) 폴백은 NN/Norman affordance 이론(실동작 없는 clickable signifier 는 false affordance, 비활성화 시 이유 설명) 지지.

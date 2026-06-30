@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
@@ -10,11 +11,12 @@ import (
 	"github.com/maymust/fabrix-endpoint/internal/langfuse"
 )
 
-// handleTraces 는 GET /api/v1/traces?range=&decision=&status=&model=&app= (Langfuse 정합 트레이스 목록).
+// handleTraces 는 GET /api/v1/traces?range=&decision=&status=&model=&app=&q= (Langfuse 정합 트레이스 목록).
+// q(IMP-32) 는 가산적 자유 텍스트 전문검색 — 화이트리스트 필드만 대상(마스킹/가드 원문 제외).
 func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	rng := domain.ParseRange(q.Get("range"))
-	f := langfuse.Filters{Decision: q.Get("decision"), Status: q.Get("status"), Model: q.Get("model"), App: q.Get("app")}
+	f := langfuse.Filters{Decision: q.Get("decision"), Status: q.Get("status"), Model: q.Get("model"), App: q.Get("app"), Q: strings.TrimSpace(q.Get("q"))}
 	rep, err := s.lf.Traces(r.Context(), rng, f)
 	if err != nil {
 		httpx.Error(w, http.StatusBadGateway, "트레이스 조회 실패: "+err.Error())
