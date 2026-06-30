@@ -17,18 +17,16 @@ import (
 	"github.com/maymust/fabrix-endpoint/internal/provider"
 	"github.com/maymust/fabrix-endpoint/internal/proxystats"
 	"github.com/maymust/fabrix-endpoint/internal/quota"
-	"github.com/maymust/fabrix-endpoint/internal/store"
-	"github.com/maymust/fabrix-endpoint/internal/usage"
 )
 
 // Server 는 의존성(데이터 제공자·카탈로그·스토어·가드레일·증적·롤업·설정)을 들고 라우터를 만든다.
 type Server struct {
 	dashboard  provider.Dashboard
 	catalog    *catalog.Catalog
-	store      *store.Store // nil 가능(DB 미구성 시 키 기능 비활성)
+	store      DataStore // nil 가능(DB 미구성 시 키 기능 비활성). live=*store.Store / mock=mockstore
 	guard      *guard.Client
 	audit      *audit.Sink
-	usage      *usage.Sink
+	usage      UsageSource // live=*usage.Sink / mock=mockstore
 	quota      *quota.Limiter
 	k8s        *k8s.Client
 	harbor     *harbor.Client
@@ -46,7 +44,7 @@ type Server struct {
 
 // New 는 주입된 의존성으로 Server 를 만든다. st 는 nil 일 수 있다.
 // caps 는 배포 프로파일(observe|manage)에서 해석된 기능 집합 — 어떤 라우트를 등록할지 결정한다.
-func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, cat *catalog.Catalog, st *store.Store, gc *guard.Client, as *audit.Sink, us *usage.Sink, kc *k8s.Client, hc *harbor.Client, lf *langfuse.Client) *Server {
+func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, cat *catalog.Catalog, st DataStore, gc *guard.Client, as *audit.Sink, us UsageSource, kc *k8s.Client, hc *harbor.Client, lf *langfuse.Client) *Server {
 	return &Server{
 		dashboard:  dashboard,
 		catalog:    cat,
