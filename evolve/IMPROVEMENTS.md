@@ -8,7 +8,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 |----|------|-------|----------|--------|------------|--------|
 | IMP-1 | ux | L2→L3 드릴다운이 endpoint·namespace 차원에서 필터 없이 점프(데이터 손실) | high | M | high | done |
 | IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done |
-| IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | grounded |
+| IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | done |
 | IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | grounded |
 | IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
 | IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done |
@@ -46,6 +46,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (high) — DimensionBreakdown.tsx:147-153 의 정렬 `<th>` 는 role="button"+onClick 만, tabIndex·onKeyDown·aria-sort 전무. index.css grep 으로 `.sortable` 규칙 0건 확인(`.active` 는 nav/pill 등 무관 셀렉터만). 정렬 `cellValue(b)-cellValue(a)` 내림차순 고정(:110). W3C APG·Adrian Roselli·MDN 3종이 ① `<th>` 안 진짜 `<button>` 권장(네이티브 키보드 공짜), ② aria-sort 는 현재 컬럼 1개만 설정, ③ aria-sort 단독 신뢰 불가(2024-08 VoiceOver/TalkBack announce 실패) → 시각 화살표 + live region 폴백 필요 를 명시.
 - **Sources**: https://www.w3.org/WAI/ARIA/apg/patterns/table/examples/sortable-table/ , https://adrianroselli.com/2021/04/sortable-table-columns.html , https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-sort
 - **Deep-dive suggestion**: 없음 (출처 충분, 구현 직행)
+- **Result** (2026-06-30, done): 정렬 `<th>` 를 네이티브 `<button className="th-sort">` 로 → 키보드 포커스/Enter·Space 정렬. 현재 컬럼에만 `aria-sort`(asc/desc), 방향 토글(`sortDir`), 시각 화살표 ▲▼(aria-hidden), sr-only `aria-live` 정렬 안내. index.css 에 `.th-sort` 포커스링/호버/active 추가. tsc 통과. 행 드릴다운 키보드·target-size 는 minor follow-up. spec: `specs/2026-06-30/IMP-3-sortable-header-a11y.md`.
 
 ### IMP-4 — ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13)
 - **Type**: ux (sev=medium, effort=M)

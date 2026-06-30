@@ -1843,3 +1843,23 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .span-wf-note code { background: var(--surface-2); padding: 0 3px; border-radius: 3px; }
 .gc-uncaptured { background: var(--surface-2); border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: var(--sp-3); font-size: var(--fs-sm); line-height: 1.55; color: var(--text-dim); }
 .gc-uncaptured code { background: var(--surface); padding: 0 3px; border-radius: 3px; }
+
+/* IMP-3: 정렬 가능한 표 헤더 — 네이티브 button 으로 키보드 접근(WCAG 2.1.1) */
+.usage-table th.sortable button.th-sort {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.usage-table th.sortable button.th-sort:hover { text-decoration: underline; }
+.usage-table th.sortable button.th-sort:focus-visible {
+  outline: 2px solid var(--primary, #4a6da7);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.usage-table th.sortable.active button.th-sort { color: var(--primary, #4a6da7); font-weight: 600; }

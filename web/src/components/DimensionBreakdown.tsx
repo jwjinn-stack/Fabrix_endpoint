@@ -53,6 +53,15 @@ export default function DimensionBreakdown({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sortKey, setSortKey] = useState<string>("requests");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // 같은 컬럼 재클릭 → 방향 토글, 다른 컬럼 → 그 컬럼 내림차순(IMP-3).
+  const toggleSort = (k: string) => {
+    if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(k);
+      setSortDir("desc");
+    }
+  };
 
   // 차원/카탈로그는 1회 로드.
   useEffect(() => {
@@ -96,9 +105,12 @@ export default function DimensionBreakdown({
 
   const rows = useMemo(() => {
     const rs = [...(data?.rows ?? [])];
-    rs.sort((a, b) => cellValue(b, sortKey) - cellValue(a, sortKey));
+    rs.sort((a, b) => {
+      const d = cellValue(b, sortKey) - cellValue(a, sortKey); // 내림차순 기준
+      return sortDir === "asc" ? -d : d;
+    });
     return rs;
-  }, [data, sortKey]);
+  }, [data, sortKey, sortDir]);
 
   const dimTitle = dims.find((d) => d.key === dim)?.title ?? dim;
   // 현재 차원에서 트레이스 드릴다운이 실제로 동작하는가 — 미지원 차원의 false affordance 방지(IMP-1).
@@ -133,6 +145,10 @@ export default function DimensionBreakdown({
         </div>
       )}
 
+      <div className="sr-only" aria-live="polite">
+        {data && rows.length > 0 ? `정렬 기준 ${metaByKey[sortKey]?.title ?? sortKey}, ${sortDir === "asc" ? "오름차순" : "내림차순"}` : ""}
+      </div>
+
       {!error && rows.length > 0 && (
         <table className="usage-table">
           <thead>
@@ -144,11 +160,17 @@ export default function DimensionBreakdown({
                   <th
                     key={k}
                     className={`num sortable${sortKey === k ? " active" : ""}`}
-                    title={`${m.desc}${m.related?.length ? ` · 함께 보기: ${m.related.join(", ")}` : ""}`}
-                    onClick={() => setSortKey(k)}
-                    role="button"
+                    aria-sort={sortKey === k ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
                   >
-                    {m.title}{sortKey === k ? " ↓" : ""}
+                    <button
+                      type="button"
+                      className="th-sort"
+                      onClick={() => toggleSort(k)}
+                      title={`${m.desc}${m.related?.length ? ` · 함께 보기: ${m.related.join(", ")}` : ""} · 클릭: ${m.title} 정렬`}
+                    >
+                      {m.title}
+                      {sortKey === k && <span aria-hidden="true">{sortDir === "asc" ? " ▲" : " ▼"}</span>}
+                    </button>
                   </th>
                 );
               })}
