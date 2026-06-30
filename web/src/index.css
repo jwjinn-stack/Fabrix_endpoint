@@ -699,6 +699,14 @@ body {
   padding: var(--sp-3) var(--sp-4);
   text-align: left;
 }
+/* ErrorBoundary 기본 폴백 */
+.state.error .eb-hint { margin: var(--sp-2) 0; color: var(--text-dim); font-weight: 400; }
+.state.error .eb-detail {
+  margin: var(--sp-2) 0; padding: var(--sp-2); white-space: pre-wrap; word-break: break-all;
+  font-size: var(--fs-xs); color: var(--text-dim);
+  background: var(--surface-2); border-radius: var(--radius-sm);
+}
+.state.error .btn { margin-top: var(--sp-1); }
 /* 카드 내부 빈 상태 — 데이터 0건일 때 사라지지 않게 */
 .empty {
   padding: var(--sp-5) var(--sp-2);
