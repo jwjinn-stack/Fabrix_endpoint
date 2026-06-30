@@ -1479,6 +1479,18 @@ dialog.drawer[open] { display: flex; }
 .vb-chip.on { background: var(--primary-weak); border-color: var(--primary); color: var(--primary-strong); }
 .vb-chip input { accent-color: var(--primary); }
 .vb-hint { font-size: var(--fs-xs); color: var(--text-faint); margin-left: auto; }
+/* IMP-40 위젯 편집(show/hide + reorder) — 행 목록(드래그 미도입, 위/아래 버튼) */
+.view-builder { align-items: stretch; }
+.vb-widgets { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; }
+.vb-row { display: flex; align-items: center; gap: var(--sp-2); padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.vb-row.off { opacity: 0.55; }
+.vb-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.vb-toggle input { accent-color: var(--primary); }
+.vb-row-title { font-size: var(--fs-body); }
+.vb-persona { font-size: var(--fs-xs); color: var(--text-faint); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.vb-move { width: 28px; height: 28px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); cursor: pointer; font-size: var(--fs-sm); color: var(--text); }
+.vb-move:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-strong); }
+.vb-move:disabled { opacity: 0.35; cursor: default; }
 
 /* 평가 점수 (#17) */
 .eval-score { font-size: 22px; font-weight: 700; }
