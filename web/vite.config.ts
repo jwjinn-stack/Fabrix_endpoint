@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -12,5 +13,12 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  // 단위/컴포넌트 테스트(IMP-13): jsdom + RTL. 별도 vitest.config 불필요.
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    css: false,
   },
 });

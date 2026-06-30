@@ -11,6 +11,9 @@ import SummaryStrip from "../components/SummaryStrip";
 import DimensionBreakdown from "../components/DimensionBreakdown";
 import type { MetricsBreakdownRow } from "../api/types";
 import { useCap } from "../capabilities";
+import InfoTip from "../components/InfoTip";
+import Modal from "../components/Modal";
+import { humanizeError } from "../utils/errors";
 
 const CUSTOM = "__custom__";
 
@@ -95,7 +98,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setAvailable(r.available);
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -155,7 +158,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
     try {
       setPreview(await previewEndpoint(form));
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -172,7 +175,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setPreview(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -188,7 +191,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setConfirmDel(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -201,7 +204,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       const r = await fetchEndpointLogs(ep.namespace, ep.name, component, 200);
       setLogs(r);
     } catch (e) {
-      setLogs({ logs: "", components: [], ok: false, error: (e as Error).message });
+      setLogs({ logs: "", components: [], ok: false, error: humanizeError((e as Error).message) });
     } finally {
       setLogBusy(false);
     }
@@ -277,7 +280,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       setNotice(`API 키 발급됨: ${keyForm.app_name || keyForm.app_id} → ${keyForm.model_scope}`);
       loadChoices();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -331,11 +334,12 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       <div className="card">
         <div className="card-head">
           <h3>배포된 엔드포인트 (DynamoGraphDeployment)</h3>
-          <span className="info" title="실 클러스터의 모델 배포 CR. FABRIX 생성분만 삭제할 수 있습니다(운영 보호).">ⓘ</span>
+          <InfoTip>실 클러스터의 모델 배포 CR. FABRIX 생성분만 삭제할 수 있습니다(운영 보호).</InfoTip>
         </div>
         {eps.length === 0 && !loading ? (
           <div className="empty">배포된 엔드포인트가 없습니다. “+ 엔드포인트 생성”으로 모델을 배포하세요.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className={`usage-table density-${density}`}>
             <thead>
               <tr>
@@ -378,6 +382,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -422,12 +427,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
       />
 
       {wizard && (
-        <div className="modal-overlay" onClick={() => setWizard(false)}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>엔드포인트 생성 위저드</h3>
-              <button type="button" className="icon" aria-label="닫기" onClick={() => setWizard(false)}>✕</button>
-            </div>
+        <Modal open onClose={() => setWizard(false)} title="엔드포인트 생성 위저드" className="modal-wide">
             <div className="preset-cards">
               {PRESETS.map((p) => {
                 const active = form.pattern === p.set.pattern && form.replicas === p.set.replicas && form.gpu === p.set.gpu && form.max_model_len === p.set.max_model_len;
@@ -584,17 +584,11 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
               </button>
             </div>
             <div className="modal-note">‘생성 적용’은 실제 클러스터에 모델 배포 CR을 생성합니다(GPU 점유). 먼저 미리보기로 검증하세요.</div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {keyModal && (
-        <div className="modal-overlay" onClick={() => setKeyModal(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>모델 API 키 추가</h3>
-              <button type="button" className="icon" aria-label="닫기" onClick={() => setKeyModal(null)}>✕</button>
-            </div>
+        <Modal open onClose={() => setKeyModal(null)} title="모델 API 키 추가">
             <div className="key-affinity">
               <span>배포 모델</span>
               <b>{keyModal.model || keyModal.name}</b>
@@ -654,18 +648,12 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
                 {busy ? "발급 중…" : "키 발급"}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {/* P4-8 실시간 로그 팝업 (Backend.AI) */}
       {logsFor && (
-        <div className="modal-overlay" onClick={closeLogs}>
-          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>로그 · {logsFor.name}</h3>
-              <button type="button" className="icon" aria-label="닫기" onClick={closeLogs}>✕</button>
-            </div>
+        <Modal open onClose={closeLogs} title={<>로그 · {logsFor.name}</>} className="modal-wide">
             <div className="logs-toolbar">
               <label className="logs-comp">
                 컴포넌트
@@ -686,8 +674,7 @@ export default function Endpoints({ onNavigate }: { onNavigate?: NavFn }) {
             {logs && !logs.ok && <div className="state error" role="alert">로그 조회 실패: {logs.error}</div>}
             <pre className="logs-pane">{logBusy && !logs ? "로그를 불러오는 중…" : (logs?.logs?.trim() || "표시할 로그가 없습니다(파드 미기동 또는 출력 없음).")}</pre>
             <div className="modal-note">최근 200줄 tail · {logsFor.namespace}/{logsFor.name} 파드. 읽기 전용(증적 아님). 운영 ns 도 조회만 허용됩니다.</div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );

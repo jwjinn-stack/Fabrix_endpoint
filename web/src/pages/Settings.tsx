@@ -4,9 +4,13 @@ import type { User } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Modal from "../components/Modal";
+import { SkeletonRows } from "../components/Skeleton";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
+import InfoTip from "../components/InfoTip";
+import { humanizeError } from "../utils/errors";
 
 // 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
 function BrandColorCard() {
@@ -15,7 +19,7 @@ function BrandColorCard() {
     <div className="card">
       <div className="card-head">
         <h3>외관 · 브랜드 색상</h3>
-        <span className="info" title="강조색(버튼·링크·차트·선택 상태)을 고객사 표준 색상으로 전환합니다. 이 브라우저에 저장됩니다.">ⓘ</span>
+        <InfoTip>강조색(버튼·링크·차트·선택 상태)을 고객사 표준 색상으로 전환합니다. 이 브라우저에 저장됩니다.</InfoTip>
       </div>
       <p className="policy-hint" style={{ marginTop: 0 }}>
         고객사 표준 색상에 맞춰 전체 UI 강조색이 즉시 바뀝니다. 라이트·다크 모드 공통으로 적용되며 이 브라우저에 저장됩니다.
@@ -75,16 +79,6 @@ const ROLE_TONE: Record<string, BadgeTone> = { admin: "red", super: "pink", user
 const ROLE_RANK: Record<string, number> = { user: 0, super: 1, admin: 2 };
 const isEscalation = (from: string, to: string) => (ROLE_RANK[to] ?? 0) > (ROLE_RANK[from] ?? 0);
 
-// 백엔드 에러를 사람이 읽고 조치 가능한 문장으로 변환.
-function humanizeError(msg: string): string {
-  const m = msg.toLowerCase();
-  if (m.includes("already exists") || m.includes("duplicate")) return "이미 등록된 이메일입니다. 다른 이메일을 사용하세요.";
-  if (m.includes("invalid email") || m.includes("email")) return "이메일 형식이 올바르지 않습니다.";
-  if (m.includes("forbidden") || m.includes("permission") || m.includes("403")) return "권한이 없습니다. 관리자에게 문의하세요.";
-  if (m.includes("network") || m.includes("failed to fetch")) return "서버에 연결할 수 없습니다. 잠시 후 다시 시도하세요.";
-  return msg;
-}
-
 function roleTag(role: string) {
   return <Badge tone={ROLE_TONE[role] ?? "neutral"}>{ROLE_LABEL[role] ?? role}</Badge>;
 }
@@ -128,7 +122,7 @@ export default function Settings() {
       setRoles(r.roles);
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -193,18 +187,19 @@ export default function Settings() {
 
       {error && <div className="state error" role="alert">{error}</div>}
       {notice && <div className="toast" role="status">{notice}</div>}
-      {!error && loading && users.length === 0 && <div className="state" role="status">사용자를 불러오는 중…</div>}
-
       {canConfig && <ReconfigurePanel />}
 
       <div className="card">
         <div className="card-head">
           <h3>사용자 · 역할</h3>
-          <span className="info" title="역할(Admin/User/Super)과 부서 매핑. 역할은 인라인으로 변경됩니다.">ⓘ</span>
+          <InfoTip>역할(Admin/User/Super)과 부서 매핑. 역할은 인라인으로 변경됩니다.</InfoTip>
         </div>
-        {users.length === 0 && !loading ? (
+        {loading && users.length === 0 ? (
+          <div className="table-scroll"><SkeletonRows rows={6} cols={6} /></div>
+        ) : users.length === 0 ? (
           <div className="empty">사용자가 없습니다. “+ 사용자 추가”로 등록하세요.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className="usage-table">
             <thead>
               <tr><th>이름</th><th>이메일</th><th>역할</th><th>부서</th><th>상태</th><th></th></tr>
@@ -232,14 +227,16 @@ export default function Settings() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
       <div className="card">
         <div className="card-head">
           <h3>역할 × 권한 참조</h3>
-          <span className="info" title="역할별 허용 권한(읽기 전용 참조). 실제 강제는 API 레벨 RBAC.">ⓘ</span>
+          <InfoTip>역할별 허용 권한(읽기 전용 참조). 실제 강제는 API 레벨 RBAC.</InfoTip>
         </div>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="usage-table rbac-matrix">
           <thead>
             <tr>
@@ -260,6 +257,7 @@ export default function Settings() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="policy-hint">모든 권한 토글·역할 변경은 감사 이벤트로 캡처됩니다. 상향 권한 부여 차단(자신보다 높은 역할 부여 불가)은 현재 사용자 컨텍스트 연동 후 활성화됩니다.</div>
       </div>
 
@@ -286,9 +284,7 @@ export default function Settings() {
       </SlidePanel>
 
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h3>사용자 추가</h3><button type="button" className="icon" aria-label="닫기" onClick={() => setModal(false)}>✕</button></div>
+        <Modal open onClose={() => setModal(false)} title="사용자 추가">
             <label className="pg-field"><span>이메일 *</span>
               <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="user@maymust.com" /></label>
             <label className="pg-field"><span>이름 *</span>
@@ -305,8 +301,7 @@ export default function Settings() {
               <button type="button" className="btn-ghost" onClick={() => setModal(false)}>취소</button>
               <button type="button" className="btn-primary" onClick={submit} disabled={busy || !form.email.trim() || !form.name.trim()}>{busy ? "추가 중…" : "추가"}</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <ConfirmDialog

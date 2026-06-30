@@ -9,6 +9,9 @@ import GuardOverview from "../components/GuardOverview";
 import EventHistogram from "../components/EventHistogram";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { useCap } from "../capabilities";
+import InfoTip from "../components/InfoTip";
+import ExportButton from "../components/ExportButton";
+import { humanizeError } from "../utils/errors";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -98,7 +101,7 @@ export default function Guard() {
     setContentLoading(true); setContent(null); setContentErr(null);
     fetchGuardContent(traceId)
       .then(setContent)
-      .catch((e) => setContentErr((e as Error).message))
+      .catch((e) => setContentErr(humanizeError((e as Error).message)))
       .finally(() => setContentLoading(false));
   }, []);
   const [status, setStatus] = useState<GuardStatus | null>(null);
@@ -116,7 +119,7 @@ export default function Guard() {
         setReport(r);
         setError(null);
       } catch (e) {
-        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+        if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
       } finally {
         setLoading(false);
       }
@@ -158,6 +161,23 @@ export default function Guard() {
                 <option key={r.value} value={r.value}>기간: {r.label}</option>
               ))}
             </select>
+            <ExportButton
+              filename={`fabrix-guard-audit-${range}`}
+              rows={rows}
+              columns={[
+                { key: "event_id", header: "event_id", get: (r) => r.event_id },
+                { key: "ts", header: "ts", get: (r) => r.ts },
+                { key: "trace_id", header: "trace_id", get: (r) => r.trace_id },
+                { key: "user_ref", header: "user_ref", get: (r) => r.user_ref },
+                { key: "dept_id", header: "dept_id", get: (r) => r.dept_id },
+                { key: "app_id", header: "app_id", get: (r) => r.app_id },
+                { key: "model", header: "model", get: (r) => r.model },
+                { key: "decision", header: "decision", get: (r) => r.decision },
+                { key: "guard_types", header: "guard_types", get: (r) => (r.guard_types ?? []).join("|") },
+                { key: "pii_subtypes", header: "pii_subtypes", get: (r) => (r.pii_subtypes ?? []).join("|") },
+                { key: "jb_confidence", header: "jb_confidence", get: (r) => r.jb_confidence },
+              ]}
+            />
             <button type="button" className="refresh-btn" onClick={() => load()} aria-label="증적 새로고침">
               <span className="spin" aria-hidden="true">⟳</span>
               새로고침
@@ -207,7 +227,7 @@ export default function Guard() {
         <div className="card">
           <div className="card-head">
             <h3>증적 목록</h3>
-            <span className="info" title="원문·PII 는 저장하지 않습니다. user_ref 는 비식별 해시입니다(SSOT 2-2).">ⓘ</span>
+            <InfoTip>원문·PII 는 저장하지 않습니다. user_ref 는 비식별 해시입니다(SSOT 2-2).</InfoTip>
             {status?.worm_enabled && (
               <span className="tag tag-green" title={`MinIO Object Lock 버킷 ${status.worm_bucket} — 변경·삭제 불가`}>
                 🔒 WORM 보존 {nf.format(status.worm_count)}건
@@ -219,6 +239,7 @@ export default function Guard() {
           {rows.length === 0 ? (
             <div className="empty">선택한 조건의 증적이 없습니다. 플레이그라운드에서 PII/Jailbreak 요청을 보내면 여기에 기록됩니다.</div>
           ) : (
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className="usage-table">
               <thead>
                 <tr>
@@ -251,6 +272,7 @@ export default function Guard() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

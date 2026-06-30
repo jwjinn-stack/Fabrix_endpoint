@@ -1,4 +1,5 @@
 import type { GPUDevice } from "../api/types";
+import InfoTip from "./InfoTip";
 
 // 노드 LED 그리드 — 수십~수백 GPU를 상태 점 매트릭스로 한 화면 압축.
 // all-smi/nvidia Cluster Overview 패턴(상용SW-화면UIUX-리서치 P4-2).
@@ -44,7 +45,7 @@ export default function GpuLedGrid({
     <div className="card">
       <div className="card-head">
         <h3>노드 · GPU 상태 그리드</h3>
-        <span className="info" title="온도≥87°C 또는 사용률≥90% = 위험, ≥80°C 또는 ≥60% = 주의. 셀 클릭 시 상세.">ⓘ</span>
+        <InfoTip>온도≥87°C 또는 사용률≥90% = 위험, ≥80°C 또는 ≥60% = 주의. 셀 클릭 시 상세.</InfoTip>
         <span className="spacer" />
         <span className="led-legend">
           <span className="led-key"><span className="led-dot" style={{ background: STATUS_COLOR.ok }} /> 정상 {counts.ok}</span>

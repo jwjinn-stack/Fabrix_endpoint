@@ -3,9 +3,13 @@ import { fetchKeys, fetchOrg, issueKey, revokeKey } from "../api/client";
 import type { APIKeyView, IssuedKey, OrgApp } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Modal from "../components/Modal";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import SummaryStrip from "../components/SummaryStrip";
+import { SkeletonRows } from "../components/Skeleton";
+import ExportButton from "../components/ExportButton";
 import { useCap } from "../capabilities";
+import { humanizeError } from "../utils/errors";
 
 const CUSTOM = "__custom__";
 const nf = new Intl.NumberFormat("ko-KR");
@@ -75,7 +79,7 @@ export default function Keys() {
       setApps([...byID.values()].sort((a, b) => a.name.localeCompare(b.name)));
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -109,7 +113,7 @@ export default function Keys() {
       setForm({ app_id: "", app_name: "", dept_id: "", key_name: "", model_scope: "*", quota_rpm: "", quota_tpd: "", alert_threshold: "80" });
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -123,7 +127,7 @@ export default function Keys() {
       setConfirmRevoke(null);
       load();
     } catch (e) {
-      setError((e as Error).message);
+      setError(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -164,6 +168,22 @@ export default function Keys() {
         <div className="spacer" />
         <span className="updated">{keys.length}개 키</span>
         <DensityToggle density={density} onChange={setDensity} />
+        <ExportButton
+          filename="fabrix-keys"
+          rows={keys}
+          columns={[
+            { key: "api_key_id", header: "api_key_id", get: (k) => k.api_key_id },
+            { key: "name", header: "name", get: (k) => k.name },
+            { key: "app_id", header: "app_id", get: (k) => k.app_id },
+            { key: "dept_id", header: "dept_id", get: (k) => k.dept_id },
+            { key: "model_scope", header: "model_scope", get: (k) => k.model_scope },
+            { key: "enabled", header: "enabled", get: (k) => k.enabled },
+            { key: "quota_rpm", header: "quota_rpm", get: (k) => k.quota_rpm ?? "" },
+            { key: "quota_tpd", header: "quota_tpd", get: (k) => k.quota_tpd ?? "" },
+            { key: "requests", header: "requests", get: (k) => k.requests },
+            { key: "created_at", header: "created_at", get: (k) => k.created_at },
+          ]}
+        />
         {canWrite && (
           <button type="button" className="btn-primary" onClick={openIssueModal}>
             + 키 발급
@@ -197,8 +217,6 @@ export default function Keys() {
         </div>
       )}
 
-      {!error && loading && keys.length === 0 && <div className="state" role="status">키 목록을 불러오는 중…</div>}
-
       {keys.length > 0 && (
         <SummaryStrip items={[
           { label: "전체 키", value: keys.length },
@@ -210,7 +228,9 @@ export default function Keys() {
 
       <div className="card">
         <div className="card-head"><h3>API 키</h3></div>
-        {keys.length === 0 && !loading ? (
+        {loading && keys.length === 0 ? (
+          <div className="table-scroll"><SkeletonRows rows={6} cols={7} /></div>
+        ) : keys.length === 0 ? (
           <div className="empty">발급된 키가 없습니다. “+ 키 발급”으로 시작하세요.</div>
         ) : (
           <div className="table-scroll">
@@ -301,9 +321,7 @@ export default function Keys() {
 
       {/* 키 발급 모달 (Nutanix Create API Key) */}
       {modal && (
-        <div className="modal-overlay" onClick={() => setModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>API 키 발급</h3>
+        <Modal open onClose={() => setModal(false)} title="API 키 발급">
             <label className="pg-field">
               <span>앱 귀속 *</span>
               <select className="range-select" value={appMode === "custom" ? CUSTOM : form.app_id} onChange={(e) => onAppChange(e.target.value)}>
@@ -377,8 +395,7 @@ export default function Keys() {
                 {busy ? "발급 중…" : "발급"}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       <ConfirmDialog

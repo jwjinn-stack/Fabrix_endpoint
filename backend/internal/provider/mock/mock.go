@@ -206,13 +206,14 @@ func maxInt(a, b int) int {
 func (p *Provider) Usage(_ context.Context, rng domain.TimeRange) (domain.UsageReport, error) {
 	now := time.Now().UTC()
 	scale := guardScale(rng) // 기간 길수록 누적 증가 재사용
+	// GroupBy=model 이므로 모델 단위로 고유해야 한다(중복 시 프론트 키 충돌). 모델별 합산값.
 	rows := []domain.UsageRow{
-		{DeptID: "D-IB", AppID: "wm-advisor-chatbot", Model: "Qwen/Qwen3-30B-A3B",
-			Requests: int64(12403 * scale / 70), PromptTokens: int64(3_200_000 * scale / 70), CompletionTokens: int64(1_100_000 * scale / 70), TTFTp95ms: 128, ITLavgMs: 18},
-		{DeptID: "D-IB", AppID: "batch-report", Model: "google/gemma-4-31b",
+		{Model: "Qwen/Qwen3-30B-A3B",
+			Requests: int64(21424 * scale / 70), PromptTokens: int64(5_300_000 * scale / 70), CompletionTokens: int64(2_000_000 * scale / 70), TTFTp95ms: 124, ITLavgMs: 17},
+		{Model: "google/gemma-4-31b",
 			Requests: int64(2910 * scale / 70), PromptTokens: int64(8_700_000 * scale / 70), CompletionTokens: int64(400_000 * scale / 70), TTFTp95ms: 540, ITLavgMs: 22},
-		{DeptID: "D-RETAIL", AppID: "wm-advisor-chatbot", Model: "Qwen/Qwen3-30B-A3B",
-			Requests: int64(9021 * scale / 70), PromptTokens: int64(2_100_000 * scale / 70), CompletionTokens: int64(900_000 * scale / 70), TTFTp95ms: 119, ITLavgMs: 17},
+		{Model: "openai/gpt-oss-120b",
+			Requests: int64(1820 * scale / 70), PromptTokens: int64(1_400_000 * scale / 70), CompletionTokens: int64(820_000 * scale / 70), TTFTp95ms: 310, ITLavgMs: 26},
 	}
 	return domain.UsageReport{
 		Range:       rng,

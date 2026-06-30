@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchModels, runEval } from "../api/client";
 import type { EvalResult, ModelInfo } from "../api/types";
 import Sparkline from "../components/Sparkline";
+import InfoTip from "../components/InfoTip";
+import { humanizeError } from "../utils/errors";
 
 // 프롬프트/평가 관리 (#17) — LLM-as-judge. 대상 모델 응답을 심판 모델이 1~5점 채점.
 export default function Eval() {
@@ -34,7 +36,7 @@ export default function Eval() {
       const r = await runEval({ model, judge_model: judge, prompt, criteria });
       setResults((prev) => [r, ...prev]);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(humanizeError((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -76,7 +78,7 @@ export default function Eval() {
       )}
 
       <div className="card">
-        <div className="card-head"><h3>평가 실행</h3><span className="info" title="대상 모델의 응답을 심판 모델이 기준에 따라 1~5점으로 채점합니다(Langfuse/Databricks 패턴).">ⓘ</span></div>
+        <div className="card-head"><h3>평가 실행</h3><InfoTip>대상 모델의 응답을 심판 모델이 기준에 따라 1~5점으로 채점합니다(Langfuse/Databricks 패턴).</InfoTip></div>
         <div className="pg-field-row">
           <label className="pg-field"><span>대상 모델</span>
             <select className="range-select" value={model} onChange={(e) => setModel(e.target.value)}>

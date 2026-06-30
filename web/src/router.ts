@@ -53,7 +53,7 @@ const PATH_TO_PAGE: Record<string, Page> = Object.fromEntries(
 
 // pageFromPath 는 경로명을 Page 로 해석한다. 미지/루트는 dashboard.
 export function pageFromPath(pathname: string): Page {
-  let p = pathname.replace(/\/+$/, ""); // 끝 슬래시 제거
+  const p = pathname.replace(/\/+$/, ""); // 끝 슬래시 제거
   if (p === "" || p === "/") return "dashboard";
   return PATH_TO_PAGE[p] ?? "dashboard";
 }

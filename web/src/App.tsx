@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Layout, { type Page } from "./components/Layout";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { pageFromPath, pathForPage, queryParam, capForPage, type NavParams } from "./router";
 import { CapabilitiesProvider, useCap } from "./capabilities";
 import { TimeRangeProvider } from "./timeRange";
@@ -72,7 +73,25 @@ function AppInner() {
   const effPage: Page = !cap || can(cap) ? page : "dashboard";
 
   return (
-    <Layout page={effPage} onNavigate={navigate}>
+    <ErrorBoundary label="app">
+      <Layout page={effPage} onNavigate={navigate}>
+        {/* 페이지 단위 바운더리 — 한 화면의 렌더 throw 가 NAV/Layout 까지 죽이지 않게 격리.
+            effPage 를 resetKey 로 두어 다른 화면으로 이동하면 자동 복구된다. */}
+        <ErrorBoundary label={effPage} resetKey={effPage}>
+          {pageContent(effPage, navigate, pgModel)}
+        </ErrorBoundary>
+      </Layout>
+    </ErrorBoundary>
+  );
+}
+
+function pageContent(
+  effPage: Page,
+  navigate: (p: Page, params?: NavParams) => void,
+  pgModel: string | undefined,
+) {
+  return (
+    <>
       {effPage === "dashboard" && <Dashboard onNavigate={navigate} />}
       {effPage === "usage" && <Usage onNavigate={navigate} />}
       {effPage === "guard" && <Guard />}
@@ -89,6 +108,6 @@ function AppInner() {
       {effPage === "credentials" && <Credentials />}
       {effPage === "keys" && <Keys />}
       {effPage === "diagnostics" && <Diagnostics onNavigate={navigate} />}
-    </Layout>
+    </>
   );
 }

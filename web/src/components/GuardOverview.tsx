@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchGuardAudit, fetchGuardPolicy, fetchGuardStatus, type GuardStatus } from "../api/client";
 import type { GuardAuditRow, GuardPolicy } from "../api/types";
+import InfoTip from "./InfoTip";
 
 const nf = new Intl.NumberFormat("ko-KR");
 
@@ -71,7 +72,7 @@ export default function GuardOverview() {
 
       {/* 파이프라인 다이어그램 */}
       <div className="card">
-        <div className="card-head"><h3>가드레일 파이프라인</h3><span className="info" title="모든 추론 요청이 거치는 경로">ⓘ</span></div>
+        <div className="card-head"><h3>가드레일 파이프라인</h3><InfoTip>모든 추론 요청이 거치는 경로</InfoTip></div>
         <div className="pipe">
           <div className="pipe-node">사용자 요청</div>
           <div className="pipe-arrow">→</div>
@@ -117,6 +118,7 @@ export default function GuardOverview() {
         {recent.length === 0 ? (
           <div className="empty">최근 차단된 요청이 없습니다.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className="usage-table">
             <thead><tr><th>시각</th><th>앱</th><th>유형</th><th>사유</th></tr></thead>
             <tbody>
@@ -130,6 +132,7 @@ export default function GuardOverview() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

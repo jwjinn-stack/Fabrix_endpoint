@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchConfig, fetchConfigStatus, saveConfig } from "../api/client";
 import type { ConfigField, ConfigStatus, ConfigView } from "../api/types";
+import InfoTip from "./InfoTip";
 
 // 셀프-reconfigure(A1) — 화면에서 연동 설정을 고치면 ConfigMap patch + rollout restart 로
 // 새 설정으로 재기동한다. 저장 후 롤아웃 상태를 폴링해 "재배포 중 → 완료"를 보여주고,
@@ -77,7 +78,7 @@ export default function ReconfigurePanel() {
     <div className="card">
       <div className="card-head">
         <h3>연동 설정 · 재구성</h3>
-        <span className="info" title="설정 저장 → ConfigMap patch + rollout restart → 새 파드가 새 설정으로 기동. 비밀(creds)은 자격증명 화면에서.">ⓘ</span>
+        <InfoTip>설정 저장 → ConfigMap patch + rollout restart → 새 파드가 새 설정으로 기동. 비밀(creds)은 자격증명 화면에서.</InfoTip>
       </div>
 
       {!view.editable ? (

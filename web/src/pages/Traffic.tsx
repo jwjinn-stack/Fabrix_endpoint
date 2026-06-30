@@ -7,6 +7,9 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import PipelineWaterfall from "../components/PipelineWaterfall";
 import EnginePipelinePanel from "../components/EnginePipelinePanel";
 import DimensionBreakdown from "../components/DimensionBreakdown";
+import InfoTip from "../components/InfoTip";
+import DataFreshness from "../components/DataFreshness";
+import { humanizeError } from "../utils/errors";
 
 const REFRESH_MS = 10_000;
 const nf = new Intl.NumberFormat("ko-KR");
@@ -39,6 +42,7 @@ export default function Traffic() {
   const [stream, setStream] = useState<GuardAuditRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const [detail, setDetail] = useState<GuardAuditRow | null>(null);
   const [windowSec, setWindowSec] = useState(600); // D-07 로컬 라이브 윈도우(초)
 
@@ -53,9 +57,10 @@ export default function Traffic() {
       setPipeline(p);
       // 최신순 보장 — API 정렬 순서와 무관하게 ts 내림차순 후 상위 20건.
       setStream([...g.rows].sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0)).slice(0, 20));
+      setLastLoaded(Date.now());
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -77,6 +82,7 @@ export default function Traffic() {
         <h1>트래픽 / 프록시</h1>
         <span className="crumb">관제 / 트래픽</span>
         <div className="spacer" />
+        <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
         <select className="range-select" value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} aria-label="라이브 윈도우">
           {WINDOWS.map((w) => (
             <option key={w.value} value={w.value}>윈도우: {w.label}</option>
@@ -133,7 +139,7 @@ export default function Traffic() {
       {/* HTTP 에러 코드 분해 (Analytics Errors 매핑) */}
       {s?.errors && (
         <div className="card">
-          <div className="card-head"><h3>HTTP 에러 분해 <span className="info" title="최근 윈도우 동안 코드별 응답 건수. 4xx=클라이언트 / 429=레이트리밋 / 5xx=서버">ⓘ</span></h3></div>
+          <div className="card-head"><h3>HTTP 에러 분해 <InfoTip>최근 윈도우 동안 코드별 응답 건수. 4xx=클라이언트 / 429=레이트리밋 / 5xx=서버</InfoTip></h3></div>
           <div className="err-codes">
             {([
               ["400", "Bad request", "blue"], ["401", "Unauthorized", "blue"],
@@ -152,13 +158,14 @@ export default function Traffic() {
       <div className="card">
         <div className="card-head">
           <h3>최근 요청 스트림</h3>
-          <span className="info" title="프록시를 통과한 최근 요청(증적 기반). 원문/PII 비저장.">ⓘ</span>
+          <InfoTip>프록시를 통과한 최근 요청(증적 기반). 원문/PII 비저장.</InfoTip>
           <span className="spacer" />
           <span className="updated">{stream.length}건</span>
         </div>
         {stream.length === 0 ? (
           <div className="empty">최근 1시간 요청이 없습니다. 플레이그라운드에서 요청을 보내보세요.</div>
         ) : (
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
           <table className="usage-table">
             <thead>
               <tr>
@@ -181,6 +188,7 @@ export default function Traffic() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

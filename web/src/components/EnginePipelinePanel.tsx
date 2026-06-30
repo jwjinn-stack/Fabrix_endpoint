@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { EnginePipeline } from "../api/types";
+import InfoTip from "./InfoTip";
 
 // P4-3 엔진 파이프라인 분해 — queue→prefill→decode 색분할.
 // 평균 요청의 단계별 지연을 Waterfall(가로 누적 막대) 또는 Tree(중첩 단계) 로 표시.
@@ -34,7 +35,7 @@ export default function EnginePipelinePanel({ pipeline }: { pipeline: EnginePipe
     <div className="card eng-pipe">
       <div className="card-head">
         <h3>엔진 파이프라인 분해</h3>
-        <span className="info" title="평균 요청의 단계별 지연. queue(대기)→prefill(TTFT)→decode(생성) 색분할. dynamo_frontend_stage_duration / request_plane_queue / TTFT / request_duration 실측.">ⓘ</span>
+        <InfoTip>평균 요청의 단계별 지연. queue(대기)→prefill(TTFT)→decode(생성) 색분할. dynamo_frontend_stage_duration / request_plane_queue / TTFT / request_duration 실측.</InfoTip>
         <span className="spacer" />
         <div className="seg-toggle" role="tablist" aria-label="파이프라인 보기 전환">
           <button type="button" role="tab" aria-selected={view === "waterfall"} className={view === "waterfall" ? "on" : ""} onClick={() => setView("waterfall")}>Waterfall</button>

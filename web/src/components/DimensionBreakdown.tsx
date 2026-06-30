@@ -151,6 +151,7 @@ export default function DimensionBreakdown({
       </div>
 
       {!error && rows.length > 0 && (
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="usage-table">
           <thead>
             <tr>
@@ -206,6 +207,7 @@ export default function DimensionBreakdown({
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

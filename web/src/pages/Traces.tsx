@@ -5,7 +5,9 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
+import ExportButton from "../components/ExportButton";
 import { queryParam } from "../router";
+import { humanizeError } from "../utils/errors";
 
 const RANGES: { value: TimeRange; label: string }[] = [
   { value: "1h", label: "최근 1시간" },
@@ -80,7 +82,7 @@ export default function Traces() {
           });
         }
       } catch (e) {
-        if ((e as Error).name !== "AbortError") setError((e as Error).message);
+        if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
       } finally {
         setLoading(false);
       }
@@ -128,6 +130,25 @@ export default function Traces() {
         <select className="range-select" value={range} onChange={(e) => setRange(e.target.value as TimeRange)}>
           {RANGES.map((r) => <option key={r.value} value={r.value}>기간: {r.label}</option>)}
         </select>
+        <ExportButton
+          filename={`fabrix-traces-${range}`}
+          rows={traces}
+          columns={[
+            { key: "trace_id", header: "trace_id", get: (t) => t.trace_id },
+            { key: "ts", header: "ts", get: (t) => t.ts },
+            { key: "model", header: "model", get: (t) => t.model },
+            { key: "app_id", header: "app_id", get: (t) => t.app_id },
+            { key: "dept_id", header: "dept_id", get: (t) => t.dept_id },
+            { key: "api_key_id", header: "api_key_id", get: (t) => t.api_key_id },
+            { key: "decision", header: "decision", get: (t) => t.decision },
+            { key: "status", header: "status", get: (t) => t.status },
+            { key: "total_ms", header: "total_ms", get: (t) => t.total_ms },
+            { key: "ttft_ms", header: "ttft_ms", get: (t) => t.ttft_ms },
+            { key: "prompt_tokens", header: "prompt_tokens", get: (t) => t.prompt_tokens },
+            { key: "completion_tokens", header: "completion_tokens", get: (t) => t.completion_tokens },
+            { key: "total_cost_krw", header: "total_cost_krw", get: (t) => t.total_cost_krw },
+          ]}
+        />
         <button type="button" className={`refresh-btn ${loading ? "is-loading" : ""}`} onClick={() => load()} disabled={loading} aria-label="트레이스 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>새로고침
         </button>
@@ -173,6 +194,7 @@ export default function Traces() {
 
         {traces.length > 0 && (
           <div className="tbl-scroll">
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
@@ -203,6 +225,7 @@ export default function Traces() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
@@ -442,6 +465,7 @@ function SpanAttrs({ span }: { span: TraceSpan }) {
         <span className={span.status === "error" ? "sa-err" : "sa-ok"}>{span.status}</span>
       </div>
       {entries.length > 0 && (
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="span-attr-table">
           <tbody>
             {entries.map(([k, v]) => (
@@ -449,6 +473,7 @@ function SpanAttrs({ span }: { span: TraceSpan }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

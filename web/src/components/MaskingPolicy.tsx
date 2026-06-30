@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchMaskingPolicy, setMaskingPolicy } from "../api/client";
 import type { CaptureMode, MaskAction, MaskingPolicy, MaskRule } from "../api/types";
+import InfoTip from "./InfoTip";
 
 // 캡처 모드 3단(none/masked/full) — Langfuse 트레이스에 프롬프트/응답을 어떻게 보존할지.
 const CAPTURE: { value: CaptureMode; label: string; hint: string }[] = [
@@ -117,7 +118,7 @@ export default function MaskingPolicyPanel() {
       <div className="card">
         <div className="card-head">
           <h3>캡처 정책 (Langfuse 트레이스 보존)</h3>
-          <span className="info" title="프롬프트·응답을 트레이스에 어떻게 보존할지. 게이트웨이 글루가 ingestion 전 적용.">ⓘ</span>
+          <InfoTip>프롬프트·응답을 트레이스에 어떻게 보존할지. 게이트웨이 글루가 ingestion 전 적용.</InfoTip>
           <span className="spacer" />
           <label className="muted" style={{ display: "flex", alignItems: "center", gap: 6, marginRight: 12 }}>
             <input type="checkbox" checked={policy.enabled} onChange={(e) => patch({ enabled: e.target.checked })} />
@@ -140,10 +141,11 @@ export default function MaskingPolicyPanel() {
       <div className="card">
         <div className="card-head">
           <h3>PII 유형별 규칙</h3>
-          <span className="info" title="마스킹 모드에서 탐지된 PII 유형을 어떻게 처리할지. 고객사 요구에 맞춰 추가/조정.">ⓘ</span>
+          <InfoTip>마스킹 모드에서 탐지된 PII 유형을 어떻게 처리할지. 고객사 요구에 맞춰 추가/조정.</InfoTip>
           <span className="spacer" />
           <button type="button" className="btn-ghost btn-sm" onClick={addRule}>+ 규칙 추가</button>
         </div>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
         <table className="usage-table">
           <thead>
             <tr><th>유형</th><th>표시명</th><th>처리</th><th></th></tr>
@@ -170,6 +172,7 @@ export default function MaskingPolicyPanel() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="policy-hint">
           처리: <b>보관</b>(그대로) · <b>마스킹</b>(부분 가림) · <b>해시</b>(비식별 대체) · <b>제거</b>([REDACTED]). 실제 적용은 게이트웨이 글루가 수행합니다.
         </div>

@@ -23,6 +23,7 @@ import (
 	"github.com/maymust/fabrix-endpoint/internal/harbor"
 	"github.com/maymust/fabrix-endpoint/internal/k8s"
 	"github.com/maymust/fabrix-endpoint/internal/langfuse"
+	"github.com/maymust/fabrix-endpoint/internal/mockstore"
 	"github.com/maymust/fabrix-endpoint/internal/provider"
 	"github.com/maymust/fabrix-endpoint/internal/store"
 	"github.com/maymust/fabrix-endpoint/internal/usage"
@@ -106,6 +107,25 @@ func main() {
 		}
 	}
 
+	// 데이터 소스 seam 주입(provider.Dashboard 의 mock/live 와 동일 패턴).
+	// live: PostgreSQL(*store.Store) / ClickHouse(*usage.Sink). mock: 인메모리 mockstore.
+	// 실제 K8s/DB 연동 시 이 분기만 바꾸면 핸들러·인터페이스는 불변.
+	var ds server.DataStore // nil interface 유지(핸들러 s.store==nil 가드 보존)
+	if st != nil {
+		ds = st
+	}
+	var usrc server.UsageSource = us
+	if cfg.DataSource == "mock" {
+		if ds == nil {
+			ds = mockstore.New()
+			slog.Info("키·앱·사용자 스토어 = mock (인메모리 시드 데이터)")
+		}
+		if !us.Enabled() {
+			usrc = mockstore.NewUsage()
+			slog.Info("사용량 롤업 = mock (인메모리 합성)")
+		}
+	}
+
 	// Langfuse 정합(트레이스/세션/가드레일 원문). 미설정 시 synthetic 폴백 — 서버 없이 동작.
 	lf := langfuse.New(cfg.LangfuseHost, cfg.LangfusePublicKey, cfg.LangfuseSecretKey)
 	if lf.Configured() {
@@ -116,7 +136,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(cfg, caps, dashboard, cat, st, gc, as, us, kc, hc, lf).Handler(),
+		Handler:           server.New(cfg, caps, dashboard, cat, ds, gc, as, usrc, kc, hc, lf).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

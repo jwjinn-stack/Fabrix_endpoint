@@ -6,6 +6,9 @@ import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Sparkline from "../components/Sparkline";
 import GpuLedGrid from "../components/GpuLedGrid";
+import InfoTip from "../components/InfoTip";
+import DataFreshness from "../components/DataFreshness";
+import { humanizeError } from "../utils/errors";
 
 const REFRESH_MS = 15_000;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -39,6 +42,7 @@ export default function Gpu() {
   const [rep, setRep] = useState<GPUReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const [detail, setDetail] = useState<GPUDevice | null>(null);
   // 드릴다운 tier-3: 선택 GPU 의 시계열.
   const [ts, setTs] = useState<GPUTimeseries | null>(null);
@@ -48,9 +52,10 @@ export default function Gpu() {
     try {
       const r = await fetchGPU(signal);
       setRep(r);
+      setLastLoaded(Date.now());
       setError(null);
     } catch (e) {
-      if ((e as Error).name !== "AbortError") setError((e as Error).message);
+      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
     } finally {
       setLoading(false);
     }
@@ -88,6 +93,7 @@ export default function Gpu() {
         <h1>GPU / MIG</h1>
         <span className="crumb">인프라 / GPU·MIG</span>
         <div className="spacer" />
+        <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
         <button type="button" className="refresh-btn" onClick={() => load()} aria-label="GPU 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
@@ -126,13 +132,14 @@ export default function Gpu() {
         <div className="card">
           <div className="card-head">
             <h3>GPU 디바이스 ({rep.source === "live" ? "DCGM 실측" : "mock"})</h3>
-            <span className="info" title="MIG 효율 = GR_ENGINE_ACTIVE. 낮으면 슬라이스 과할당/유휴(문서 3-4).">ⓘ</span>
+            <InfoTip>MIG 효율 = GR_ENGINE_ACTIVE. 낮으면 슬라이스 과할당/유휴(문서 3-4).</InfoTip>
             <span className="spacer" />
             <span className="updated">{devices.length}개 디바이스</span>
           </div>
           {devices.length === 0 ? (
             <div className="empty">관측된 GPU가 없습니다.</div>
           ) : (
+            <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
             <table className="usage-table">
               <thead>
                 <tr>
@@ -167,6 +174,7 @@ export default function Gpu() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
