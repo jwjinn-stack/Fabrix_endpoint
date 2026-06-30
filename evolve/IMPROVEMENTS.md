@@ -81,14 +81,14 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-34 | aesthetic | 트레이스 스팬 워터폴·상세 패널의 시각 완성도가 Langfuse/Arize Phoenix 대비 얇음 — 깊이·정렬·타입 범례 빈약 | low | M | medium | done | 2026-06-30 |
 | IMP-35 | aesthetic | 데이터 테이블 시각 밀도·정돈(zebra·sticky header·정렬 상태·행 호버)이 Linear/Datadog 대비 평범 — 대시보드 외 표 표면 전반 | low | M | medium | done | 2026-06-30 |
 | IMP-36 | compete | 지표 기반 알림 룰(지연 p95·에러율·가드 차단율 급증) 부재 — 예산/토큰 임계에만 알림이 묶임 | high | L | high | grounded | 2026-06-30 |
-| IMP-37 | compete | 트레이스→플레이그라운드 replay/re-run 경로 부재 — 조사 후 재현·수정 검증 루프가 끊김 | medium | M | high | grounded | 2026-06-30 |
-| IMP-38 | compete | 알림 acknowledge/resolve/snooze 인시던트 라이프사이클 부재 — 알림이 휘발성 목록일 뿐 | medium | L | high | grounded | 2026-06-30 |
-| IMP-39 | compete | 평가가 단건 LLM-judge에 그침 — 데이터셋·실험·회귀 비교(eval suite) 부재 | medium | L | high | grounded | 2026-06-30 |
-| IMP-40 | compete | 고정 대시보드 — 저장/커스텀 대시보드·위젯 재배치 부재(Grafana/Datadog 핵심) | medium | L | high | grounded | 2026-06-30 |
-| IMP-41 | platform | 메트릭 알림 백본을 Prometheus + Alertmanager로 백킹 — 인메모리 룰 평가 재발명 회피 | medium | L | high | grounded | 2026-06-30 |
-| IMP-42 | platform | 트레이스/스팬 수집을 OpenTelemetry(OTLP + Collector)로 표준화 — 손수 짠 Langfuse synth 경로 대체 | medium | L | medium | proposed | 2026-06-30 |
-| IMP-43 | aesthetic | 알림/인시던트 표면의 시각 위계가 빈약 — severity 색·타임스탬프·그룹핑이 Datadog/Grafana OnCall 대비 평면적 | low | M | medium | proposed | 2026-06-30 |
-| IMP-44 | aesthetic | KPI stat-mini 카드의 타입 위계·델타 시각화가 Datadog/Vercel 대비 단조 — 숫자 나열에 그침 | low | M | medium | proposed | 2026-06-30 |
+| IMP-37 | compete | 트레이스→플레이그라운드 replay/re-run 경로 부재 — 조사 후 재현·수정 검증 루프가 끊김 | medium | M | high | done | 2026-06-30 |
+| IMP-38 | compete | 알림 acknowledge/resolve/snooze 인시던트 라이프사이클 부재 — 알림이 휘발성 목록일 뿐 | medium | L | high | done | 2026-06-30 |
+| IMP-39 | compete | 평가가 단건 LLM-judge에 그침 — 데이터셋·실험·회귀 비교(eval suite) 부재 | medium | L | high | done | 2026-06-30 |
+| IMP-40 | compete | 고정 대시보드 — 저장/커스텀 대시보드·위젯 재배치 부재(Grafana/Datadog 핵심) | medium | L | high | done | 2026-06-30 |
+| IMP-41 | platform | 메트릭 알림 백본을 Prometheus + Alertmanager로 백킹 — 인메모리 룰 평가 재발명 회피 | medium | L | high | spike-needed | 2026-06-30 |
+| IMP-42 | platform | 트레이스/스팬 수집을 OpenTelemetry(OTLP + Collector)로 표준화 — 손수 짠 Langfuse synth 경로 대체 | medium | L | medium | spike-needed | 2026-06-30 |
+| IMP-43 | aesthetic | 알림/인시던트 표면의 시각 위계가 빈약 — severity 색·타임스탬프·그룹핑이 Datadog/Grafana OnCall 대비 평면적 | low | M | medium | done | 2026-06-30 |
+| IMP-44 | aesthetic | KPI stat-mini 카드의 타입 위계·델타 시각화가 Datadog/Vercel 대비 단조 — 숫자 나열에 그침 | low | M | medium | done | 2026-06-30 |
 
 ## Details
 
