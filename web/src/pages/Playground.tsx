@@ -3,6 +3,7 @@ import { fetchModels, playgroundChat } from "../api/client";
 import type { ChatMessage, ChatResponse, ModelInfo } from "../api/types";
 import Modal from "../components/Modal";
 import { humanizeError } from "../utils/errors";
+import { takePrefill } from "./playgroundPrefill";
 
 // M-01 — 6상태(+idle) 머신. 메시지/요청 생애주기를 enum 으로 명시.
 //   idle → queued → thinking → streaming → complete
@@ -60,11 +61,17 @@ const prefersReducedMotion = () =>
 
 // 플레이그라운드 — 카탈로그에서 고른 모델을 즉시 채팅으로 검증 (TPS·토큰·지연·TTFT 표시).
 export default function Playground({ initialModel }: { initialModel?: string }) {
+  // IMP-37: 트레이스 → replay 핸드오프를 마운트 시 1회 소비(소비 후 비움 = 뒤로가기 재시드 방지).
+  // 프롬프트/파라미터는 URL 비대상이라 모듈 슬롯으로 받는다. 모델은 initialModel(URL ?model=) 우선.
+  const prefillRef = useRef<ReturnType<typeof takePrefill>>(undefined as never);
+  if (prefillRef.current === (undefined as never)) prefillRef.current = takePrefill();
+  const prefill = prefillRef.current;
+
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [model, setModel] = useState(initialModel ?? "");
-  const [maxTokens, setMaxTokens] = useState(256);
-  const [temperature, setTemperature] = useState(0.7);
-  const [input, setInput] = useState("");
+  const [model, setModel] = useState(initialModel ?? prefill?.model ?? "");
+  const [maxTokens, setMaxTokens] = useState(prefill?.maxTokens ?? 256);
+  const [temperature, setTemperature] = useState(prefill?.temperature ?? 0.7);
+  const [input, setInput] = useState(prefill?.prompt ?? "");
   const [turns, setTurns] = useState<Turn[]>([]);
   // 진행 중 요청의 상태(전송 버튼/입력 잠금 판단). idle 이면 입력 가능.
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -336,6 +343,14 @@ export default function Playground({ initialModel }: { initialModel?: string }) 
           대화 초기화
         </button>
       </div>
+
+      {/* IMP-37: replay 출처 배너 — 어디서 시드됐는지 + 보존 한계 안내. 값은 모두 텍스트(이스케이프). */}
+      {prefill?.origin && (
+        <div className="pg-replay-banner" role="status" style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap", padding: "var(--sp-2) var(--sp-3)", margin: "0 0 var(--sp-3)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)", fontSize: "var(--fs-sm)" }}>
+          <span>▷ <b>{prefill.origin}</b> 에서 재현 — 모델·입력·파라미터가 시드되었습니다.</span>
+          {prefill.note && <span className="muted">{prefill.note}</span>}
+        </div>
+      )}
 
       <div className="pg-layout">
         {/* 좌: 파라미터 */}

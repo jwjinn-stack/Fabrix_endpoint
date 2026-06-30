@@ -95,7 +95,7 @@ function pageContent(
       {effPage === "dashboard" && <Dashboard onNavigate={navigate} />}
       {effPage === "usage" && <Usage onNavigate={navigate} />}
       {effPage === "guard" && <Guard />}
-      {effPage === "traces" && <Traces />}
+      {effPage === "traces" && <Traces onNavigate={navigate} />}
       {effPage === "sessions" && <Sessions />}
       {effPage === "models" && <Models onNavigate={navigate} />}
       {effPage === "model-import" && <ModelImport onNavigate={navigate} />}
