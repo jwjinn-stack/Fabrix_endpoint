@@ -31,7 +31,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-2 | code | MCP 엔드포인트가 capability/profile 게이트를 우회 — observe 읽기전용 정합성 깨짐 | high | S | high | done | 2026-06-30 |
 | IMP-3 | ux | 정렬 가능한 표 헤더가 키보드로 조작 불가(WCAG 2.1.1) | medium | S | high | done | 2026-06-30 |
 | IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | done | 2026-06-30 |
-| IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | needs-poc | 2026-06-30 |
+| IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | done | 2026-06-30 |
 | IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done | 2026-06-30 |
 | IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | done | 2026-06-30 |
 | IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | done | 2026-06-30 |
@@ -53,15 +53,15 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-24 | compete | 필터·기간 상태가 URL/저장뷰로 보존되지 않음 — 조사 화면을 공유·북마크·재현 불가 | medium | M | high | done | 2026-06-30 |
 | IMP-25 | aesthetic | 차트 시각언어가 화면마다 손수 SVG로 제각각 — 호버 크로스헤어/툴팁 readout 부재로 Grafana/Datadog 대비 빈약 | medium | L | high | done | 2026-06-30 |
 | IMP-26 | code | 에러 메시지 정규화가 Settings 한 곳에만 — 타 페이지는 raw (e as Error).message를 그대로 노출 | low | S | medium | done | 2026-06-30 |
-| IMP-27 | aesthetic | 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도 | low | M | medium | needs-design | 2026-06-30 |
+| IMP-27 | aesthetic | 대시보드 카드·KPI 메트릭 면의 시각 깊이·위계가 Linear/Vercel/Datadog 대비 평면적·저밀도 | low | M | medium | done | 2026-06-30 |
 | IMP-28 | code | BFF 인증·레이트리밋 미들웨어 부재 — x-user-id 헤더를 신뢰만 하고 핸들러마다 ad-hoc 파싱(요청 신원 추상화 없음) | high | M | high | done | 2026-06-30 |
 | IMP-29 | ux | 전역 토스트/피드백 시스템 부재 — 키 발급·엔드포인트 생성·정책 저장 등 mutation 성공/실패가 페이지마다 제각각 통보 | medium | M | high | done | 2026-06-30 |
 | IMP-30 | code | 넓은 데이터 표(Traces·Sessions·Keys)가 가상화 없이 전량 렌더 — 라이브 데이터 스케일 시 렌더 핫스팟 | medium | M | high | done | 2026-06-30 |
 | IMP-31 | ux | 슬라이드오버 상세 패널(SlidePanel·InspectDrawer·Notifications)이 IMP-12 접근가능 다이얼로그 작업 범위 밖 — 포커스 트랩·복원·Escape 불완전 | medium | M | high | done | 2026-06-30 |
 | IMP-32 | compete | 트레이스 서버사이드 전문(full-text) 검색 부재 — 드롭다운 필터·클라이언트 스팬 검색에 그쳐 Langfuse/Arize Phoenix 대비 뒤처짐 | medium | L | high | done | 2026-06-30 |
 | IMP-33 | platform | 플레이그라운드·프록시 추론 경로를 검증된 LLM 게이트웨이(LiteLLM)로 백킹 — 키 인증·예산·라우팅을 직접 구현 대신 채택 | medium | L | high | spike-needed | 2026-06-30 |
-| IMP-34 | aesthetic | 트레이스 스팬 워터폴·상세 패널의 시각 완성도가 Langfuse/Arize Phoenix 대비 얇음 — 깊이·정렬·타입 범례 빈약 | low | M | medium | needs-design | 2026-06-30 |
-| IMP-35 | aesthetic | 데이터 테이블 시각 밀도·정돈(zebra·sticky header·정렬 상태·행 호버)이 Linear/Datadog 대비 평범 — 대시보드 외 표 표면 전반 | low | M | medium | needs-design | 2026-06-30 |
+| IMP-34 | aesthetic | 트레이스 스팬 워터폴·상세 패널의 시각 완성도가 Langfuse/Arize Phoenix 대비 얇음 — 깊이·정렬·타입 범례 빈약 | low | M | medium | done | 2026-06-30 |
+| IMP-35 | aesthetic | 데이터 테이블 시각 밀도·정돈(zebra·sticky header·정렬 상태·행 호버)이 Linear/Datadog 대비 평범 — 대시보드 외 표 표면 전반 | low | M | medium | done | 2026-06-30 |
 
 ## Details
 
