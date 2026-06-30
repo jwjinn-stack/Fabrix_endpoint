@@ -140,8 +140,17 @@ export function fetchMetricsBreakdown(range: TimeRange, dim = "model", signal?: 
   return getJSON<MetricsBreakdown>(`/metrics/breakdown?${q.toString()}`, signal);
 }
 
-export function fetchMetricDimensions(signal?: AbortSignal): Promise<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }> {
-  return getJSON<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }>(`/metrics/dimensions`, signal);
+// 메트릭 차원/카탈로그는 거의 정적 → 모듈 레벨 캐시로 마운트마다 재요청 방지(IMP-8).
+let _dimsCache: Promise<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }> | null = null;
+export function fetchMetricDimensions(_signal?: AbortSignal): Promise<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }> {
+  if (!_dimsCache) {
+    // 정적 카탈로그라 1회만 받아 캐시. 실패 시 캐시 비워 재시도 허용(abort 는 불필요).
+    _dimsCache = getJSON<{ dimensions: MetricDimension[]; metrics: MetricMeta[] }>(`/metrics/dimensions`).catch((e) => {
+      _dimsCache = null;
+      throw e;
+    });
+  }
+  return _dimsCache;
 }
 
 export function fetchUsageTrend(range: TimeRange, signal?: AbortSignal): Promise<UsageTrend> {

@@ -13,7 +13,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
 | IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done |
 | IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | done |
-| IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | grounded |
+| IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | done |
 | IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded |
 
 ## Details
@@ -94,6 +94,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: partial (high) — 문제 진단은 코드로 전부 확인(Dashboard.tsx·Usage.tsx 가 동일 /dashboard/overview 독립 호출, 15s setInterval 폴링, DimensionBreakdown 마운트마다 카탈로그 재요청, 16개 파일 보일러플레이트). 'partial' 인 이유: package.json 이 React 외 런타임 의존성 0개인 의도적 미니멀 스택이라 풀 라이브러리는 과할 수 있음 → '어떤 무게냐' 가 핵심. read-heavy 대시보드엔 TanStack Query(~11-13kB)보다 SWR(4.2kB, stale-while-revalidate·dedupingInterval·useSWRImmutable)이 더 정확히 부합.
 - **Sources**: https://blog.logrocket.com/swr-vs-tanstack-query-react/ , https://dev.to/iceonfire/you-might-not-need-tanstack-query-2f3l , https://swr.vercel.app/docs/advanced/performance
 - **Deep-dive suggestion**: oss-evaluate (SWR vs TanStack Query vs in-house — 미니멀 스택 적합도·번들 비용)
+- **Result** (2026-06-30, done · 부분): `client.ts` `fetchMetricDimensions` 에 모듈 레벨 promise 캐시 → 정적 카탈로그 마운트마다 재요청 제거(무의존). SWR/TanStack 도입·overview dedup·폴링 통합은 `oss-evaluate` deep-dive(미실행) 후 follow-up. tsc 통과. spec: `specs/2026-06-30/IMP-8-static-catalog-cache.md`.
 
 ### IMP-9 — JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토
 - **Type**: oss (sev=low, effort=M)
