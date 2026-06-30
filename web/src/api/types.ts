@@ -329,6 +329,10 @@ export interface MetricsBreakdownRow {
   cache_hit_rate: number;
   prompt_tokens: number;
   completion_tokens: number;
+  // 이상 판정(C6) — 백엔드 domain.AnnotateWarnings 단일 출처. UI 셀 강조에 사용.
+  warn?: boolean;
+  warn_keys?: string[];
+  warn_reasons?: string[];
 }
 
 export interface MetricsBreakdown {

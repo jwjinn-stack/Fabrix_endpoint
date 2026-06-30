@@ -1,18 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchMetricDimensions, fetchMetricsBreakdown } from "../api/client";
 import type { MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, TimeRange } from "../api/types";
+import { formatMetric } from "../utils/format";
 
 // DimensionBreakdown — L2(Group) 공통 컴포넌트.
 // 차원(model|endpoint|namespace) 셀렉터 + /metrics/breakdown 표 + 카탈로그 기반 이상강조(C6).
 // 행 클릭 → onDrill(row, dim) 로 drill-through(예: trace 로 점프) — L2→L3.
 // 차원/메트릭 의미는 /metrics/dimensions(카탈로그)에서 받아 UI·툴팁·이상강조를 한 출처로 그린다.
-
-const nf = new Intl.NumberFormat("ko-KR");
-function compact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return nf.format(Math.round(n));
-}
 
 // 표시할 측정 컬럼 순서(카탈로그 key 기준). 카탈로그에 없는 key 는 무시.
 const COLS = ["requests", "qps", "ttft_p95_ms", "itl_avg_ms", "e2e_p95_ms", "cache_hit_rate", "prompt_tokens", "completion_tokens"] as const;
@@ -21,14 +15,7 @@ function cellValue(row: MetricsBreakdownRow, key: string): number {
   return (row as unknown as Record<string, number>)[key] ?? 0;
 }
 
-function fmt(unit: string, v: number): string {
-  if (unit === "ms") return `${nf.format(Math.round(v))}ms`;
-  if (unit === "ratio") return `${Math.round(v * 100)}%`;
-  if (unit === "req/s") return v.toFixed(2);
-  return compact(v);
-}
-
-// median 은 상대 이상치(컬럼 중앙값 대비 편차) 판정 기준.
+// median 은 상대 이상치(컬럼 중앙값 대비 편차) 판정 기준(백엔드 미제공 시 폴백용).
 function median(vals: number[]): number {
   if (vals.length === 0) return 0;
   const s = [...vals].sort((a, b) => a - b);
@@ -169,12 +156,14 @@ export default function DimensionBreakdown({
                 {cols.map((k) => {
                   const m = metaByKey[k];
                   const v = cellValue(r, k);
-                  const warn = isWarn(m, v, medians[k]);
+                  // 백엔드(domain.AnnotateWarnings)가 내려준 warn_keys 를 단일 출처로 사용.
+                  // 미제공(프론트 mock 등)일 때만 로컬 isWarn 으로 폴백.
+                  const warn = r.warn_keys ? r.warn_keys.includes(k) : isWarn(m, v, medians[k]);
                   return (
                     <td key={k} className="num">
                       <span style={warn ? { color: "var(--amber, #d98e00)", fontWeight: 600 } : undefined}
                         title={warn ? (m.lower_better ? "임계치/중앙값 대비 높음" : "임계치 미만") : undefined}>
-                        {fmt(m.unit, v)}{warn ? (m.lower_better ? " ▲" : " ▼") : ""}
+                        {formatMetric(m.unit, v)}{warn ? (m.lower_better ? " ▲" : " ▼") : ""}
                       </span>
                     </td>
                   );

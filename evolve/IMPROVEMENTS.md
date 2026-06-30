@@ -12,7 +12,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-4 | ux | ⓘ 정보·메트릭 의미가 hover title 툴팁에만 의존 — 키보드·터치 접근 불가(WCAG 1.4.13) | medium | M | high | grounded |
 | IMP-5 | ux | FABRIX MCP 서버가 백엔드에만 존재 — UI에 발견·연결·미리보기 경로가 전혀 없음 | medium | M | high | grounded |
 | IMP-6 | code | 신규 mcp.go + breakdown outlier 로직에 테스트 0건(코드베이스 표준 대비 공백) | medium | M | high | done |
-| IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | grounded |
+| IMP-7 | code | 이상강조·서식 로직이 프론트/백엔드에 중복 — 카탈로그 임계치를 클라이언트가 재구현 | medium | M | high | done |
 | IMP-8 | oss | 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토 | low | M | high | grounded |
 | IMP-9 | oss | JSON-RPC 2.0 MCP 전송을 손으로 구현 — 공식 MCP Go SDK 채택 검토 | low | M | high | grounded |
 
@@ -82,6 +82,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: yes (코드로 확인, not separately researched — low ambiguity) — DimensionBreakdown.tsx:43 `return med > 0 && v > med * 1.6` 상대편차 포함 vs mcp.go:179-184 절대 임계만. 서식 함수 fmt 가 DimensionBreakdown 에 로컬, Usage.tsx 에 별도 존재.
 - **Sources**: (코드 검증 — 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (구현 직행; IMP-1 과 묶어서 진행 권장)
+- **Result** (2026-06-30, done): `domain.AnnotateWarnings`(절대 임계 + 상대 median*1.6 통합 규칙) 단일 출처 추가 → `handleMetricsBreakdown`·`mcp.go`(groupby/top_outliers)가 호출, `outliers()` 는 재계산 제거하고 annotate 된 행만 필터. 프론트는 `row.warn_keys` 소비(mock 폴백 유지) + 공용 `formatMetric` util 추출. 백엔드 14건 + web tsc 통과. **시각 QA(셀 강조 렌더)는 앱 구동 시 확인 권장**. spec: `specs/2026-06-30/IMP-7-unify-warn-format.md`.
 
 ### IMP-8 — 페이지 마운트마다 중복·비캐시 데이터 패치 — 경량 query/cache(SWR) 도입 검토
 - **Type**: oss (sev=low, effort=M)

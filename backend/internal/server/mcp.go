@@ -140,6 +140,7 @@ func (s *Server) mcpCallTool(ctx context.Context, raw json.RawMessage) (any, *rp
 		if err != nil {
 			return mcpErrText("분해 조회 실패: " + err.Error()), nil
 		}
+		domain.AnnotateWarnings(&rep)
 		return mcpTextResult(rep), nil
 
 	case "top_outliers":
@@ -151,6 +152,7 @@ func (s *Server) mcpCallTool(ctx context.Context, raw json.RawMessage) (any, *rp
 		if err != nil {
 			return mcpErrText("분해 조회 실패: " + err.Error()), nil
 		}
+		domain.AnnotateWarnings(&rep)
 		return mcpTextResult(map[string]any{"dimension": rep.Dimension, "range": rep.Range, "outliers": outliers(rep.Rows)}), nil
 
 	case "summarize_endpoint_health":
@@ -163,29 +165,15 @@ func (s *Server) mcpCallTool(ctx context.Context, raw json.RawMessage) (any, *rp
 	return nil, &rpcErr{Code: -32602, Message: "unknown tool: " + p.Name}
 }
 
-// outliers 는 카탈로그 임계치를 위반한 행만 사유와 함께 추린다(서버측 C6).
+// outliers 는 domain.AnnotateWarnings 가 표시한 이상 행(Warn)만 사유와 함께, 사유 많은 순으로 추린다.
+// 판정 규칙은 domain.AnnotateWarnings 단일 출처 — 여기서 재계산하지 않아 UI 셀 강조와 결과가 일치한다.
 func outliers(rows []domain.MetricsBreakdownRow) []map[string]any {
 	out := []map[string]any{}
 	for _, r := range rows {
-		reasons := []string{}
-		vals := map[string]float64{
-			"ttft_p95_ms": r.TTFTp95ms, "itl_avg_ms": r.ITLavgMs, "e2e_p95_ms": r.E2Ep95ms, "cache_hit_rate": r.CacheHitRate,
+		if !r.Warn {
+			continue
 		}
-		for _, m := range domain.MetricCatalog {
-			v, ok := vals[m.Key]
-			if !ok {
-				continue
-			}
-			if m.LowerBetter && m.WarnAbove > 0 && v > m.WarnAbove {
-				reasons = append(reasons, fmt.Sprintf("%s %.0f > 임계 %.0f", m.Title, v, m.WarnAbove))
-			}
-			if !m.LowerBetter && m.WarnBelow > 0 && v > 0 && v < m.WarnBelow {
-				reasons = append(reasons, fmt.Sprintf("%s %.0f%% < 임계 %.0f%%", m.Title, v*100, m.WarnBelow*100))
-			}
-		}
-		if len(reasons) > 0 {
-			out = append(out, map[string]any{"key": r.Key, "requests": r.Requests, "reasons": reasons})
-		}
+		out = append(out, map[string]any{"key": r.Key, "requests": r.Requests, "reasons": r.WarnReasons})
 	}
 	sort.Slice(out, func(i, j int) bool { return len(out[i]["reasons"].([]string)) > len(out[j]["reasons"].([]string)) })
 	return out

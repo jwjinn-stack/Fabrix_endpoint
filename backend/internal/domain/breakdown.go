@@ -9,6 +9,11 @@ package domain
 // MetricDimensions 는 친화명 → Prometheus 라벨의 단일 출처다. 동적 groupby UI(L2)와
 // 향후 FABRIX MCP 의 메트릭 카탈로그가 이 한 곳을 공유한다(차원 정의 중복 방지).
 
+import (
+	"fmt"
+	"sort"
+)
+
 // MetricDimension — groupby 가능한 한 차원의 정의(카탈로그 시드).
 type MetricDimension struct {
 	Key   string `json:"key"`   // 친화명: model|endpoint|namespace
@@ -79,6 +84,11 @@ type MetricsBreakdownRow struct {
 	CacheHitRate     float64 `json:"cache_hit_rate"`
 	PromptTokens     int64   `json:"prompt_tokens"`
 	CompletionTokens int64   `json:"completion_tokens"`
+
+	// 이상 판정(C6) — AnnotateWarnings 가 채움. UI 셀 강조와 MCP top_outliers 의 단일 출처.
+	Warn        bool     `json:"warn"`
+	WarnKeys    []string `json:"warn_keys,omitempty"`
+	WarnReasons []string `json:"warn_reasons,omitempty"`
 }
 
 // MetricsBreakdown — GET /api/v1/metrics/breakdown?range=&dim= 응답.
@@ -88,4 +98,91 @@ type MetricsBreakdown struct {
 	Dimension   string                `json:"dimension"` // model|endpoint|namespace
 	Label       string                `json:"label"`     // 실제 Prometheus 라벨
 	Rows        []MetricsBreakdownRow `json:"rows"`
+}
+
+// ── 이상 판정(C6) — 단일 출처 ──
+// 이전: 프론트 isWarn 은 절대+상대(중앙값*1.6), 백엔드 outliers 는 절대만 → UI·MCP 불일치.
+// 이제 규칙을 여기(Go) 한 곳에 두고, 프론트는 결과(warn_keys)를 그대로 그린다.
+
+// metricWarn 은 한 메트릭 값이 카탈로그 임계치(절대) 또는 컬럼 중앙값 대비(상대, lower_better)
+// 이상인지와 사유를 반환한다.
+func metricWarn(m MetricMeta, v, med float64) (bool, string) {
+	if m.LowerBetter {
+		if m.WarnAbove > 0 && v > m.WarnAbove {
+			return true, fmt.Sprintf("%s %.0f > 임계 %.0f", m.Title, v, m.WarnAbove)
+		}
+		if med > 0 && v > med*1.6 {
+			return true, fmt.Sprintf("%s %.0f 중앙값(%.0f) 대비 높음", m.Title, v, med)
+		}
+		return false, ""
+	}
+	if m.WarnBelow > 0 && v > 0 && v < m.WarnBelow {
+		return true, fmt.Sprintf("%s %.0f%% < 임계 %.0f%%", m.Title, v*100, m.WarnBelow*100)
+	}
+	return false, ""
+}
+
+func rowValue(r MetricsBreakdownRow, key string) float64 {
+	switch key {
+	case "requests":
+		return float64(r.Requests)
+	case "qps":
+		return r.QPS
+	case "ttft_p95_ms":
+		return r.TTFTp95ms
+	case "itl_avg_ms":
+		return r.ITLavgMs
+	case "e2e_p95_ms":
+		return r.E2Ep95ms
+	case "cache_hit_rate":
+		return r.CacheHitRate
+	case "prompt_tokens":
+		return float64(r.PromptTokens)
+	case "completion_tokens":
+		return float64(r.CompletionTokens)
+	}
+	return 0
+}
+
+func medianOf(vals []float64) float64 {
+	if len(vals) == 0 {
+		return 0
+	}
+	s := append([]float64(nil), vals...)
+	sort.Float64s(s)
+	m := len(s) / 2
+	if len(s)%2 == 1 {
+		return s[m]
+	}
+	return (s[m-1] + s[m]) / 2
+}
+
+// AnnotateWarnings 는 breakdown 각 행에 warn/warn_keys/warn_reasons 를 채운다(이상 판정 단일 출처).
+// 절대 임계(WarnAbove/WarnBelow) + 컬럼 중앙값 대비 상대 편차(lower_better, *1.6)를 함께 본다.
+func AnnotateWarnings(b *MetricsBreakdown) {
+	if b == nil || len(b.Rows) == 0 {
+		return
+	}
+	meds := make(map[string]float64, len(MetricCatalog))
+	for _, m := range MetricCatalog {
+		vals := make([]float64, 0, len(b.Rows))
+		for i := range b.Rows {
+			vals = append(vals, rowValue(b.Rows[i], m.Key))
+		}
+		meds[m.Key] = medianOf(vals)
+	}
+	for i := range b.Rows {
+		r := &b.Rows[i]
+		keys := []string{}
+		reasons := []string{}
+		for _, m := range MetricCatalog {
+			if ok, reason := metricWarn(m, rowValue(*r, m.Key), meds[m.Key]); ok {
+				keys = append(keys, m.Key)
+				reasons = append(reasons, reason)
+			}
+		}
+		r.WarnKeys = keys
+		r.WarnReasons = reasons
+		r.Warn = len(keys) > 0
+	}
 }

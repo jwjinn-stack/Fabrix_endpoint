@@ -272,6 +272,7 @@ func (s *Server) handleMetricsBreakdown(w http.ResponseWriter, r *http.Request) 
 		httpx.Error(w, http.StatusBadGateway, "메트릭 분해 조회 실패: "+err.Error())
 		return
 	}
+	domain.AnnotateWarnings(&rep) // 이상 판정 단일 출처(UI 셀 강조와 MCP top_outliers 가 공유)
 	httpx.JSON(w, http.StatusOK, rep)
 }
 
