@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchKeys, fetchOrg, issueKey, revokeKey } from "../api/client";
+import VirtualRows from "../components/VirtualRows";
 import type { APIKeyView, IssuedKey, OrgApp } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -60,6 +61,7 @@ export default function Keys() {
   const [detail, setDetail] = useState<APIKeyView | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<APIKeyView | null>(null); // 회수 확인(비가역)
   const { density, setDensity } = useTableDensity("keys");
+  const vScrollRef = useRef<HTMLDivElement | null>(null); // IMP-30: 세로 windowing 스크롤 컨테이너
 
   // IMP-22 — 인라인 검증. 앱 귀속(모드별 필수) + 쿼터·임계 형식 검증. 짧은 폼 → 첫 오류필드 포커스.
   const fv = useFieldValidation(form, {
@@ -259,6 +261,7 @@ export default function Keys() {
           <div className="empty">발급된 키가 없습니다. “+ 키 발급”으로 시작하세요.</div>
         ) : (
           <div className="table-scroll">
+          <div ref={vScrollRef} className="vrow-viewport">
           <table className={`usage-table sticky-first density-${density}`}>
             <thead>
               <tr>
@@ -276,7 +279,8 @@ export default function Keys() {
               </tr>
             </thead>
             <tbody>
-              {keys.map((k) => (
+              <VirtualRows items={keys} colSpan={11} scrollRef={vScrollRef}>
+                {(k) => (
                 <tr key={k.api_key_id} className="clickable" onClick={() => setDetail(k)}>
                   <td>{k.name}</td>
                   <td>{k.app_name}</td>
@@ -304,9 +308,11 @@ export default function Keys() {
                     )}
                   </td>
                 </tr>
-              ))}
+                )}
+              </VirtualRows>
             </tbody>
           </table>
+          </div>
           </div>
         )}
       </div>

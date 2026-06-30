@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchTrace, fetchTraces } from "../api/client";
+import VirtualRows from "../components/VirtualRows";
 import type { SpanKind, TimeRange, TraceDetail, TraceListReport, TraceSpan } from "../api/types";
 import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
@@ -79,6 +80,7 @@ export default function Traces() {
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [openSpan, setOpenSpan] = useState<string | null>(null);
+  const vScrollRef = useRef<HTMLDivElement | null>(null); // IMP-30: 세로 windowing 스크롤 컨테이너
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -213,6 +215,8 @@ export default function Traces() {
         {traces.length > 0 && (
           <div className="tbl-scroll">
             <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
+            {/* IMP-30: 세로 스크롤 컨테이너 — 행 수가 많으면 보이는 행만 windowing 렌더 */}
+            <div ref={vScrollRef} className="vrow-viewport">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
@@ -222,7 +226,8 @@ export default function Traces() {
                 </tr>
               </thead>
               <tbody>
-                {traces.map((t) => (
+                <VirtualRows items={traces} colSpan={11} scrollRef={vScrollRef}>
+                  {(t) => (
                   <tr key={t.trace_id} onClick={() => setSelId(t.trace_id)} className={`row-click ${selId === t.trace_id ? "row-sel" : ""}`} tabIndex={0}
                     onKeyDown={(e) => { if (e.key === "Enter") setSelId(t.trace_id); }}>
                     <td>{timeFmt(t.ts)}</td>
@@ -240,9 +245,11 @@ export default function Traces() {
                       {t.status === "error" && <Badge tone="red" dot>에러</Badge>}
                     </td>
                   </tr>
-                ))}
+                  )}
+                </VirtualRows>
               </tbody>
             </table>
+            </div>
             </div>
           </div>
         )}

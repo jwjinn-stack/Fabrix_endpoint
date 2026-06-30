@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchSession, fetchSessions } from "../api/client";
+import VirtualRows from "../components/VirtualRows";
 import type { SessionDetail, SessionListReport, SessionTurn, TimeRange } from "../api/types";
 import Badge, { type BadgeTone } from "../components/Badge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
@@ -47,6 +48,7 @@ export default function Sessions() {
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const vScrollRef = useRef<HTMLDivElement | null>(null); // IMP-30: 세로 windowing 스크롤 컨테이너
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -129,6 +131,8 @@ export default function Sessions() {
         {sessions.length > 0 && (
           <div className="tbl-scroll">
             <div className="table-scroll" tabIndex={0} role="region" aria-label="데이터 표 — 좌우 스크롤 가능">
+            {/* IMP-30: 세로 스크롤 컨테이너 — 행 수가 많으면 보이는 행만 windowing 렌더 */}
+            <div ref={vScrollRef} className="vrow-viewport">
             <table className={`usage-table density-${density}`}>
               <thead>
                 <tr>
@@ -137,7 +141,8 @@ export default function Sessions() {
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
+                <VirtualRows items={sessions} colSpan={10} scrollRef={vScrollRef}>
+                  {(s) => (
                   <tr key={s.session_id} className={`row-click ${selId === s.session_id ? "row-sel" : ""}`} tabIndex={0}
                     onClick={() => setSelId(s.session_id)} onKeyDown={(e) => { if (e.key === "Enter") setSelId(s.session_id); }}>
                     <td className="cell-dim"><code>{s.session_id}</code></td>
@@ -151,9 +156,11 @@ export default function Sessions() {
                     <td className="num">{fmtDur(s.duration_ms)}</td>
                     <td>{s.blocked > 0 ? <Badge tone="red" dot>{s.blocked}건</Badge> : <Badge tone="green">없음</Badge>}</td>
                   </tr>
-                ))}
+                  )}
+                </VirtualRows>
               </tbody>
             </table>
+            </div>
             </div>
           </div>
         )}

@@ -827,6 +827,11 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 /* 가로 스크롤 컨테이너 — 컬럼 많은 테이블(키 등)이 카드를 넘칠 때 페이지 본문 대신 테이블만 스크롤 */
 .table-scroll { overflow-x: auto; }
 
+/* IMP-30 행 windowing 뷰포트 — 세로 스크롤 영역. 행 수가 임계(≈150)를 넘으면 보이는 행만 렌더.
+   임계 이하에선 내용이 max-height 보다 짧아 스크롤바가 안 생기고 기존과 동일하게 보인다. */
+.vrow-viewport { max-height: 70vh; overflow-y: auto; }
+.vrow-viewport .vrow-spacer td { padding: 0; border: none; }
+
 /* 리스트 상단 요약 칩 줄 — 요약 우선 + 넓은 화면 빈 공간 완화 */
 .summary-strip { display: flex; flex-wrap: wrap; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: var(--sp-4); }
 .summary-chip { flex: 1; min-width: 120px; background: var(--surface); padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
