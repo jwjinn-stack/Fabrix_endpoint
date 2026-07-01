@@ -31,7 +31,8 @@ import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } f
 // GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
 import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
-import { runAgentLoop } from "./agent";
+// IMP-78 — 클러스터 인사이트(생성적) 순수 조립. HARD grounding(인용 강제)은 buildAgentInsights 내부에서.
+import { runAgentLoop, buildAgentInsights } from "./agent";
 // Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
 import { attributeDetections } from "./detection";
 
@@ -1214,6 +1215,19 @@ function runAgentMock(body: Record<string, unknown>): import("./types").AgentRun
   return run;
 }
 
+// ── 클러스터 인사이트(IMP-78) — Dynamo 로컬 모델이 온톨로지 근거로 군집·패턴 도출 ──
+// runAgentMock 과 동일한 순수/부작용 경계(IMP-81): (1) buildAgentInsights(공유 스냅샷 → 결정적 결과),
+// (2) transcript audit 를 AGENT_AUDIT 에 append. VITE_MOCK=off 면 이 자리(모델 completion)만 실 Dynamo 로 스왑되고
+// (client.runAgentInsights 가 그대로 실백엔드로), HARD grounding(parseAndGroundInsights)은 어느 경로든 동일 강제.
+function runAgentInsightsMock(): import("./types").AgentInsightRun {
+  const { objects, links } = buildOntology(); // 요청단위 공유 스냅샷(재구성 중복 없음).
+  AGENT_SEQ++;
+  const traceId = `agti_${AGENT_SEQ.toString(36)}_${hash("insights").toString(36)}`;
+  const run = buildAgentInsights(objects, links, { traceId }); // (1) 순수 — 결정적 mock completion + 인용 강제.
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);            // (2) 부작용
+  return run;
+}
+
 // GET /ontology/detections — 감지 이상을 온톨로지 객체에 귀속시킨 Kinetic 알림(IMP-72).
 // buildOntology() 메모이즈 스냅샷(IMP-81) 재사용 후 attributeDetections(순수) 호출. read-only.
 //  - 노이즈 억제(dedupe/state-transition/sustained collapse)는 파생 레이어(detection.ts) 내장.
@@ -2118,6 +2132,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /metric-sources": return ok(genMetricSourceCoverage());
     // AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. read tool 자동, mutation 은 별도 ActionForm confirm(포함 안 함).
     case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
+    // AI Agent 클러스터 인사이트(IMP-78) — 로컬 모델이 온톨로지 근거로 군집·패턴 도출(HARD grounding·read-only).
+    case "POST /agent/insights": return ok(runAgentInsightsMock());
   }
 
   // 패턴 매칭 (path 변수 포함)

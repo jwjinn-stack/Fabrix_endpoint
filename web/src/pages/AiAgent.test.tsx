@@ -8,7 +8,7 @@ import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-li
 import AiAgent from "./AiAgent";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
-import type { AgentRun, OntologyObject } from "../api/types";
+import type { AgentInsightRun, AgentRun, OntologyObject } from "../api/types";
 
 // capabilities — 테스트별로 can() 을 갈아끼운다(observe 게이팅 검증). 기본 manage(전부 허용).
 let mockCan = (_cap: string) => true;
@@ -38,6 +38,33 @@ function groundedRun(): AgentRun {
     audit: [{ traceId: "agtr_test_1", kind: "prompt", detail: "intent: x", ts: "t" }],
     generated_at: "2026-07-01T00:00:00Z",
     source: "agent (mock)",
+  };
+}
+
+// IMP-78 — 클러스터 인사이트 픽스처. 표시분은 전부 objectId 를 인용(HARD grounding 통과), droppedCount>0(hallucination 걸러짐).
+function insightRun(): AgentInsightRun {
+  return {
+    traceId: "agti_test_1",
+    mode: "insights",
+    insights: [
+      { id: "ins-gpu-cluster", kind: "gpu-cluster", title: "유사 상태 GPU 군집(고사용률)", claim: "사용률 85% 이상 GPU 2개가 유사 포화(추정).", citations: ["gpu:g1", "gpu:g2"], severity: "warn" },
+      { id: "ins-idle-gap-node:n2", kind: "idle-alloc-gap", title: "유휴 할당갭 집중 — 노드 N2", claim: "유휴 할당 GPU 가 몰려 있습니다(추정).", citations: ["node:n2", "gpu:g3"], severity: "info" },
+    ],
+    grounded: true,
+    groundingSummary: "객체 5개 · 링크 3개 · GPU 3개를 근거로 분석했습니다.",
+    droppedCount: 2,
+    audit: [{ traceId: "agti_test_1", kind: "prompt", detail: "insight prompt", ts: "t" }],
+    generated_at: "2026-07-02T00:00:00Z",
+    source: "agent-insights (mock)",
+  };
+}
+
+// grounding 없음 인사이트 픽스처 — 인용 가능한 근거 없음(지어내지 않음).
+function emptyInsightRun(): AgentInsightRun {
+  return {
+    traceId: "agti_empty", mode: "insights", insights: [], grounded: false,
+    groundingSummary: "객체 0개 · 링크 0개 · GPU 0개를 근거로 분석했습니다.", droppedCount: 0,
+    audit: [], generated_at: "t", source: "agent-insights (mock)",
   };
 }
 
@@ -74,6 +101,8 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/agent");
   // 기본: grounded run. ObjectView fetch stub.
   vi.spyOn(client, "runAgent").mockResolvedValue(groundedRun());
+  // IMP-78 — 클러스터 인사이트 stub(기본 grounded).
+  vi.spyOn(client, "runAgentInsights").mockResolvedValue(insightRun());
   vi.spyOn(client, "fetchOntologyObject").mockResolvedValue(OBJ);
   vi.spyOn(client, "fetchOntologyLinks").mockResolvedValue({ generated_at: "t", object_id: "gpu:g", links: [], source: "mock" });
   vi.spyOn(client, "fetchOntologyObjects").mockResolvedValue({ generated_at: "t", objects: [OBJ], source: "mock" });
@@ -207,5 +236,84 @@ describe("AiAgent — 상호작용 / env-missing", () => {
     vi.spyOn(client, "runAgent").mockRejectedValue(new Error("API 503"));
     renderPage();
     await waitFor(() => expect(screen.getByText(/에이전트 실행에 실패했습니다/)).toBeInTheDocument());
+  });
+});
+
+// ── IMP-78 — 클러스터 인사이트 모드 ──────────────────────────────────────────
+describe("AiAgent — 클러스터 인사이트 모드(IMP-78)", () => {
+  it("기본은 RCA 모드이고, '클러스터 인사이트' 탭 클릭 시 runAgentInsights 를 호출한다", async () => {
+    const spy = vi.spyOn(client, "runAgentInsights").mockResolvedValue(insightRun());
+    renderPage();
+    // 마운트 직후 RCA 는 로드되지만 인사이트는 아직 호출 안 됨(lazy).
+    await waitFor(() => expect(client.runAgent).toHaveBeenCalled());
+    expect(spy).not.toHaveBeenCalled();
+    // 탭 전환 → 인사이트 lazy 로드.
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+  });
+
+  it("인사이트 카드가 objectId 인용 칩과 함께 렌더된다(HARD grounding)", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText("객체 조회")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByText(/유사 상태 GPU 군집/)).toBeInTheDocument());
+    // 근거 objectId 칩(클릭 가능).
+    expect(screen.getByRole("button", { name: "gpu:g1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "gpu:g2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "node:n2" })).toBeInTheDocument();
+    // 두 번째 인사이트도 렌더.
+    expect(screen.getByText(/유휴 할당갭 집중/)).toBeInTheDocument();
+  });
+
+  it("droppedCount>0 이면 '인용 없어 표시하지 않은' 투명성 안내가 나온다", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByText(/인용이 없어 표시하지 않은 서술 2건/)).toBeInTheDocument());
+  });
+
+  it("인용 없는 claim 은 카드로 렌더되지 않는다(UI 방어적 필터)", async () => {
+    // 서버가 실수로 인용 없는 insight 를 흘려도 UI 가 표시하지 않는다.
+    vi.spyOn(client, "runAgentInsights").mockResolvedValue({
+      ...insightRun(),
+      insights: [
+        { id: "uncited", kind: "recurring-pattern", title: "근거 없는 주장", claim: "지어냄", citations: [], severity: "warn" },
+        { id: "ok", kind: "gpu-cluster", title: "근거 있는 군집", claim: "c", citations: ["gpu:g1"], severity: "info" },
+      ],
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByText("근거 있는 군집")).toBeInTheDocument());
+    expect(screen.queryByText("근거 없는 주장")).not.toBeInTheDocument();
+  });
+
+  it("grounded=false(인용 가능 근거 없음) → '근거 없음' 안내, 카드 없음(지어내지 않음)", async () => {
+    vi.spyOn(client, "runAgentInsights").mockResolvedValue(emptyInsightRun());
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByText(/인용 가능한 군집 근거를 찾지 못해/)).toBeInTheDocument());
+    expect(screen.queryByText(/유사 상태 GPU 군집/)).not.toBeInTheDocument();
+  });
+
+  it("인사이트 카드 인용 클릭 → ObjectView 드로어(속성 섹션)", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "gpu:g1" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "gpu:g1" }));
+    await waitFor(() => expect(document.querySelector("dialog")).not.toBeNull());
+    await waitFor(() => expect(screen.getByText("속성")).toBeInTheDocument());
+  });
+
+  it("runAgentInsights reject → 에러 상태(페이지 안 죽음)", async () => {
+    vi.spyOn(client, "runAgentInsights").mockRejectedValue(new Error("API 503"));
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByText(/클러스터 인사이트 도출에 실패했습니다/)).toBeInTheDocument());
+  });
+
+  it("**read-only**: 인사이트 카드에는 ActionForm(권장 조치)이 없다(mutation 은 RCA 경로로만)", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("tab", { name: "클러스터 인사이트" }));
+    await waitFor(() => expect(screen.getByText(/유사 상태 GPU 군집/)).toBeInTheDocument());
+    expect(screen.queryByText(/권장 조치/)).not.toBeInTheDocument();
   });
 });

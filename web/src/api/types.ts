@@ -1385,6 +1385,37 @@ export interface AgentAuditEntry {
   ts: string;
 }
 
+// ── 클러스터 인사이트(IMP-78) — Dynamo 로컬 모델이 온톨로지 근거로 도출하는 생성적 인사이트 ──
+// 결정적 RCA(위 AgentRun, 단일 진입점 원인추적)와 구분되는 **패턴·군집** 축이다:
+// "유사 상태 GPU 군집 · 반복 hot-node 패턴 · 유휴 할당갭 집중 노드". IMP-60 을 실 inference 로 확장.
+// **HARD grounding**: 모든 claim 은 온톨로지 objectId 를 인용해야 하고(citations), 인용이 없으면(또는 온톨로지에
+// 실재하지 않는 id 만 인용하면) 그 insight 는 **표시하지 않는다**(hallucination 금지). 인사이트는 read-only —
+// 어떤 mutation 도 유발하지 않으며(suggestedAction 없음), 조치는 오직 RCA 카드의 <ActionForm> 경로로만.
+export type InsightKind = "gpu-cluster" | "hot-node" | "idle-alloc-gap" | "recurring-pattern";
+
+// 인사이트 한 건 — citations(objectId) 로 접지. citations 빈 배열이면 파이프라인이 드롭하므로 표시분엔 없다.
+export interface ClusterInsight {
+  id: string;              // 결정적 id(테스트 안정)
+  kind: InsightKind;
+  title: string;           // 사람용 제목(escape 렌더)
+  claim: string;           // 생성적 서술(escape 렌더 — "추정", 상관≠인과)
+  citations: string[];     // 근거 objectId(온톨로지 실재만; 비면 이 insight 는 드롭됨)
+  severity: "info" | "warn" | "crit"; // 표시 톤(임계 아님 — 요약 정보)
+}
+
+// 클러스터 인사이트 실행 1회 결과 — AgentRun(RCA)의 형제. grounded=false 면 인사이트 0 + 사유(groundingSummary).
+export interface AgentInsightRun {
+  traceId: string;
+  mode: "insights";
+  insights: ClusterInsight[];      // HARD grounding 통과분만(모든 항목 citations.length>0)
+  grounded: boolean;               // 유효 인사이트가 하나라도 있으면 true
+  groundingSummary: string;        // 스냅샷 압축 요약(객체 N·링크 M·군집 근거) — 사람용
+  droppedCount: number;            // 인용 없어(또는 가짜 id) 드롭된 claim 수(투명성)
+  audit: AgentAuditEntry[];
+  generated_at: string;
+  source: string;                  // "agent-insights (mock)" | 실백엔드
+}
+
 // ── Kinetic 감지→객체 귀속 파생 레이어(IMP-72) ──────────────────────────────
 // 감지된 이상을 온톨로지 객체(Model/GpuDevice/Node)에 결정적으로 귀속시켜, "어느 객체가 왜 아픈지 +
 // 지금 무엇을 눌러야 하는지" 를 4-슬롯 카드로 낸다. 순수 파생(api/detection.ts), 새 데이터 모델 발명 없음.

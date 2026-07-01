@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { runAgent } from "../api/client";
-import type { AgentRun, AgentStep, ObjectType, RcaCandidate } from "../api/types";
+import { runAgent, runAgentInsights } from "../api/client";
+import type { AgentInsightRun, AgentRun, AgentStep, ClusterInsight, InsightKind, ObjectType, RcaCandidate } from "../api/types";
 import { getActionSpec } from "../actions/registry";
 import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonCards } from "../components/Skeleton";
@@ -35,6 +35,21 @@ const TOOL_LABEL: Record<string, string> = {
   getIncidents: "인시던트 조회",
 };
 
+// IMP-78 — 인사이트 종류 라벨/글리프(무채색, 네온 금지). RCA(단일 원인)와 구분되는 패턴·군집 축.
+const INSIGHT_LABEL: Record<InsightKind, string> = {
+  "gpu-cluster": "GPU 군집",
+  "hot-node": "Hot-node 패턴",
+  "idle-alloc-gap": "유휴 할당갭",
+  "recurring-pattern": "반복 패턴",
+};
+const INSIGHT_GLYPH: Record<InsightKind, string> = {
+  "gpu-cluster": "▤", "hot-node": "▥", "idle-alloc-gap": "◌", "recurring-pattern": "≋",
+};
+// 인사이트 severity → 톤(임계 아님 — 표시 정보). crit>warn>info.
+function sevTone(s: ClusterInsight["severity"]): BadgeTone {
+  return s === "crit" ? "red" : s === "warn" ? "amber" : "neutral";
+}
+
 // confidence → 톤(높을수록 강조). 0.75+ 위험(빨강), 0.5+ 주의(주황), 그 외 중립.
 function confTone(c: number): BadgeTone {
   return c >= 0.75 ? "red" : c >= 0.5 ? "amber" : "neutral";
@@ -46,13 +61,21 @@ const INTENT_PRESETS = [
   "지금 발생한 인시던트의 영향 경로를 분석해줘",
 ];
 
+// 화면 모드 — 근본원인(RCA, 현행 기본) / 클러스터 인사이트(IMP-78 생성적 레이어).
+type Mode = "rca" | "insights";
+
 export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?: NavParams) => void }) {
   const [urlSt, patchUrl] = useUrlState(agentSchema);
+  const [mode, setMode] = useState<Mode>(() => (urlSt.mode === "insights" ? "insights" : "rca"));
   const [intent, setIntent] = useState<string>(() => urlSt.intent || INTENT_PRESETS[0]);
   const [run, setRun] = useState<AgentRun | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastLoaded, setLastLoaded] = useState<number | null>(null);
+  // IMP-78 — 클러스터 인사이트 상태(RCA 와 독립). insights 탭에서만 로드.
+  const [insightRun, setInsightRun] = useState<AgentInsightRun | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightError, setInsightError] = useState<string | null>(null);
   const view = useObjectView(); // 카드/인용 클릭 → ObjectView(IMP-57) + inline Action(IMP-59)
 
   // 에이전트 실행 — read tool 은 서버(mock)가 자동 실행, 응답에 mutating 없음(two-tier).
@@ -73,13 +96,38 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
     [],
   );
 
-  // 최초 마운트 — URL(intent/entity)로 시드해 한 번 실행(관제 콘솔이 바로 결과를 보여준다).
+  // IMP-78 — 클러스터 인사이트 로드. HARD grounding 은 서버가 강제(인용 없는 claim 은 응답에 없음) → 표시만.
+  //   mutation 을 유발하지 않는 read-only 호출. VITE_MOCK=off 면 transport 만 스왑되어 실 Dynamo 로 나간다.
+  const loadInsights = useCallback(async (signal?: AbortSignal) => {
+    setInsightLoading(true);
+    setInsightError(null);
+    try {
+      const r = await runAgentInsights(signal);
+      setInsightRun(r);
+      setLastLoaded(Date.now());
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setInsightError(humanizeError((e as Error).message));
+    } finally {
+      setInsightLoading(false);
+    }
+  }, []);
+
+  // 최초 마운트 — URL(intent/entity)로 시드해 RCA 를 한 번 실행(관제 콘솔이 바로 결과를 보여준다).
   useEffect(() => {
     const ctrl = new AbortController();
     analyze(urlSt.intent || INTENT_PRESETS[0], urlSt.entity || undefined, ctrl.signal);
+    // insights 모드로 진입(deep-link)한 경우 인사이트도 초기 로드.
+    if (urlSt.mode === "insights") loadInsights(ctrl.signal);
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 모드 전환 — insights 첫 진입 시 lazy 로드(재진입은 캐시 유지, 새로고침 버튼 제공).
+  const switchMode = useCallback((next: Mode) => {
+    setMode(next);
+    patchUrl({ mode: next });
+    if (next === "insights" && !insightRun && !insightLoading) loadInsights();
+  }, [patchUrl, insightRun, insightLoading, loadInsights]);
 
   const submit = useCallback(
     (e: React.FormEvent) => {
@@ -104,6 +152,30 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
         <DataFreshness updatedAt={lastLoaded} intervalMs={0} />
       </div>
 
+      {/* IMP-78 — 모드 탭: 근본원인(결정적 RCA, 현행) / 클러스터 인사이트(생성적, 로컬 모델). */}
+      <div className="agent-modes" role="tablist" aria-label="분석 모드">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "rca"}
+          className={`pill ${mode === "rca" ? "active" : ""}`}
+          onClick={() => switchMode("rca")}
+        >
+          근본원인 (RCA)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "insights"}
+          className={`pill ${mode === "insights" ? "active" : ""}`}
+          onClick={() => switchMode("insights")}
+        >
+          클러스터 인사이트
+        </button>
+      </div>
+
+      {mode === "rca" ? (
+      <>
       {/* intent 입력 — 자연어 의도(프리셋 + 자유 입력). 제출 시 read tool 자동 실행. */}
       <form className="agent-intent" onSubmit={submit} aria-label="분석 의도">
         <label htmlFor="agent-intent-input" className="sr-only">분석 의도</label>
@@ -200,6 +272,17 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
             )}
           </section>
         </div>
+      )}
+      </>
+      ) : (
+        // IMP-78 — 클러스터 인사이트 모드(생성적). 로컬 모델이 온톨로지 근거로 군집·패턴 도출.
+        <InsightsPanel
+          run={insightRun}
+          loading={insightLoading}
+          error={insightError}
+          onReload={() => loadInsights()}
+          onCite={(id) => view.open(id)}
+        />
       )}
 
       {/* 카드/인용 클릭 KPI 드로어 — ObjectView(속성·관계 traverse) + inline Action(confirm). */}
@@ -317,6 +400,104 @@ function RcaCard({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// IMP-78 — 클러스터 인사이트 패널. 로컬 모델(Dynamo) 출력을 HARD grounding(인용 강제) 후 표시.
+//   서버가 인용 없는 claim 을 드롭하므로 표시분은 전부 objectId 를 인용한다(방어적으로 UI 도 재확인).
+//   인사이트는 read-only — 어떤 Action/ActionForm 도 없다(모든 mutation 은 RCA 카드 경로로만).
+function InsightsPanel({
+  run,
+  loading,
+  error,
+  onReload,
+  onCite,
+}: {
+  run: AgentInsightRun | null;
+  loading: boolean;
+  error: string | null;
+  onReload: () => void;
+  onCite: (id: string) => void;
+}) {
+  // 방어적 필터 — HARD grounding: 인용 없는 claim 은 표시하지 않는다(서버가 이미 드롭했더라도 UI 에서 재확인).
+  const shown = (run?.insights ?? []).filter((i) => i.citations.length > 0);
+
+  return (
+    <section className="agent-insights" aria-label="클러스터 인사이트">
+      <div className="cop-panel-h">
+        클러스터 인사이트 · 로컬 모델(온톨로지 접지)
+        {run?.grounded && shown.length > 0 && <span className="cop-count">{shown.length} 인사이트</span>}
+        <div className="spacer" />
+        <button type="button" className="btn-ghost btn-sm" onClick={onReload} disabled={loading}>
+          {loading ? "분석 중…" : "다시 분석"}
+        </button>
+      </div>
+
+      <InfoTip>
+        로컬 추론 모델(Dynamo)이 온톨로지 스냅샷(객체·관계·메트릭 요약)을 근거로 <b>유사 상태 GPU 군집·반복 hot-node 패턴·유휴 할당갭</b> 같은
+        생성적 인사이트를 도출합니다. <b>모든 인사이트는 근거 objectId 를 인용</b>하며, 인용이 없는 서술은 표시하지 않습니다(hallucination 금지, 표시는 <b>추정</b>).
+      </InfoTip>
+
+      {error && <div className="state error" role="alert">클러스터 인사이트 도출에 실패했습니다. ({error})</div>}
+      {!error && loading && !run && <SkeletonCards count={3} />}
+
+      {!error && run && (
+        <>
+          <div className="agent-insights-meta muted">
+            trace <code>{run.traceId}</code> · {run.groundingSummary}
+          </div>
+
+          {run.grounded && shown.length > 0 ? (
+            <div className="agent-cards">
+              {shown.map((ins) => (
+                <InsightCard key={ins.id} insight={ins} onCite={onCite} />
+              ))}
+            </div>
+          ) : (
+            // grounded 없음 → 지어내지 않는다(인용 가능한 군집 근거를 못 찾음).
+            <div className="agent-fallback" role="note">
+              <div className="agent-fallback-h">
+                <Badge tone="neutral" dot>근거 없음</Badge>
+                <span>인용 가능한 군집 근거를 찾지 못해 인사이트를 표시하지 않습니다(지어내지 않음).</span>
+              </div>
+            </div>
+          )}
+
+          {/* 투명성 — 인용 없어 드롭된 claim 수(HARD grounding 이 걸러낸 hallucination). */}
+          {run.droppedCount > 0 && (
+            <div className="agent-insights-dropped muted" role="note">
+              인용이 없어 표시하지 않은 서술 {run.droppedCount}건 — 근거(objectId) 없는 주장은 노출하지 않습니다.
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// 인사이트 카드 — kind 라벨 + 제목 + claim + 근거 objectId 칩(클릭 → ObjectView). read-only(Action 없음).
+function InsightCard({ insight, onCite }: { insight: ClusterInsight; onCite: (id: string) => void }) {
+  return (
+    <div className="agent-card insight-card">
+      <div className="agent-card-top">
+        <span className="agent-card-glyph" aria-hidden="true">{INSIGHT_GLYPH[insight.kind]}</span>
+        <span className="agent-card-title as-text">{insight.title}</span>
+        <span className="agent-card-type">{INSIGHT_LABEL[insight.kind]}</span>
+        <Badge tone={sevTone(insight.severity)}>{insight.severity === "crit" ? "위험" : insight.severity === "warn" ? "주의" : "정보"}</Badge>
+      </div>
+
+      <p className="agent-card-claim">{insight.claim}</p>
+
+      {/* 인용 — 근거 objectId(HARD grounding). 클릭 → ObjectView. 최소 1개 보장(빈 건 표시 안 됨). */}
+      <div className="agent-card-cites">
+        <span className="agent-card-cites-h">근거</span>
+        {insight.citations.map((id) => (
+          <button key={id} type="button" className="agent-cite" onClick={() => onCite(id)} title={`${id} 열기`}>
+            {id}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

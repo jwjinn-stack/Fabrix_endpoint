@@ -16,8 +16,8 @@
 // 명시 바인딩하고, 모듈 로드 시 그 tool 이 레지스트리에 실재함을 assert 한다 → 백엔드 MCP 와 계약이 하나로 묶인다.
 
 import type {
-  AgentAuditEntry, AgentRun, AgentStep, AgentToolName, AgentToolResult,
-  ObjectType, OntologyLink, OntologyObject, RcaCandidate,
+  AgentAuditEntry, AgentInsightRun, AgentRun, AgentStep, AgentToolName, AgentToolResult,
+  ClusterInsight, InsightKind, ObjectType, OntologyLink, OntologyObject, RcaCandidate,
 } from "./types";
 import { buildRootCausePath, defaultEntry, pickEntryCandidates } from "./investigate";
 import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
@@ -206,5 +206,274 @@ export function runAgentLoop(
   return {
     traceId, intent, steps, candidates, grounded: true,
     audit, generated_at: ts, source: "agent (mock)",
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// IMP-78 — 클러스터 인사이트(Dynamo 로컬 모델이 온톨로지 근거로 군집·패턴 도출)
+// ══════════════════════════════════════════════════════════════════════════
+// 위 runAgentLoop(결정적 RCA)는 단일 진입점 원인추적용이라 그대로 둔다. 여기는 그 위의 **생성적** 레이어:
+// 온톨로지 스냅샷을 압축해 로컬 모델에 구조화 프롬프트로 보내고, 모델이 "유사 상태 GPU 군집 · 반복 hot-node
+// 패턴 · 유휴 할당갭 집중 노드" 같은 인사이트를 objectId 인용과 함께 낸다.
+//
+// **핵심 안전장치(HARD grounding)**: 모델 출력(raw)은 신뢰하지 않는다. parseAndGroundInsights 가 각 claim 의
+// 인용을 **온톨로지 실재 id 집합(validIds)** 으로 필터하고, 유효 인용이 0개면 그 insight 를 드롭한다 →
+// 지어낸 claim 이 화면에 못 샌다. 이 파이프라인은 transport 와 무관(mock 이든 실 Dynamo 든 동일 강제).
+//
+// **read-only**: 인사이트는 suggestedAction 을 만들지 않는다. 모든 mutation 은 오직 RCA 카드의 <ActionForm>
+// (IMP-59) confirm + capability 게이팅으로만 — two-tier 불변식 유지.
+
+// GPU/Node props 에서 숫자 필드를 안전 추출(문자/undefined 는 fallback).
+function numProp(o: OntologyObject, key: string, fallback = 0): number {
+  const v = (o.props as Record<string, unknown>)[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+// 압축된 grounding 컨텍스트 — 스냅샷 전체를 프롬프트에 넣지 않고, 인사이트에 필요한 파생 요약 + 실재 id 집합만.
+export interface InsightGroundingContext {
+  validIds: Set<string>;                 // 온톨로지 실재 objectId(인용 화이트리스트)
+  objectCount: number;
+  linkCount: number;
+  // GpuDevice 요약 — util/mem/temp + 상태. 군집·hot-node·유휴갭 근거.
+  gpus: { id: string; title: string; util: number; mem: number; temp: number; throttled: boolean; status: string }[];
+  // Node → 그 위 GPU id 묶음(hostedBy 역방향). hot-node/유휴갭 집중 판정 근거.
+  nodeGpus: { nodeId: string; nodeTitle: string; gpuIds: string[] }[];
+  // 상태 히스토그램(요약 텍스트용).
+  statusHist: Record<string, number>;
+}
+
+// 스냅샷 압축 — 결정적. GpuDevice util/mem/temp/throttle 요약 + 노드별 GPU 묶음 + 실재 id 집합.
+export function buildInsightGroundingContext(objects: OntologyObject[], links: OntologyLink[]): InsightGroundingContext {
+  const validIds = new Set(objects.map((o) => o.id));
+  const gpus = objects
+    .filter((o) => o.type === "GpuDevice")
+    .map((o) => {
+      const throttleStr = String((o.props as Record<string, unknown>).throttle ?? "");
+      return {
+        id: o.id,
+        title: o.title,
+        util: numProp(o, "util_perc"),
+        mem: numProp(o, "mem_perc"),
+        temp: numProp(o, "temp_c"),
+        throttled: throttleStr !== "" && throttleStr !== "제약 없음",
+        status: o.status,
+      };
+    })
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)); // 결정적 정렬
+
+  // Node → GPU (hostedBy: gpu --hostedBy--> node). 노드별로 GPU id 를 결정적으로 묶는다.
+  const nodeById = new Map(objects.filter((o) => o.type === "Node").map((o) => [o.id, o]));
+  const nodeGpuMap = new Map<string, string[]>();
+  for (const l of links) {
+    if (l.linkKind === "hostedBy" && nodeById.has(l.to) && validIds.has(l.from)) {
+      const arr = nodeGpuMap.get(l.to) ?? [];
+      arr.push(l.from);
+      nodeGpuMap.set(l.to, arr);
+    }
+  }
+  const nodeGpus = Array.from(nodeGpuMap.entries())
+    .map(([nodeId, gpuIds]) => ({
+      nodeId,
+      nodeTitle: nodeById.get(nodeId)?.title ?? nodeId,
+      gpuIds: gpuIds.slice().sort(),
+    }))
+    .sort((a, b) => (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0));
+
+  const statusHist: Record<string, number> = {};
+  for (const o of objects) statusHist[o.status] = (statusHist[o.status] ?? 0) + 1;
+
+  return { validIds, objectCount: objects.length, linkCount: links.length, gpus, nodeGpus, statusHist };
+}
+
+// 구조화 프롬프트 — 실 Dynamo 로 나갈 때 이 문자열이 system+user 로 실린다. 규칙(인용 필수·JSON-only·지어내지 말 것)을 명시.
+// mock 은 이 프롬프트를 실제로 "실행"하지 않지만(결정적 completion 을 직접 만든다), audit·실경로 계약을 위해 동일하게 구성.
+export function buildInsightPrompt(ctx: InsightGroundingContext): { system: string; user: string } {
+  const system =
+    "너는 GPU 인프라 관제 분석가다. 아래 온톨로지 컨텍스트(객체/메트릭 요약)만 근거로 '클러스터 인사이트'를 도출한다. " +
+    "규칙: (1) 각 insight 는 반드시 컨텍스트에 실재하는 objectId 를 citations 로 인용한다. " +
+    "(2) 컨텍스트에 없는 사실·id 를 지어내지 않는다(모르면 비운다). (3) 아래 JSON 스키마로만 답한다. " +
+    '스키마: {"insights":[{"kind":"gpu-cluster|hot-node|idle-alloc-gap|recurring-pattern","title":string,"claim":string,"citations":[objectId...],"severity":"info|warn|crit"}]}';
+  // 컨텍스트 압축 — 프롬프트 토큰을 아끼려고 요약만 싣는다(전체 스냅샷 금지).
+  const gpuLines = ctx.gpus
+    .map((g) => `${g.id} util=${(g.util * 100).toFixed(0)}% mem=${(g.mem * 100).toFixed(0)}% temp=${g.temp}C throttle=${g.throttled ? "y" : "n"} status=${g.status}`)
+    .join("\n");
+  const nodeLines = ctx.nodeGpus.map((n) => `${n.nodeId}: [${n.gpuIds.join(", ")}]`).join("\n");
+  const user =
+    `객체 ${ctx.objectCount}개 · 링크 ${ctx.linkCount}개. 상태 분포 ${JSON.stringify(ctx.statusHist)}.\n` +
+    `GPU 요약:\n${gpuLines || "(GPU 없음)"}\n노드별 GPU:\n${nodeLines || "(노드 없음)"}`;
+  return { system, user };
+}
+
+// 결정적 mock "모델 출력"(raw JSON 문자열) — context 의 실제 군집/hot-node/유휴갭을 근거로 만든다.
+// **일부러 인용 없는/가짜 id claim 을 하나 섞는다** → parseAndGroundInsights 가 드롭함을 mock 자체로 증명(hallucination 방어 회귀 가드).
+export function mockModelInsightCompletion(ctx: InsightGroundingContext): string {
+  const insights: ClusterInsight[] = [];
+
+  // (1) 유사 상태 GPU 군집 — 사용률 밴드(low<0.35 / mid 0.35~0.7 / high≥0.7)로 GPU 를 묶어,
+  //     같은 밴드에 2개 이상이면 "유사 상태 군집"으로 본다(Palantir 식 유사-객체 군집). 결정적.
+  const band = (u: number): "high" | "mid" | "low" => (u >= 0.7 ? "high" : u >= 0.35 ? "mid" : "low");
+  const bandLabel: Record<"high" | "mid" | "low", string> = { high: "고사용(≥70%)", mid: "중사용(35~70%)", low: "저사용(<35%)" };
+  const byBand: Record<string, typeof ctx.gpus> = { high: [], mid: [], low: [] };
+  for (const g of ctx.gpus) byBand[band(g.util)].push(g);
+  // 가장 큰(동률이면 high>mid>low) 군집 하나를 대표 인사이트로 — 결정적 선택.
+  const bandOrder: ("high" | "mid" | "low")[] = ["high", "mid", "low"];
+  const topBand = bandOrder.filter((b) => byBand[b].length >= 2).sort((a, b) => byBand[b].length - byBand[a].length)[0];
+  if (topBand) {
+    const members = byBand[topBand];
+    insights.push({
+      id: "ins-gpu-cluster",
+      kind: "gpu-cluster",
+      title: `유사 상태 GPU 군집(${bandLabel[topBand]})`,
+      claim: `사용률이 ${bandLabel[topBand]} 대역에 몰린 GPU ${members.length}개가 유사 상태 군집을 이룹니다(추정). 동일 워크로드 쏠림/여유일 수 있어 배치·리밸런싱 검토 대상입니다.`,
+      citations: members.map((g) => g.id),
+      severity: topBand === "high" ? "warn" : "info",
+    });
+  }
+
+  // (2) 반복 hot-node 패턴 — 노드에 얹힌 GPU 중 열/제약 징후(온도≥80°C 또는 throttle)가 있으면 hot-node.
+  //     온도 임계(80)는 topology status warn 임계와 통일 → 단일 throttle 비트에 의존하지 않아 결정적·안정적.
+  for (const n of ctx.nodeGpus) {
+    const hotOnNode = n.gpuIds.filter((gid) => {
+      const g = ctx.gpus.find((x) => x.id === gid);
+      return g && (g.temp >= 80 || g.throttled);
+    });
+    if (hotOnNode.length >= 1) {
+      insights.push({
+        id: `ins-hot-node-${n.nodeId}`,
+        kind: "hot-node",
+        title: `반복 hot-node 패턴 — ${n.nodeTitle}`,
+        claim: `${n.nodeTitle} 에 얹힌 GPU 중 ${hotOnNode.length}개에서 고온/throttle(열·전력 제약) 징후가 관측됩니다(추정). 노드 단위 냉각·배치 점검 대상.`,
+        citations: [n.nodeId, ...hotOnNode],
+        severity: "warn",
+      });
+    }
+  }
+
+  // (3) 유휴 할당갭이 몰린 노드 — 사용률이 낮은(util<0.15, 유휴) GPU 가 한 노드에 몰려 있으면 회수·재배치 후보.
+  //     (mem_perc 가 없는 스냅샷도 있어 util 기준으로 판정 — 결정적.)
+  for (const n of ctx.nodeGpus) {
+    const idle = n.gpuIds.filter((gid) => {
+      const g = ctx.gpus.find((x) => x.id === gid);
+      return g && g.util < 0.15;
+    });
+    if (idle.length >= 1) {
+      insights.push({
+        id: `ins-idle-gap-${n.nodeId}`,
+        kind: "idle-alloc-gap",
+        title: `유휴 할당갭 집중 — ${n.nodeTitle}`,
+        claim: `${n.nodeTitle} 에서 사용률이 매우 낮은(유휴 할당) GPU ${idle.length}개가 몰려 있습니다(추정). 회수·재배치로 용량 확보 가능.`,
+        citations: [n.nodeId, ...idle],
+        severity: "info",
+      });
+    }
+  }
+
+  // (4) **hallucination 재현** — 인용 없는 claim(모델이 지어낸 케이스). 파이프라인이 반드시 드롭한다.
+  insights.push({
+    id: "ins-uncited-hallucination",
+    kind: "recurring-pattern",
+    title: "네트워크 전반의 잠재적 병목(근거 미상)",
+    claim: "클러스터 전반에서 주기적 지연 급증 패턴이 의심됩니다(추정). — 인용 없음.",
+    citations: [], // ← 인용 없음 → 드롭 대상.
+    severity: "info",
+  });
+
+  // (5) **가짜 id 인용** — 온톨로지에 없는 id 만 인용(모델 hallucination). validIds 필터 후 유효 0 → 드롭.
+  insights.push({
+    id: "ins-fake-id",
+    kind: "recurring-pattern",
+    title: "존재하지 않는 노드의 이상",
+    claim: "gpu:ghost-9 에서 이상이 반복됩니다(추정).",
+    citations: ["gpu:ghost-9", "node:does-not-exist"],
+    severity: "warn",
+  });
+
+  return JSON.stringify({ insights });
+}
+
+// raw 모델 출력 → HARD grounding 강제. JSON 파싱 실패는 throw 하지 않고 빈 결과(모델이 규칙을 어겨도 화면은 안전).
+// 각 insight 의 citations 를 validIds 로 필터 → 유효 인용 0개면 드롭. 남은 것 + 드롭 수 반환.
+export function parseAndGroundInsights(
+  raw: string,
+  validIds: Set<string>,
+): { insights: ClusterInsight[]; droppedCount: number } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { insights: [], droppedCount: 0 }; // 모델이 JSON 이 아닌 답 → 지어낸 것 표시 안 함.
+  }
+  const rawList = (parsed && typeof parsed === "object" && Array.isArray((parsed as { insights?: unknown }).insights))
+    ? ((parsed as { insights: unknown[] }).insights)
+    : [];
+  const KINDS: InsightKind[] = ["gpu-cluster", "hot-node", "idle-alloc-gap", "recurring-pattern"];
+  const kept: ClusterInsight[] = [];
+  let dropped = 0;
+  for (const item of rawList) {
+    if (!item || typeof item !== "object") { dropped++; continue; }
+    const o = item as Record<string, unknown>;
+    const rawCites = Array.isArray(o.citations) ? (o.citations as unknown[]).filter((c): c is string => typeof c === "string") : [];
+    // **HARD grounding** — 온톨로지 실재 id 만 인용으로 인정(중복 제거·결정적 정렬).
+    const cites = Array.from(new Set(rawCites.filter((id) => validIds.has(id)))).sort();
+    if (cites.length === 0) { dropped++; continue; } // 유효 인용 없음 → 드롭(hallucination 금지).
+    const kind = KINDS.includes(o.kind as InsightKind) ? (o.kind as InsightKind) : "recurring-pattern";
+    const sev = o.severity === "crit" || o.severity === "warn" || o.severity === "info" ? o.severity : "info";
+    kept.push({
+      id: typeof o.id === "string" && o.id ? o.id : `ins-${kept.length}`,
+      kind,
+      title: typeof o.title === "string" ? o.title : "인사이트",
+      claim: typeof o.claim === "string" ? o.claim : "",
+      citations: cites,
+      severity: sev,
+    });
+  }
+  return { insights: kept, droppedCount: dropped };
+}
+
+// 스냅샷 압축 요약(사람용) — grounded=false 사유·투명성 표시에 쓴다.
+function summarizeGrounding(ctx: InsightGroundingContext): string {
+  const hot = ctx.gpus.filter((g) => g.util >= 0.85).length;
+  const throttled = ctx.gpus.filter((g) => g.throttled).length;
+  return `객체 ${ctx.objectCount}개 · 링크 ${ctx.linkCount}개 · GPU ${ctx.gpus.length}개(고사용 ${hot}, throttle ${throttled}) · 노드 ${ctx.nodeGpus.length}개를 근거로 분석했습니다.`;
+}
+
+// ── 클러스터 인사이트 조립(mock 순수 진입) ───────────────────────────────────
+// objects/links(스냅샷) → 압축 컨텍스트 → (모델 completion) → HARD grounding → AgentInsightRun.
+//   rawOverride: 실 Dynamo 가 낸 completion 을 주입하는 seam(테스트/실경로). 미지정이면 결정적 mock completion 사용.
+//   nowIso: audit 타임스탬프(결정성 위해 주입 가능).
+export function buildAgentInsights(
+  objects: OntologyObject[],
+  links: OntologyLink[],
+  opts: { traceId: string; nowIso?: string; rawOverride?: string },
+): AgentInsightRun {
+  const ts = opts.nowIso ?? new Date().toISOString();
+  const traceId = opts.traceId;
+  const audit: AgentAuditEntry[] = [];
+  const rec = (kind: AgentAuditEntry["kind"], detail: string) => audit.push({ traceId, kind, detail, ts });
+
+  const ctx = buildInsightGroundingContext(objects, links);
+  // 구조화 프롬프트 구성 — 실경로(VITE_MOCK=off)에서 이 system+user 가 Dynamo /playground/chat 으로 실린다.
+  // mock 은 이를 실제로 "실행"하진 않지만(결정적 completion 사용), 실경로 계약·audit 을 위해 동일하게 구성한다.
+  const prompt = buildInsightPrompt(ctx);
+  // audit — 마스킹된 메타만(원문 컨텍스트/시크릿 로깅 금지): 프롬프트 길이·규칙 존재 여부 + 컨텍스트 규모만.
+  rec("prompt", `insight prompt(system=${prompt.system.length}b, user=${prompt.user.length}b) · ctx(objs=${ctx.objectCount}, links=${ctx.linkCount}, gpus=${ctx.gpus.length})`);
+  rec("reasoning", "온톨로지 스냅샷을 압축해 로컬 모델에 구조화 프롬프트로 인사이트를 요청한다(인용 필수).");
+
+  // raw "모델 출력" — 실경로면 주입값(rawOverride), mock 이면 결정적 completion.
+  const raw = opts.rawOverride ?? mockModelInsightCompletion(ctx);
+  const { insights, droppedCount } = parseAndGroundInsights(raw, ctx.validIds);
+
+  rec("reasoning", `모델 출력에서 인용 강제(HARD grounding): 표시 ${insights.length}건, 인용 없어 드롭 ${droppedCount}건.`);
+
+  return {
+    traceId,
+    mode: "insights",
+    insights,
+    grounded: insights.length > 0,
+    groundingSummary: summarizeGrounding(ctx),
+    droppedCount,
+    audit,
+    generated_at: ts,
+    source: "agent-insights (mock)",
   };
 }

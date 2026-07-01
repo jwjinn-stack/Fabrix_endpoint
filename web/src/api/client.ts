@@ -54,6 +54,7 @@ import type {
   ObjectMetricTree,
   ActionResult,
   AgentRun,
+  AgentInsightRun,
   OrgTree,
   TopologyGraph,
   ProxyStats,
@@ -626,6 +627,30 @@ export async function runAgent(
     throw new Error(`API ${res.status}${detail}`);
   }
   return (await res.json()) as AgentRun;
+}
+
+// AI Agent 클러스터 인사이트(IMP-78) — Dynamo 로컬 모델이 온톨로지 근거로 군집·패턴을 도출. POST /agent/insights.
+// 결정적 RCA(runAgent)와 별개의 생성적 레이어다. HARD grounding(모든 claim 은 objectId 인용 필수, 인용 없으면
+// 표시 안 함)은 서버(mock/실백엔드)가 강제한 뒤 AgentInsightRun 스키마로 고정 → UI 는 표시만 한다(hallucination 금지).
+// **read-only** — 이 호출은 어떤 mutation 도 유발하지 않는다(mutation 은 오직 submitAction+<ActionForm>).
+// mock 은 결정적 응답, VITE_MOCK=off 면 이 함수는 그대로 실백엔드(→Dynamo /playground/chat 계열)로 나가고
+// (transport 만 스왑), 응답 스키마는 AgentInsightRun 로 고정. 모델 호출은 느릴 수 있어 시도별 타임아웃을 둔다.
+export async function runAgentInsights(signal?: AbortSignal): Promise<AgentInsightRun> {
+  // 외부 취소 신호 + 요청 타임아웃 합성(둘 중 먼저 발화하면 abort). runAgent 와 동일 견고성 패턴.
+  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const res = await fetch(apiPath(`/agent/insights`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "insights" }),
+    signal: composed,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as AgentInsightRun;
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {
