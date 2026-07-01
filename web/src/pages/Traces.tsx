@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchTrace, fetchTraces, recordScore } from "../api/client";
+import { fetchTopology, fetchTrace, fetchTraces, recordScore } from "../api/client";
+import { correlateInfra, type InfraCorrelation } from "../api/correlation";
+import type { TopologyGraph } from "../api/types";
 import VirtualRows from "../components/VirtualRows";
 import type { Score, SpanKind, TimeRange, TraceDetail, TraceListReport, TraceSpan } from "../api/types";
 import Badge, { type BadgeTone } from "../components/Badge";
@@ -401,6 +403,21 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
   // IMP-34: 호버 readout 대상 span(타임라인 막대/행). openSpan(선택) 과 별개로 약한 강조.
   const [hoverSpan, setHoverSpan] = useState<string | null>(null);
 
+  // IMP-50: trace ↔ infra 상관 — endpoint 를 join key 로 토폴로지 saturation 을 lazy 조회(mock-first).
+  // 새 인프라 데이터 모델을 만들지 않고 기존 fetchTopology 를 재사용해 "이 요청 시각 GPU/호스트 pressure" 표면화.
+  const [topoGraph, setTopoGraph] = useState<TopologyGraph | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    Promise.resolve(fetchTopology(ctrl.signal))
+      .then((g) => setTopoGraph(g ?? null))
+      .catch(() => setTopoGraph(null));
+    return () => ctrl.abort();
+  }, []);
+  const infra: InfraCorrelation | null = useMemo(
+    () => correlateInfra(s.endpoint, topoGraph),
+    [s.endpoint, topoGraph],
+  );
+
   // 트리 모드용 span 인덱스 + 깊이. 부모 정보가 거의 평면이면 kind 별 "단계 그룹"으로 흉내.
   const byId = useMemo(() => new Map(detail.spans.map((sp) => [sp.span_id, sp])), [detail.spans]);
   const hasHierarchy = useMemo(() => children.some((sp) => sp.parent_id && byId.get(sp.parent_id)?.parent_id), [children, byId]);
@@ -506,6 +523,32 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
           </button>
         )}
       </div>
+
+      {/* IMP-50: inference ↔ infra 상관 한 줄(mock). endpoint join → 토폴로지 host/GPU saturation.
+          "LLM이 느린 게 앱인가 GPU/호스트인가?"를 트레이스 상세에서 바로. */}
+      {infra && (
+        <div
+          className={`trace-infra-corr trace-infra-${infra.pressure ? "pressure" : "ok"}`}
+          role="note"
+          style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)", flexWrap: "wrap", padding: "var(--sp-2) var(--sp-3)", margin: "var(--sp-2) 0", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)", fontSize: "var(--fs-sm)" }}
+        >
+          <span className={`tag tag-${infra.pressure ? "amber" : "green"}`}>
+            인프라 {infra.pressure ? "압박" : "정상"}
+          </span>
+          <span className="trace-infra-note">{infra.note}</span>
+          <span className="spacer" style={{ flex: 1 }} />
+          {onNavigate && (
+            <button
+              type="button"
+              className="btn-ghost btn-sm"
+              onClick={() => onNavigate("nodes", { host: infra.host })}
+              title={`호스트 ${infra.host} 의 골든시그널(USE) 메트릭으로 이동`}
+            >
+              인프라 상세로 →
+            </button>
+          )}
+        </div>
+      )}
 
       {/* IMP-18: 평가 점수 패널 (Langfuse scores 부착) + 인라인 "이거 평가" */}
       <div className="trace-scores" style={{ margin: "var(--sp-2) 0" }}>

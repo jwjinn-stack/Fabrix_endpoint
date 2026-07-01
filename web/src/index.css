@@ -436,6 +436,33 @@ body {
 .refresh-btn:active {
   transform: translateY(0.5px);
 }
+/* 폴링 일시정지/재개 토글(IMP-51) — refresh-btn 과 동일 크기의 보조 버튼(secondary 톤) */
+.pause-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease), border-color var(--ease);
+}
+.pause-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+/* 정지 중 = 자동 갱신이 멈춰 있음을 명확히(색+아이콘+텍스트 병기, 색-only 아님) */
+.pause-toggle.is-paused {
+  background: var(--amber-weak, var(--surface-2));
+  border-color: var(--amber);
+  color: var(--amber);
+}
+/* 에러 배너의 '마지막 데이터 표시 중' 스테일 안내(IMP-51) — 색 비의존 텍스트 */
+.state-stale { font-weight: 600; }
 /* 새로고침 글리프 — 클릭 시 1회전 (reduced-motion 시 비활성) */
 .refresh-btn .spin,
 .act .spin {
@@ -731,6 +758,109 @@ body {
 .chart-tooltip-val {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+/* ── 토폴로지 렌더러 (IMP-47) — hand-rolled 계층 SVG. 색은 토큰만(신규 색 금지). ── */
+.topo-svg {
+  display: block;
+  background: var(--bg);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.topo-legend {
+  display: inline-flex;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.topo-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.topo-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.topo-node-label {
+  pointer-events: none;
+}
+.topo-edge {
+  transition: opacity 0.15s ease, stroke-width 0.15s ease;
+}
+/* IMP-48: select(isolate) 된 subgraph 엣지에 흐름 애니(stroke-dashoffset). */
+.topo-edge.flow {
+  stroke-dasharray: 6 5;
+  animation: topo-flow 0.9s linear infinite;
+}
+@keyframes topo-flow {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+/* IMP-48: 노드 내부 임베드 요소 — 색-only 금지 위해 status 글리프 병기. */
+.topo-node-glyph {
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+  fill: var(--text-dim);
+}
+.topo-node-glyph.ok { fill: var(--green); }
+.topo-node-glyph.warn { fill: var(--amber); }
+.topo-node-glyph.crit { fill: var(--red); }
+.topo-node-metric {
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text-dim);
+  pointer-events: none;
+}
+.topo-node-arc { pointer-events: none; }
+.topo-node.dim { transition: opacity 0.15s ease; }
+/* IMP-45: 텍스트 요약(complex-image 동등 대안) + 표-보기 래퍼. */
+.topo-summary {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+.topo-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+.topo-summary-risk { color: var(--red) !important; }
+.topo-tables {
+  display: grid;
+  gap: var(--sp-4);
+}
+.topo-dd-hint {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+/* IMP-50: LLM-aware 포지셔닝 배너 + 노드 드릴다운 버튼 + trace↔infra 상관 요약. */
+.topo-positioning {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+.topo-positioning b { color: var(--text); }
+.topo-drill-btn { margin-top: var(--sp-3); width: 100%; }
+.trace-infra-note { color: var(--text-dim); }
+/* reduce-motion: 엣지 트랜지션·흐름 애니 정적화 */
+@media (prefers-reduced-motion: reduce) {
+  .topo-edge {
+    transition: none;
+  }
+  .topo-edge.flow {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  .topo-node.dim {
+    transition: none;
+  }
 }
 
 /* ── 알람 ── */
@@ -1362,6 +1492,64 @@ dialog.modal.modal-wide { width: min(860px, 94vw); }
 .gpu-dd-cur { width: 72px; text-align: right; font-weight: 700; font-size: var(--fs-sm); }
 .gpu-mig-note { background: var(--primary-weak); border: 1px solid var(--amber-border); border-radius: var(--radius); padding: var(--sp-3); font-size: var(--fs-sm); color: var(--text); margin-top: var(--sp-3); }
 .gpu-mig-note b { color: var(--primary-strong); }
+
+/* IMP-46 노드 메트릭 화면 (USE / 골든시그널) */
+.node-mock-badge {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  background: var(--amber-weak); border: 1px solid var(--amber-border);
+  border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+}
+.node-mock-badge .tag { flex: none; }
+.node-mock-text { font-size: var(--fs-sm); color: var(--text); line-height: 1.5; }
+.node-mock-text code { font-size: var(--fs-xs); }
+.node-fleet-summary { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-3); }
+.node-risk { color: var(--red); }
+.node-fleet { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--sp-4); }
+.node-card {
+  text-align: left; cursor: pointer; width: 100%;
+  border-left: 3px solid var(--border); transition: border-color .12s, box-shadow .12s;
+}
+.node-card:hover { box-shadow: var(--shadow-2, 0 2px 8px rgba(0,0,0,.08)); }
+.node-card-warn { border-left-color: var(--amber); }
+.node-card-crit { border-left-color: var(--red); }
+.node-card-hint { font-size: var(--fs-sm); color: var(--text-faint); }
+.node-card-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); margin-top: var(--sp-2); }
+.node-dd-group { margin: var(--sp-4) 0; }
+.node-dd-gtitle { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-2); font-weight: 700; }
+.node-dd-row { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.node-dd-row .sparkline { flex: 1; max-width: none; height: 30px; }
+.node-dd-label { width: 76px; font-size: var(--fs-sm); color: var(--text-faint); }
+.node-dd-cur { width: 130px; text-align: right; font-weight: 700; font-size: var(--fs-sm); }
+.node-dd-flag { font-weight: 600; }
+.node-dd-hint { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-3); line-height: 1.5; }
+@media (max-width: 760px) { .node-card-metrics { grid-template-columns: repeat(2, 1fr); } }
+.node-card .node-card-metrics { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 760px) { .node-card .node-card-metrics { grid-template-columns: repeat(2, 1fr); } }
+
+/* IMP-49 네트워크 화면 — node-* 패턴 재사용 + KPI/툴바/pivot 최소 스타일 */
+.net-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.net-toolbar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.net-toolbar .node-fleet-summary { margin: 0; }
+.net-link-filter { display: inline-flex; }
+.net-pivot { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.net-pivot .node-dd-hint { margin-top: var(--sp-2); }
+
+/* IMP-54 — 임계밴드 선형 게이지(카드 내 포화 즉시 인지). Grafana bar gauge 관례. */
+.node-gauge-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+.node-gauge-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
+.node-gauge-val { font-size: var(--fs-sm); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
+.gauge { display: block; width: 100%; border-radius: var(--radius-sm); overflow: hidden; }
+/* 게이지 채움은 살짝의 전이로 값 변동을 부드럽게(라이트 톤·네온 금지). */
+.gauge-fill { transition: width var(--ease); }
+
+/* IMP-54 — 스파크라인 임계 라인(warn/crit 수평 파선). node-dd-row 안에서 라인만 격하게. */
+.spark-threshold { pointer-events: none; }
 
 /* 태그/배지 (동작·유형) */
 .tag {

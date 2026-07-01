@@ -1000,3 +1000,76 @@ export interface SessionDetail {
   turns: SessionTurn[];
   scores?: Score[]; // 세션 단위 평가 점수
 }
+
+// ───────────── 토폴로지·노드·네트워크 (IMP-55 — 데이터 계층 팩토리) ─────────────
+// 임계 상태는 단일 출처(mockFactory.statusFromThresholds) — GPU tempColor/gpuStatus 와 통일.
+export type NodeStatus = "ok" | "warn" | "crit";
+
+// 토폴로지 그래프 노드. server=GPU 노드 호스트, service=엔드포인트/서빙, gpu=개별 GPU 디바이스.
+export interface TopologyNode {
+  id: string;
+  kind: "server" | "service" | "gpu";
+  status: NodeStatus;
+  label: string;
+  metrics?: Record<string, number>; // 노드 요약 지표(util·qps 등) — 화면 툴팁/셀 강조용
+}
+// 방향 엣지. from→to 흐름. qps·error_rate 는 서비스 간 호출 링크에만.
+export interface TopologyEdge {
+  from: string;
+  to: string;
+  qps?: number;
+  error_rate?: number; // 0..1
+}
+export interface TopologyGraph {
+  generated_at: string;
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  source: string;
+}
+
+// 노드 골든시그널(USE 세트) 시계열 — host 별. 큐레이션(전량 아님):
+// utilization = cpu/mem/disk util, saturation = load/swap/disk-io, errors/traffic = net err/rx/tx.
+export interface NodePoint {
+  ts: string;
+  cpu_util: number; // 0..1
+  mem_util: number; // 0..1
+  disk_util: number; // 0..1
+  load1: number; // 1분 load average (saturation)
+  swap_used_perc: number; // 0..1 (saturation)
+  disk_io_perc: number; // 0..1 (saturation)
+  net_rx_mbps: number; // traffic
+  net_tx_mbps: number; // traffic
+  net_err_per_s: number; // errors
+}
+export interface NodeMetrics {
+  generated_at: string;
+  host: string;
+  status: NodeStatus; // 최신 지표 기준 파생(단일 출처)
+  points: NodePoint[];
+  source: string;
+}
+
+// 네트워크 링크 시계열 — 노드/스위치 간 링크. 대역폭·지연·손실·에러.
+export interface NetworkPoint {
+  ts: string;
+  rx_mbps: number;
+  tx_mbps: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  latency_p99_ms: number;
+  loss_perc: number; // 0..1 패킷 손실률
+  errs_per_s: number;
+}
+export interface NetworkLink {
+  id: string;
+  from: string;
+  to: string;
+  status: NodeStatus; // 최신 지연/손실 기준 파생(단일 출처)
+  capacity_mbps: number;
+  points: NetworkPoint[];
+}
+export interface NetworkReport {
+  generated_at: string;
+  links: NetworkLink[];
+  source: string;
+}

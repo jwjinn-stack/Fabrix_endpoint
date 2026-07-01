@@ -45,6 +45,7 @@ let canImpl = (_cap: string) => true;
 vi.mock("../api/client", () => ({
   fetchTraces: (...a: unknown[]) => fetchTraces(...a),
   fetchTrace: (...a: unknown[]) => fetchTrace(...a),
+  fetchTopology: vi.fn().mockResolvedValue({ generated_at: "2026-06-30T00:00:00Z", source: "test", nodes: [], edges: [] }),
   recordScore: vi.fn(),
 }));
 

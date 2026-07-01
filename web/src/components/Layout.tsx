@@ -16,6 +16,9 @@ export type Page =
   | "eval"
   | "endpoints"
   | "gpu"
+  | "nodes"
+  | "network"
+  | "topology"
   | "keys"
   | "traffic"
   | "settings"
@@ -27,6 +30,8 @@ type NavItem = { glyph: string; label: string; page?: Page; soon?: boolean; chil
 
 // 증권사 인퍼런스 관제 콘솔 — 의미가 또렷한 단색 글리프(이모지 배제로 톤 통일).
 // 모델/설정은 하위 메뉴(서브)를 가진다(Nutanix Enterprise AI 패턴).
+// 인프라·관측 성격 화면(GPU/노드/네트워크/토폴로지/트래픽)은 하나의 확장 그룹으로 묶어
+// flat nav 폭주를 막는다(IMP-53). 부모는 page 가 없어 클릭 시 확장/접힘만 한다(자식만 이동).
 const NAV: NavItem[] = [
   { glyph: "▦", label: "관제", page: "dashboard" },
   { glyph: "▤", label: "사용량", page: "usage" },
@@ -35,9 +40,18 @@ const NAV: NavItem[] = [
   { glyph: "❯", label: "플레이그라운드", page: "playground" },
   { glyph: "◎", label: "평가", page: "eval" },
   { glyph: "⬡", label: "엔드포인트", page: "endpoints" },
-  { glyph: "▥", label: "GPU/MIG", page: "gpu" },
+  {
+    glyph: "▥",
+    label: "인프라 · 관측",
+    children: [
+      { label: "GPU / MIG", page: "gpu" },
+      { label: "노드", page: "nodes" },
+      { label: "네트워크", page: "network" },
+      { label: "토폴로지", page: "topology" },
+      { label: "트래픽", page: "traffic" },
+    ],
+  },
   { glyph: "▢", label: "키·앱", page: "keys" },
-  { glyph: "↯", label: "트래픽", page: "traffic" },
   { glyph: "≣", label: "트레이스", page: "traces" },
   { glyph: "❑", label: "세션", page: "sessions" },
   { glyph: "⇄", label: "연동 상태", page: "diagnostics" },
@@ -61,13 +75,19 @@ export default function Layout({
     return !c || can(c);
   };
   const visibleNav = useMemo<NavItem[]>(
-    () => NAV.filter((n) => allow(n.page)).map((n) => ({ ...n, children: n.children?.filter((c) => allow(c.page)) })),
+    () =>
+      NAV.filter((n) => allow(n.page))
+        .map((n) => ({ ...n, children: n.children?.filter((c) => allow(c.page)) }))
+        // page 없는 그룹(예: 인프라·관측)은 보이는 자식이 하나도 없으면 그룹째 숨긴다.
+        .filter((n) => n.page || (n.children && n.children.length > 0)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [can],
   );
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  // page 없는 그룹(예: 인프라·관측)의 수동 확장/접힘 상태. label 키로 토글한다.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [dark, setDark] = useState(() => {
     try { return localStorage.getItem("fabrix.theme") === "dark"; } catch { return false; }
   });
@@ -153,17 +173,23 @@ export default function Layout({
         {visibleNav.map((n) => {
           const active = !!n.page && n.page === page;
           const childActive = n.children?.some((c) => c.page === page) ?? false;
-          const expanded = active || childActive;
+          // page 있는 부모: 활성/자식활성 시 확장. page 없는 그룹: 자식활성 또는 수동 토글 시 확장.
+          const groupless = !n.page && !!n.children;
+          const expanded = active || childActive || (groupless && !!openGroups[n.label]);
           return (
             <div key={n.label} className="nav-group">
               <button
                 type="button"
                 className={`nav-item ${active ? "active" : ""} ${n.soon ? "disabled" : ""}`}
                 aria-current={active ? "page" : undefined}
+                aria-expanded={n.children ? expanded : undefined}
                 aria-disabled={n.soon ? true : undefined}
                 disabled={n.soon}
                 title={n.soon ? `${n.label} — 준비 중` : n.label}
-                onClick={() => n.page && onNavigate(n.page)}
+                onClick={() => {
+                  if (n.page) onNavigate(n.page);
+                  else if (groupless) setOpenGroups((g) => ({ ...g, [n.label]: !expanded }));
+                }}
               >
                 <span className="glyph" aria-hidden="true">
                   {n.glyph}

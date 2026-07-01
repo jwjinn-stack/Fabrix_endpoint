@@ -15,6 +15,7 @@ const fetchTraces = vi.fn();
 vi.mock("../api/client", () => ({
   fetchTraces: (...a: unknown[]) => fetchTraces(...a),
   fetchTrace: vi.fn(),
+  fetchTopology: vi.fn().mockResolvedValue({ generated_at: "2026-06-30T00:00:00Z", source: "test", nodes: [], edges: [] }),
   recordScore: vi.fn(),
 }));
 

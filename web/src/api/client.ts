@@ -41,7 +41,10 @@ import type {
   AlertWindow,
   ModelCatalog,
   ModelMetricsReport,
+  NetworkReport,
+  NodeMetrics,
   OrgTree,
+  TopologyGraph,
   ProxyStats,
   ThirdPartyCred,
   TimeRange,
@@ -495,6 +498,20 @@ export function fetchGPU(signal?: AbortSignal): Promise<GPUReport> {
 
 export function fetchGPUTimeseries(uuid: string, signal?: AbortSignal): Promise<GPUTimeseries> {
   return getJSON<GPUTimeseries>(`/gpu/timeseries?uuid=${encodeURIComponent(uuid)}`, signal);
+}
+
+// 토폴로지·노드·네트워크(IMP-55 데이터 계층) — 후속 화면(IMP-45/46/49)이 소비.
+export function fetchTopology(signal?: AbortSignal): Promise<TopologyGraph> {
+  return getJSON<TopologyGraph>(`/topology`, signal);
+}
+
+export function fetchNodeMetrics(host: string, range: TimeRange = "1h", signal?: AbortSignal): Promise<NodeMetrics> {
+  const q = new URLSearchParams({ host, range });
+  return getJSON<NodeMetrics>(`/nodes/metrics?${q.toString()}`, signal);
+}
+
+export function fetchNetwork(range: TimeRange = "1h", signal?: AbortSignal): Promise<NetworkReport> {
+  return getJSON<NetworkReport>(`/network?range=${range}`, signal);
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {
