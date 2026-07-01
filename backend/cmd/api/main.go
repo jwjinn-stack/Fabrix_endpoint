@@ -134,9 +134,16 @@ func main() {
 		slog.Info("Langfuse 미설정 — 트레이스/세션/원문은 synthetic 으로 동작")
 	}
 
+	apiSrv := server.New(cfg, caps, dashboard, cat, ds, gc, as, usrc, kc, hc, lf)
+	// 지표 기반 알림 룰 평가 루프(IMP-36) — 주기적으로 룰을 평가하고 임계 교차 시 IMP-15
+	// 디스패처로 발송한다(observe 는 발송 비활성, 새 아웃바운드 경로 없음). 컨텍스트 종료 시 정지.
+	evalCtx, evalCancel := context.WithCancel(context.Background())
+	defer evalCancel()
+	apiSrv.StartRuleEvaluator(evalCtx, time.Minute)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(cfg, caps, dashboard, cat, ds, gc, as, usrc, kc, hc, lf).Handler(),
+		Handler:           apiSrv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
