@@ -83,7 +83,8 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 func mcpTools() []map[string]any {
 	rangeProp := map[string]any{"type": "string", "enum": []string{"1h", "6h", "24h", "7d"}, "description": "시간 범위(기본 1h)"}
 	dimProp := map[string]any{"type": "string", "enum": []string{"model", "endpoint", "namespace"}, "description": "groupby 차원(기본 model)"}
-	return []map[string]any{
+	// (a) aggregate 대시보드 tool — 이 수기 라우트 고유(s.dashboard 집계).
+	aggregate := []map[string]any{
 		{
 			"name": "list_dimensions", "description": "groupby 가능한 차원과 메트릭 카탈로그(의미·단위·임계치)를 반환한다. 다른 tool 호출 전에 먼저 본다.",
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
@@ -101,6 +102,9 @@ func mcpTools() []map[string]any {
 			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"range": rangeProp}},
 		},
 	}
+	// (b) IMP-73 — 온톨로지 read tool 은 프론트 emit 아티팩트에서 파생(수기 리스트 은퇴). SDK path(v2)와
+	//     동일 계약을 이 수기 tools/list 에도 노출해 Diagnostics McpPanel 이 자동 동기되게 한다.
+	return append(aggregate, ontologyToolListEntries()...)
 }
 
 type toolCallParams struct {
@@ -205,6 +209,26 @@ func mcpResources() []map[string]any {
 	return []map[string]any{
 		{"uri": "fabrix://metric-catalog", "name": "메트릭 카탈로그", "description": "메트릭별 의미·단위·방향·임계치(AI grounding)", "mimeType": "application/json"},
 		{"uri": "fabrix://dimensions", "name": "groupby 차원", "description": "분해 가능한 차원과 Prometheus 라벨 매핑", "mimeType": "application/json"},
+		// IMP-73 — 온톨로지 스키마(static, session-load). Object/Link/Action 타입 카탈로그를 client 가
+		// 세션 시작 시 KNOW 하도록 Resource 로 노출한다. per-object read 는 Tool(get_object)로 분리(정정 반영).
+		{"uri": "fabrix://ontology/schema", "name": "온톨로지 스키마", "description": "Object/Link/Action 타입 카탈로그(§5.1·5.2·5.3)", "mimeType": "application/json"},
+	}
+}
+
+// ontologySchemaCatalog 는 온톨로지 타입 카탈로그(정적) — Resource 페이로드.
+// Object/Link 타입 이름 + Action 동사 이름(read-only 노출 — mutation 실행은 여기서 안 함).
+// 프론트 types.ts §5.1·5.2·5.3 와 정합(타입 이름의 얇은 미러 — tool 스키마와 달리 소량 static 메타).
+func ontologySchemaCatalog() map[string]any {
+	return map[string]any{
+		"objectTypes": []string{"Model", "Endpoint", "Service", "GpuDevice", "Node", "Trace", "Incident"},
+		"linkKinds":   []string{"serves", "runsOn", "hostedBy", "routedTo", "executedOn", "consumes", "affects"},
+		// Action 동사(제어) — 이름·대상만 노출(계약 카탈로그). 실행은 ActionForm+capability 게이팅 경로에만.
+		"actionTypes": []map[string]any{
+			{"name": "restartModel", "target": "Model"}, {"name": "scaleReplicas", "target": "Model"},
+			{"name": "cordonNode", "target": "Node"}, {"name": "drainGpu", "target": "GpuDevice"},
+			{"name": "ack", "target": "Incident"}, {"name": "resolve", "target": "Incident"}, {"name": "snooze", "target": "Incident"},
+		},
+		"note": "read-only. Action 실행은 MCP tool 로 노출되지 않으며 ActionForm+capability 게이팅으로만 수행됩니다.",
 	}
 }
 
@@ -219,6 +243,8 @@ func mcpReadResource(raw json.RawMessage) (any, *rpcErr) {
 		payload = domain.MetricCatalog
 	case "fabrix://dimensions":
 		payload = domain.MetricDimensions
+	case "fabrix://ontology/schema":
+		payload = ontologySchemaCatalog()
 	default:
 		return nil, &rpcErr{Code: -32602, Message: "unknown resource: " + p.URI}
 	}

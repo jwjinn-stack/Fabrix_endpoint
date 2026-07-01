@@ -5,21 +5,44 @@
 // 새 데이터 모델을 발명하지 않는다 — 기존 온톨로지(IMP-56) + buildRootCausePath(IMP-58) 만 grounding 으로 쓴다.
 //
 // - 의존성 0개(프로젝트 ethos). 순수 함수만 두어 tool 실행·ReAct 순서·grounding-empty fallback 을 단위 테스트로 가드.
-// - **핵심 안전장치(two-tier 게이팅)**: 이 파일의 tool 은 조회 3종(queryObjects/traverseLinks/getIncidents)뿐.
-//   mutating tool 은 존재하지 않는다 → 모델이 confirm 없이 mutation 을 부를 구조적 경로가 없다.
-//   mutation 은 오직 <ActionForm>(IMP-59) + evaluateSubmission(capability+status) 게이팅으로만 실행된다.
+// - **핵심 안전장치(two-tier 게이팅)**: 이 파일의 tool 은 조회 전용이다. mutating tool 은 존재하지
+//   않는다 → 모델이 confirm 없이 mutation 을 부를 구조적 경로가 없다. mutation 은 오직
+//   <ActionForm>(IMP-59) + evaluateSubmission(capability+status) 게이팅으로만 실행된다.
 // - VITE_MOCK=off 는 transport 만 스왑(client.runAgent 가 그대로 실백엔드로). tool 스키마는 fork 하지 않는다.
+//
+// IMP-73 — tool "시그니처"의 단일 출처는 이 파일이 아니라 ONTOLOGY_TOOL_REGISTRY(actions/ontologyTools.ts)다.
+// 예전엔 여기 read tool 을 "실제 MCP tool 과 동일한 시그니처"라 주석만 했으나 강제되지 않아 drift 위험이었다.
+// 이제 아래 AGENT_TOOL_CONTRACT 가 agent 내부명(camelCase)을 레지스트리의 MCP-canonical tool(snake_case)에
+// 명시 바인딩하고, 모듈 로드 시 그 tool 이 레지스트리에 실재함을 assert 한다 → 백엔드 MCP 와 계약이 하나로 묶인다.
 
 import type {
   AgentAuditEntry, AgentRun, AgentStep, AgentToolName, AgentToolResult,
   ObjectType, OntologyLink, OntologyObject, RcaCandidate,
 } from "./types";
 import { buildRootCausePath, defaultEntry, pickEntryCandidates } from "./investigate";
+import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
+
+// AGENT_TOOL_CONTRACT — ReAct 루프가 자동 실행하는 read tool(agent 내부명)을 MCP-canonical tool 명에 바인딩.
+// getIncidents 는 query_objects{type:Incident} 의 편의 별칭이라 같은 계약(query_objects)에 매핑된다.
+// 이 상수 하나로 "agent tool == 레지스트리 tool" 이 코드로 강제된다(주석 아님).
+export const AGENT_TOOL_CONTRACT: Record<AgentToolName, string> = {
+  queryObjects: "query_objects",
+  traverseLinks: "traverse_links",
+  getIncidents: "query_objects", // Incident 타입 필터의 편의 별칭
+};
+
+// 모듈 로드 시 1회 — agent 가 참조하는 MCP tool 이 레지스트리에 실재하는지 강제(계약 drift 즉시 감지).
+for (const [agentName, mcpName] of Object.entries(AGENT_TOOL_CONTRACT)) {
+  if (!ONTOLOGY_TOOL_REGISTRY[mcpName]) {
+    throw new Error(`agent tool ${agentName} 이 참조하는 MCP tool ${mcpName} 이 ONTOLOGY_TOOL_REGISTRY 에 없습니다(계약 불일치)`);
+  }
+}
 
 // ── read-only tool 구현 ─────────────────────────────────────────────────────
-// 실제 MCP tool 과 동일한 시그니처(objectId 소스 반환). 전부 온톨로지 스냅샷 위에서 조회만 한다.
+// 입력/출력 계약(시그니처)은 ONTOLOGY_TOOL_REGISTRY 단일 출처를 따른다(위 AGENT_TOOL_CONTRACT 로 바인딩).
+// 아래 함수는 그 계약의 mock 실행부일 뿐 — 전부 온톨로지 스냅샷 위에서 조회만 한다.
 //
-// tool: queryObjects(type?, filter?) — 명사(Object)를 type/부분일치로 추린다.
+// tool: queryObjects(type?, filter?) = MCP query_objects — 명사(Object)를 type/부분일치로 추린다.
 export function toolQueryObjects(
   objects: OntologyObject[],
   args: { type?: string; filter?: string },

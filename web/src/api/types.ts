@@ -1218,6 +1218,23 @@ export interface OntologyLinkList {
   source: string;
 }
 
+// get_object_metrics tool(IMP-73)의 데이터 — 객체의 수치 메트릭을 이름별 시계열 + 현재값으로.
+// 결정적(mock): 객체 id·range 로 seed 된다. points 는 range 구간의 sparkline(끝이 현재값).
+export interface ObjectMetricSeries {
+  key: string;        // 메트릭 키(예: util_perc, ttft_ms)
+  label: string;      // 사람용 라벨
+  unit: string;       // 단위(%, ms, GB …)
+  current: number;    // 현재값(points 마지막)
+  points: number[];   // 시계열(결정적)
+}
+export interface ObjectMetricsReport {
+  generated_at: string;
+  object_id: string;
+  range: string;      // 1h|6h|24h|7d
+  series: ObjectMetricSeries[];
+  source: string;
+}
+
 // ───────────── AI Agent (IMP-60 — 로컬 모델 + MCP tool-calling 온톨로지 접지) ─────────────
 // docs/palantir-ontology-analysis.md §3·§5.4 + AWS Prescriptive Guidance grounded-agent Pattern 5.
 // "채팅"이 아니라 "온톨로지 위에서 tool 을 쓰는 운영 에이전트": LLM 이 온톨로지를 tool 로 조회(read-only)하고

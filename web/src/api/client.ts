@@ -48,6 +48,7 @@ import type {
   OntologyObject,
   OntologyObjectList,
   OntologyLinkList,
+  ObjectMetricsReport,
   ActionResult,
   AgentRun,
   OrgTree,
@@ -540,6 +541,13 @@ export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSi
 // 단일 canonical 객체(IMP-57 Object View) — deep-link 복원·traverse 대상 해석. 미존재 → 404 throw.
 export function fetchOntologyObject(id: string, signal?: AbortSignal): Promise<OntologyObject> {
   return getJSON<OntologyObject>(`/ontology/objects/${encodeURIComponent(id)}`, signal);
+}
+
+// get_object_metrics tool(IMP-73)의 클라 경로 — 객체 메트릭 시계열/현재값. 미존재 → 404 throw.
+// VITE_MOCK=off 면 transport 만 스왑(실백엔드로), 응답 스키마는 ObjectMetricsReport 로 고정.
+export function fetchObjectMetrics(id: string, range?: string, signal?: AbortSignal): Promise<ObjectMetricsReport> {
+  const suffix = range ? `?range=${encodeURIComponent(range)}` : "";
+  return getJSON<ObjectMetricsReport>(`/ontology/objects/${encodeURIComponent(id)}/metrics${suffix}`, signal);
 }
 
 // Action(writeback) 단일 mutation 계약(IMP-59) — POST /ontology/actions/:name.

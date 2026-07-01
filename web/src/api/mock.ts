@@ -18,9 +18,11 @@ import type {
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
   ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
+  ObjectMetricsReport, ObjectMetricSeries,
   ActionAuditEntry, ActionOutcome, ActionResult,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
+import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
 // GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
@@ -1145,6 +1147,43 @@ function ontologyLinks(id: string, kind?: string): OntologyLinkList | null {
   return { generated_at: new Date().toISOString(), object_id: id, links: rows, source: "ontology (mock)" };
 }
 
+// GET /ontology/objects/:id/metrics?range= — get_object_metrics tool(IMP-73)의 데이터 경로.
+// 객체 props 의 수치 필드에서 메트릭 시리즈를 결정적으로 파생(mock). 새 데이터 모델을 만들지 않고
+// 온톨로지 객체의 이미 있는 수치를 현재값으로 삼고, id+range+key seed 로 안정적인 sparkline 을 만든다.
+// 미존재 object id → null(라우터에서 404).
+const RANGE_POINTS: Record<string, number> = { "1h": 12, "6h": 12, "24h": 24, "7d": 14 };
+// 메트릭 키 → 사람용 라벨/단위(알려진 키만 승격, 나머지는 raw 수치 그대로 노출).
+const METRIC_META: Record<string, { label: string; unit: string }> = {
+  util_perc: { label: "GPU 사용률", unit: "%" }, mem_used_gb: { label: "메모리 사용", unit: "GB" },
+  mem_perc: { label: "메모리 사용률", unit: "%" }, temp_c: { label: "온도", unit: "°C" },
+  power_w: { label: "전력", unit: "W" }, replicas: { label: "레플리카", unit: "개" },
+  ttft_ms: { label: "TTFT", unit: "ms" }, total_ms: { label: "E2E 지연", unit: "ms" },
+  cpu_util: { label: "CPU 사용률", unit: "%" }, qps: { label: "QPS", unit: "req/s" },
+};
+function objectMetrics(id: string, range?: string): ObjectMetricsReport | null {
+  const obj = buildOntology().objects.find((o) => o.id === id);
+  if (!obj) return null;
+  const rng_ = (range && RANGE_POINTS[range] ? range : "1h");
+  const n = RANGE_POINTS[rng_];
+  // props 의 수치 필드만 메트릭으로(중첩 객체·문자열·불리언 제외). 결정적 순서(key 사전순).
+  const numeric = Object.entries(obj.props)
+    .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) as [string, number][];
+  const series: ObjectMetricSeries[] = numeric.map(([key, current]) => {
+    const meta = METRIC_META[key] ?? { label: key, unit: "" };
+    // sparkline — 현재값 주변으로 ±8% 결정적 흔들림(끝점=current). id+key+range seed 로 재현 가능.
+    const r = rng(hash(`${id}|${key}|${rng_}`));
+    const points: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const jitter = (r() - 0.5) * 0.16 * (Math.abs(current) || 1);
+      points.push(+(current + jitter * (1 - i / n)).toFixed(3));
+    }
+    points[points.length - 1] = current; // 끝점은 현재 canonical 값.
+    return { key, label: meta.label, unit: meta.unit, current, points };
+  });
+  return { generated_at: new Date().toISOString(), object_id: id, range: rng_, series, source: "ontology (mock)" };
+}
+
 // ── Action(writeback) 단일 실행 계약(IMP-59) — POST /ontology/actions/:name ──
 // 모든 verb(restartModel/scaleReplicas/cordonNode/drainGpu/ack/resolve/snooze)를 한 경로로 처리.
 // 1) 레지스트리 조회 → 2) capability+status 게이팅(서버 등가 trust boundary, 403) →
@@ -1624,6 +1663,13 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (!res) return notFound(path);
     return ok(res);
   }
+  // 온톨로지 객체 메트릭(IMP-73, get_object_metrics) — /metrics 접미. /links 처럼 구체 경로 먼저.
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/metrics$/))) {
+    const id = decodeURIComponent(m[1]);
+    const res = objectMetrics(id, q.get("range") ?? undefined);
+    if (!res) return notFound(path);
+    return ok(res);
+  }
   // 온톨로지 단일 객체(IMP-57) — /links 정규식 뒤에 둬 구체 경로가 먼저 매칭되게 한다.
   if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)$/))) {
     const one = ontologyObject(decodeURIComponent(m[1]));
@@ -1885,15 +1931,26 @@ function genLogs(name: string, component: string): { logs: string; components: s
 
 // ───────────────────────── FABRIX MCP(JSON-RPC) mock ─────────────────────────
 // 백엔드 server/mcp.go 의 tools/list·resources/list 응답 형태를 미러링(IMP-5 패널이 mock 에서도 렌더).
-const MCP_TOOLS = [
+// IMP-73 — 온톨로지 read tool 은 ONTOLOGY_TOOL_REGISTRY 단일 출처에서 파생(수기 미러 금지) →
+// Diagnostics McpPanel 이 mock 에서도 백엔드와 동일한 통일 tool 목록을 보여준다(자동 동기).
+const MCP_AGGREGATE_TOOLS = [
   { name: "list_dimensions", description: "groupby 가능한 차원과 메트릭 카탈로그(의미·단위·임계치)를 반환한다. 다른 tool 호출 전에 먼저 본다." },
   { name: "groupby_metric", description: "트래픽/품질 메트릭을 한 차원(model|endpoint|namespace)으로 분해해 반환한다." },
   { name: "top_outliers", description: "차원별 분해에서 카탈로그 임계치를 위반한(이상) 그룹만 추려 사유와 함께 반환한다." },
   { name: "summarize_endpoint_health", description: "전체 추론 서빙 건강도 요약(QPS·TTFT p95·ITL·캐시적중·차단·알람)을 자연어로 반환한다." },
 ];
+// aggregate + 온톨로지 read tool(레지스트리 파생, name 순). inputSchema 도 실어 패널이 계약을 그대로 노출.
+const MCP_TOOLS = [
+  ...MCP_AGGREGATE_TOOLS,
+  ...Object.values(ONTOLOGY_TOOL_REGISTRY)
+    .slice()
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+];
 const MCP_RESOURCES = [
   { uri: "fabrix://metric-catalog", name: "메트릭 카탈로그", description: "메트릭별 의미·단위·방향·임계치(AI grounding)", mimeType: "application/json" },
   { uri: "fabrix://dimensions", name: "groupby 차원", description: "분해 가능한 차원과 Prometheus 라벨 매핑", mimeType: "application/json" },
+  { uri: "fabrix://ontology/schema", name: "온톨로지 스키마", description: "Object/Link/Action 타입 카탈로그(§5.1·5.2·5.3)", mimeType: "application/json" },
 ];
 function mcpRpc(req: { id?: unknown; method?: string }): Json {
   const base = { jsonrpc: "2.0", id: req.id ?? null };

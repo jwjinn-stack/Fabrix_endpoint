@@ -1,0 +1,106 @@
+{
+  "tools": [
+    {
+      "description": "단일 객체의 canonical 표현(type/title/status/props)을 id 로 조회한다(조회 전용).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "객체 id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "get_object"
+    },
+    {
+      "description": "한 객체의 시계열/현재 메트릭 요약을 조회한다(GPU util·메모리·엔드포인트 지연 등). range 로 기간을 정한다(조회 전용).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "객체 id",
+            "type": "string"
+          },
+          "range": {
+            "description": "시간 범위(기본 1h)",
+            "enum": [
+              "1h",
+              "6h",
+              "24h",
+              "7d"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "get_object_metrics"
+    },
+    {
+      "description": "온톨로지 객체(명사)를 type / 부분일치(filter)로 조회한다. 접지 대상 objectId 목록을 반환한다(조회 전용).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "description": "title/id 부분일치 필터(미지정=전체)",
+            "type": "string"
+          },
+          "type": {
+            "description": "Object 타입(미지정=전체)",
+            "enum": [
+              "Service",
+              "Endpoint",
+              "Model",
+              "GpuDevice",
+              "Node",
+              "Trace",
+              "Incident"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "query_objects"
+    },
+    {
+      "description": "한 객체의 이웃(관계)을 링크 그래프로 따라간다. linkType 으로 관계 종류를 좁힐 수 있다(조회 전용).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "linkType": {
+            "description": "관계 종류(미지정=모든 관계)",
+            "enum": [
+              "consumes",
+              "serves",
+              "runsOn",
+              "hostedBy",
+              "routedTo",
+              "executedOn",
+              "affects"
+            ],
+            "type": "string"
+          },
+          "objectId": {
+            "description": "기준 객체 id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "name": "traverse_links"
+    }
+  ],
+  "version": 1
+}
