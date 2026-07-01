@@ -107,7 +107,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-60 | ux | 온톨로지 접지 AI Agent 패널 — 로컬 모델 + MCP tool-calling 으로 조회·Action 제안 | high | L | high | accepted | 2026-07-01 |
 | IMP-61 | compete | 관계 그래프 기반 근본원인 추적을 차별화 축으로 — LLM 인프라 관측 경쟁 대비 | medium | M | high | grounded | 2026-07-01 |
 | IMP-62 | ux | IA 재편 — nav를 관측→추적→제어 흐름(Explore/Observe/Investigate/Operate/Integrate)으로 그룹화 | medium | M | high | proposed | 2026-07-01 |
-| IMP-63 | ux | Ontology/분석 화면 — 이 분석 문서를 앱 안에서 라이브 개념·타입 그래프로 렌더 | medium | M | high | proposed | 2026-07-01 |
+| IMP-63 | ux | Ontology/분석 화면 — 이 분석 문서를 앱 안에서 라이브 개념·타입 그래프로 렌더 | medium | M | high | accepted | 2026-07-01 |
 | IMP-64 | aesthetic | Object View / 관계 그래프 시각 언어 — 타입 위계·관계 엣지·상태 인코딩을 Linear/Palantir 수준으로 | low | M | medium | proposed | 2026-07-01 |
 | IMP-65 | aesthetic | Action 폼 & 실행 피드백 시각 완성도 — 파라미터 폼·확인·optimistic 전이·audit 타임라인 | low | M | medium | proposed | 2026-07-01 |
 | IMP-66 | oss | 온톨로지 관계 그래프 상태 traverse — 클라이언트 그래프 라이브러리(graphology) 채택 저울질 | medium | M | medium | proposed | 2026-07-01 |
