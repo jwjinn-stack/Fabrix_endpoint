@@ -36,7 +36,13 @@ const graph: TopologyGraph = {
 };
 
 const fetchTopology = vi.fn();
-vi.mock("../api/client", () => ({ fetchTopology: (...a: unknown[]) => fetchTopology(...a) }));
+// ObjectView(IMP-57) 가 온톨로지 fetch 를 호출하므로 함께 스텁(id 미존재 → 빈 상태, escape hatch 는 유지).
+vi.mock("../api/client", () => ({
+  fetchTopology: (...a: unknown[]) => fetchTopology(...a),
+  fetchOntologyObject: () => Promise.reject(new Error("API 404")),
+  fetchOntologyLinks: () => Promise.reject(new Error("API 404")),
+  fetchOntologyObjects: () => Promise.resolve({ generated_at: "t", objects: [], source: "mock" }),
+}));
 
 const caps = { profile: "manage", readonly: false, capabilities: {}, data_source: "", integrations: {} };
 vi.mock("../capabilities", () => ({ useCap: () => ({ caps, can: () => true }) }));
@@ -46,7 +52,8 @@ import Topology from "./Topology";
 async function selectNode(container: HTMLElement, index: number) {
   const nodes = container.querySelectorAll(".topo-node");
   fireEvent.click(nodes[index]);
-  await waitFor(() => expect(screen.getByText("종류")).toBeInTheDocument());
+  // ObjectView(IMP-57) 오픈 → escape hatch('전체 페이지 열기')가 footer 에 노출.
+  await waitFor(() => expect(screen.getByRole("button", { name: /전체 페이지 열기/ })).toBeInTheDocument());
 }
 
 describe("Topology 드릴다운 (IMP-50 correlation moat)", () => {
@@ -67,7 +74,7 @@ describe("Topology 드릴다운 (IMP-50 correlation moat)", () => {
     const { container } = render(<Topology onNavigate={onNavigate} />);
     await waitFor(() => expect(screen.getByText("Qwen 서비스")).toBeInTheDocument());
     await selectNode(container, 1); // service
-    fireEvent.click(screen.getByRole("button", { name: /이 서비스의 트레이스 보기/ }));
+    fireEvent.click(screen.getByRole("button", { name: /전체 페이지 열기/ }));
     expect(onNavigate).toHaveBeenCalledWith("traces", { model: "qwen3-32b" });
   });
 
@@ -75,7 +82,7 @@ describe("Topology 드릴다운 (IMP-50 correlation moat)", () => {
     const { container } = render(<Topology onNavigate={onNavigate} />);
     await waitFor(() => expect(screen.getByText("GPU0")).toBeInTheDocument());
     await selectNode(container, 2); // gpu
-    fireEvent.click(screen.getByRole("button", { name: /GPU 상세 보기/ }));
+    fireEvent.click(screen.getByRole("button", { name: /전체 페이지 열기/ }));
     expect(onNavigate).toHaveBeenCalledWith("gpu", { host: "gpu-node-01" });
   });
 
@@ -83,7 +90,7 @@ describe("Topology 드릴다운 (IMP-50 correlation moat)", () => {
     const { container } = render(<Topology onNavigate={onNavigate} />);
     await waitFor(() => expect(screen.getByText("gpu-node-01")).toBeInTheDocument());
     await selectNode(container, 0); // server
-    fireEvent.click(screen.getByRole("button", { name: /노드 메트릭 보기/ }));
+    fireEvent.click(screen.getByRole("button", { name: /전체 페이지 열기/ }));
     expect(onNavigate).toHaveBeenCalledWith("nodes", { host: "gpu-node-01" });
   });
 });

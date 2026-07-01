@@ -3,6 +3,7 @@ import { fetchHarborModels, fetchHarborStatus, fetchModelMetrics } from "../api/
 import type { HarborModel, HarborStatus, ModelMetric } from "../api/types";
 import type { NavFn } from "../router";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import ObjectView, { useObjectView } from "../components/ObjectView";
 import Badge from "../components/Badge";
 import { SkeletonCards } from "../components/Skeleton";
 import { useCap } from "../capabilities";
@@ -38,6 +39,7 @@ function human(bytes: number): string {
 
 export default function Models({ onNavigate }: { onNavigate: NavFn }) {
   const { can } = useCap();
+  const ov = useObjectView(); // ObjectView(IMP-57) — 모델을 온톨로지 객체로 열어 관계·Action.
   const canImport = can("models.write"); // 모델 임포트 권한
   const canDeploy = can("endpoints.write"); // 엔드포인트 생성 권한
   const [models, setModels] = useState<HarborModel[]>([]);
@@ -204,7 +206,13 @@ export default function Models({ onNavigate }: { onNavigate: NavFn }) {
         title={detail ? `모델 · ${detail.name}` : ""}
         subtitle={detail?.project}
         onClose={() => setDetail(null)}
-        footer={detail && canDeploy ? <button type="button" className="btn-primary" onClick={() => { onNavigate("endpoints", { model: detail.name }); setDetail(null); }}>엔드포인트 생성 →</button> : undefined}
+        footer={detail ? (
+          <div style={{ display: "flex", gap: "var(--sp-2)", flexWrap: "wrap" }}>
+            {/* IMP-57: 이 모델을 온톨로지 객체로 열어 replicas·GPU·소비 Service·최근 Trace·인시던트를 traverse. */}
+            <button type="button" className="btn-ghost btn-sm" onClick={() => { ov.open(`model:${detail.name}`); }}>Object View 열기 →</button>
+            {canDeploy && <button type="button" className="btn-primary" onClick={() => { onNavigate("endpoints", { model: detail.name }); setDetail(null); }}>엔드포인트 생성 →</button>}
+          </div>
+        ) : undefined}
       >
         {detail && (
           <>
@@ -236,6 +244,9 @@ export default function Models({ onNavigate }: { onNavigate: NavFn }) {
           </>
         )}
       </SlidePanel>
+
+      {/* IMP-57: 온톨로지 Object View 패널. deep-link obj= 로도 열림. */}
+      <ObjectView {...ov.props} />
     </>
   );
 }

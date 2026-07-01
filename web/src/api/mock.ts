@@ -17,9 +17,14 @@ import type {
   SpanKind, ThirdPartyCred, TimePoint, TimeRange, Timeseries,
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
+  ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
+  ActionAuditEntry, ActionOutcome, ActionResult,
 } from "./types";
+import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
+// AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
+import { runAgentLoop } from "./agent";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -177,12 +182,13 @@ function listIncidents(state?: string, severity?: string): Response {
   return ok({ incidents: rows, counts: incidentCounts() });
 }
 
-function actIncident(id: string, action: string, body: Record<string, unknown>): Response {
+// 인시던트 상태 전이 코어(IMP-59) — Response 대신 결과 객체를 반환해 route 와 applyAction 이 공유.
+function actIncidentCore(id: string, action: string, body: Record<string, unknown>): { error?: string; status?: number; inc?: Incident } {
   incidentTick();
   const inc = INCIDENTS.find((i) => i.id === id);
-  if (!inc) return notFound(`/incidents/${id}`);
+  if (!inc) return { error: `인시던트를 찾을 수 없습니다: ${id}`, status: 404 };
   const now = new Date().toISOString();
-  if (inc.state === "resolved" && action !== "snooze") return ok({ error: "이미 해소된 인시던트입니다" }, 409);
+  if (inc.state === "resolved" && action !== "snooze") return { error: "이미 해소된 인시던트입니다", status: 409 };
   switch (action) {
     case "ack":
       inc.state = "acked"; inc.acked_by = "operator"; inc.silenced_until = undefined; break;
@@ -190,14 +196,21 @@ function actIncident(id: string, action: string, body: Record<string, unknown>):
       inc.state = "resolved"; inc.resolved_by = "operator"; inc.silenced_until = undefined; break;
     case "snooze": {
       const minutes = Number(body.minutes);
-      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return ok({ error: "snooze 시간(minutes)은 1~1440 사이여야 합니다" }, 400);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return { error: "snooze 시간(minutes)은 1~1440 사이여야 합니다", status: 400 };
       inc.state = "snoozed"; inc.silenced_until = new Date(Date.now() + minutes * 60_000).toISOString(); break;
     }
     default:
-      return notFound(`/incidents/${id}/${action}`);
+      return { error: `알 수 없는 인시던트 action: ${action}`, status: 404 };
   }
   inc.last_seen = now;
-  return ok({ incident: inc });
+  return { inc };
+}
+
+// 기존 라우트 POST /incidents/:id/(ack|resolve|snooze) — 코어에 위임(비회귀, 기존 응답 형태 유지).
+function actIncident(id: string, action: string, body: Record<string, unknown>): Response {
+  const r = actIncidentCore(id, action, body);
+  if (r.error) return ok({ error: r.error }, r.status ?? 400);
+  return ok({ incident: r.inc });
 }
 
 // ───────────────────────── 시계열/요약 생성기 ─────────────────────────
@@ -845,6 +858,277 @@ function genSessionDetail(sessionId: string): SessionDetail {
   return { summary, turns, scores: scores.length ? scores : undefined };
 }
 
+// ───────────────────────── 온톨로지 (IMP-56 — Object/Link/Action) ─────────────────────────
+// docs/palantir-ontology-analysis.md §5.1–5.3 을 그대로 반영. 기존 mock(MODELS/ENDPOINTS/INCIDENTS +
+// buildTopology 의 Service/Node/GpuDevice + trace 시드)을 OntologyObject 로 "승격"하고 관계 엣지를 만든다.
+// 단일 출처: 온톨로지는 여기서 파생될 뿐, 기존 화면 데이터는 그대로 유지된다(순수 additive).
+
+// AlarmSeverity → ObjectStatus (Incident 상태 렌즈 통일).
+function severityToStatus(sev: string): ObjectStatus {
+  return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
+}
+
+// Action(writeback) mock 상태(IMP-59) — buildOntology 는 매 호출 결정적으로 재구성되므로,
+// 실행된 action 의 결과(status 전이·revision 증가)를 여기 override 로 얹어 다음 조회에 반영한다.
+// (단일 출처: 아래 applyAction 만 여길 쓰고, buildOntology 의 add 가 얹는다.)
+interface OntologyOverride { status?: ObjectStatus; revision: number; props?: Record<string, unknown>; }
+const ONTOLOGY_OVERRIDES: Record<string, OntologyOverride> = {};
+// idempotencyKey → 이미 반영된 ActionResult. 동일 키 재전송 시 중복 전이 없이 같은 결과 반환.
+const ACTION_IDEMPOTENCY: Record<string, ActionResult> = {};
+// 전체 audit 라인(최근 실행 순). 미래 Notifications/audit 화면 소비용.
+const ACTION_AUDIT: ActionAuditEntry[] = [];
+
+// §5.2 척추 그래프를 결정적으로 구성. seed 는 buildTopology 와 동일 소스라 재현 가능.
+function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
+  const objects: OntologyObject[] = [];
+  const links: OntologyLink[] = [];
+  const add = <T extends Record<string, unknown>>(id: string, type: ObjectType, title: string, status: ObjectStatus, props: T) => {
+    // action 으로 반영된 override(status/revision/props)를 canonical 로 얹는다.
+    const ov = ONTOLOGY_OVERRIDES[id];
+    objects.push({
+      id, type, title,
+      props: ov?.props ? { ...props, ...ov.props } : props,
+      status: ov?.status ?? status,
+      revision: ov?.revision ?? 1,
+    });
+  };
+
+  // ── Model (MODELS) ── id 접두 model: 로 네임스페이스 충돌 회피.
+  for (const m of MODELS) {
+    const ep = ENDPOINTS.find((e) => e.model === m.id);
+    const status: ObjectStatus = ep ? (ep.ready ? "ok" : "crit") : "unknown";
+    add(`model:${m.id}`, "Model", m.display, status, {
+      name: m.id, provider: m.provider, type: m.type, context_window: m.ctx,
+      pattern: m.pattern, gpu: m.gpu, replicas: ep?.replicas ?? 0,
+    });
+  }
+
+  // ── Endpoint (ENDPOINTS) ── serves→Model, consumes(Service→Endpoint)는 아래 Service 에서.
+  for (const e of ENDPOINTS) {
+    add(`endpoint:${e.name}`, "Endpoint", e.name, e.ready ? "ok" : "crit", {
+      namespace: e.namespace, model: e.model, backend: e.backend, replicas: e.replicas,
+      app_id: e.app_id ?? "", dept_id: e.dept_id ?? "", ready: e.ready,
+    });
+    if (e.model && MODELS.some((m) => m.id === e.model)) {
+      links.push({ from: `endpoint:${e.name}`, to: `model:${e.model}`, linkKind: "serves" });
+    }
+  }
+
+  // ── Service / Node / GpuDevice (buildTopology 승격) ──
+  // topology.nodes: kind server=Node, service=Service, gpu=GpuDevice. edges: server↔gpu, service→host.
+  const topo = buildTopology(hash("topology"));
+  const topoStatus = (s: string): ObjectStatus => (s === "crit" ? "crit" : s === "warn" ? "warn" : "ok");
+  for (const n of topo.nodes) {
+    if (n.kind === "server") {
+      add(`node:${n.id}`, "Node", n.label, topoStatus(n.status), { hostname: n.id, ...(n.metrics ?? {}) });
+    } else if (n.kind === "gpu") {
+      add(`gpu:${n.id}`, "GpuDevice", n.label, topoStatus(n.status), { device: n.id, ...(n.metrics ?? {}) });
+    } else {
+      // service — Topology service id 는 model id 와 겹칠 수 있어 service: 접두로 분리.
+      add(`service:${n.id}`, "Service", n.label, topoStatus(n.status), { name: n.id, ...(n.metrics ?? {}) });
+    }
+  }
+  // GpuDevice --hostedBy--> Node (topology server→gpu 엣지를 방향 뒤집어 hostedBy 로).
+  for (const e of topo.edges) {
+    const fromNode = topo.nodes.find((n) => n.id === e.from);
+    const toNode = topo.nodes.find((n) => n.id === e.to);
+    if (fromNode?.kind === "server" && toNode?.kind === "gpu") {
+      links.push({ from: `gpu:${e.to}`, to: `node:${e.from}`, linkKind: "hostedBy" });
+    }
+  }
+
+  // Service --consumes--> Endpoint, Model --runsOn--> GpuDevice.
+  // TOPO service id 가 곧 서빙 모델의 endpoint host 이므로, service→해당 host 의 gpu 로 runsOn 을 잇는다.
+  // 결정론: 각 Service 를 그 host 의 첫 GpuDevice 에 runsOn 으로 배치, Endpoint 에 consumes 로 연결.
+  const svcNodes = topo.nodes.filter((n) => n.kind === "service");
+  const svcHost: Record<string, string> = {};
+  for (const e of topo.edges) {
+    const f = topo.nodes.find((n) => n.id === e.from);
+    const t = topo.nodes.find((n) => n.id === e.to);
+    if (f?.kind === "service" && t?.kind === "server") svcHost[e.from] = e.to;
+  }
+  for (const svc of svcNodes) {
+    // Service --consumes--> Endpoint (같은 이름의 엔드포인트가 있으면 연결).
+    const ep = ENDPOINTS.find((x) => x.name === svc.id || x.model === svc.id);
+    if (ep) links.push({ from: `service:${svc.id}`, to: `endpoint:${ep.name}`, linkKind: "consumes" });
+    // Model --runsOn--> GpuDevice (service host 의 gpu0).
+    const host = svcHost[svc.id];
+    const model = ep?.model && MODELS.some((m) => m.id === ep.model) ? ep.model : undefined;
+    if (host && model) {
+      const gpu0 = topo.nodes.find((n) => n.kind === "gpu" && n.id.startsWith(`${host}/`));
+      if (gpu0) links.push({ from: `model:${model}`, to: `gpu:${gpu0.id}`, linkKind: "runsOn" });
+    }
+  }
+
+  // ── Trace (대표 몇 건) ── routedTo→Endpoint, executedOn→GpuDevice.
+  const traceList = genTraceList("24h", {});
+  const gpuIds = topo.nodes.filter((n) => n.kind === "gpu").map((n) => n.id);
+  for (const t of traceList.traces.slice(0, 8)) {
+    const status: ObjectStatus = t.status === "error" ? "crit" : t.decision === "blocked" ? "warn" : "ok";
+    add(`trace:${t.trace_id}`, "Trace", t.trace_id, status, {
+      model: t.model, endpoint: t.endpoint, app_id: t.app_id, dept_id: t.dept_id,
+      total_ms: t.total_ms, ttft_ms: t.ttft_ms, decision: t.decision,
+    });
+    const ep = ENDPOINTS.find((x) => x.name === t.endpoint || x.model === t.model);
+    if (ep) links.push({ from: `trace:${t.trace_id}`, to: `endpoint:${ep.name}`, linkKind: "routedTo" });
+    // executedOn — 결정적으로 trace_id 해시로 gpu 배정.
+    if (gpuIds.length) {
+      const gid = gpuIds[hash(t.trace_id) % gpuIds.length];
+      links.push({ from: `trace:${t.trace_id}`, to: `gpu:${gid}`, linkKind: "executedOn" });
+    }
+  }
+
+  // ── Incident (INCIDENTS 승격) ── affects→{object}. dedup_key 로 영향 대상을 유추.
+  for (const inc of INCIDENTS) {
+    add(`incident:${inc.id}`, "Incident", inc.title, severityToStatus(inc.severity), {
+      dedup_key: inc.dedup_key, severity: inc.severity, state: inc.state, count: inc.count,
+    });
+    // dedup_key 형식 "endpoint:<name>:..." / "scheduler:..." / "guard:..." 에서 대상 추론.
+    const parts = inc.dedup_key.split(":");
+    if (parts[0] === "endpoint" && parts[1]) {
+      const ep = ENDPOINTS.find((x) => x.name === parts[1]);
+      if (ep) links.push({ from: `incident:${inc.id}`, to: `endpoint:${ep.name}`, linkKind: "affects" });
+    } else if (parts[0] === "scheduler") {
+      // 스케줄러 backpressure 는 첫 Node 에 영향으로 표시(대표).
+      const node0 = topo.nodes.find((n) => n.kind === "server");
+      if (node0) links.push({ from: `incident:${inc.id}`, to: `node:${node0.id}`, linkKind: "affects" });
+    } else if (parts[0] === "guard") {
+      // 가드 급증은 첫 Service 에 영향으로 표시(대표).
+      const svc0 = svcNodes[0];
+      if (svc0) links.push({ from: `incident:${inc.id}`, to: `service:${svc0.id}`, linkKind: "affects" });
+    }
+  }
+
+  // dangling 링크 방지 — 실재 object id 만 남긴다(단일 출처 무결성).
+  const ids = new Set(objects.map((o) => o.id));
+  const clean = links.filter((l) => ids.has(l.from) && ids.has(l.to));
+  return { objects, links: clean };
+}
+
+// ── AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프 mock ──
+// runAgentLoop(순수, api/agent.ts)에 buildOntology() 스냅샷을 주입한다. read tool 은 그 위에서 조회만 하고
+// (mutating tool 없음), grounding 소스로 buildRootCausePath(investigate.ts)를 재사용한다(단일 출처).
+// 실백엔드는 이 응답 스키마(AgentRun)를 그대로 돌려주면 됨 — client.runAgent 는 transport 만 스왑.
+// transcript audit 는 전역 AGENT_AUDIT 에 누적(향후 audit/trace 표면 소비).
+const AGENT_AUDIT: import("./types").AgentAuditEntry[] = [];
+let AGENT_SEQ = 0;
+
+function runAgentMock(body: Record<string, unknown>): import("./types").AgentRun {
+  const { objects, links } = buildOntology();
+  const intent = typeof body.intent === "string" ? body.intent : undefined;
+  const entity = typeof body.entity === "string" ? body.entity : undefined;
+  AGENT_SEQ++;
+  // traceId — 결정적 접두 + 시퀀스(테스트가 존재만 검증). 원문/시크릿은 담지 않는다.
+  const traceId = `agtr_${AGENT_SEQ.toString(36)}_${hash(`${intent ?? ""}:${entity ?? ""}`).toString(36)}`;
+  const run = runAgentLoop(objects, links, { intent, entity, traceId });
+  // transcript 를 전역 audit 에 append(최근 실행 순) — trace ID 로 키잉.
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);
+  return run;
+}
+
+// GET /ontology/objects?type=&filter= — type(ObjectType) + filter(title/id 부분일치).
+function ontologyObjects(type?: string, filter?: string): OntologyObjectList {
+  const { objects } = buildOntology();
+  let rows = objects;
+  if (type) rows = rows.filter((o) => o.type === type); // 알 수 없는 type → 빈 배열(스키마 유지).
+  const f = (filter ?? "").trim().toLowerCase();
+  if (f) rows = rows.filter((o) => o.title.toLowerCase().includes(f) || o.id.toLowerCase().includes(f));
+  return { generated_at: new Date().toISOString(), objects: rows, source: "ontology (mock)" };
+}
+
+// GET /ontology/objects/:id — 단일 canonical 객체(IMP-57 Object View deep-link·이웃 해석).
+// 미존재 id → null(라우터에서 404).
+function ontologyObject(id: string): OntologyObject | null {
+  return buildOntology().objects.find((o) => o.id === id) ?? null;
+}
+
+// GET /ontology/objects/:id/links?kind= — 해당 object 를 from/to 로 갖는 링크. kind(LinkKind) 필터.
+// 미존재 object id → null(라우터에서 404).
+function ontologyLinks(id: string, kind?: string): OntologyLinkList | null {
+  const { objects, links } = buildOntology();
+  if (!objects.some((o) => o.id === id)) return null;
+  let rows = links.filter((l) => l.from === id || l.to === id);
+  if (kind) rows = rows.filter((l) => l.linkKind === kind); // 알 수 없는 kind → 빈 배열.
+  return { generated_at: new Date().toISOString(), object_id: id, links: rows, source: "ontology (mock)" };
+}
+
+// ── Action(writeback) 단일 실행 계약(IMP-59) — POST /ontology/actions/:name ──
+// 모든 verb(restartModel/scaleReplicas/cordonNode/drainGpu/ack/resolve/snooze)를 한 경로로 처리.
+// 1) 레지스트리 조회 → 2) capability+status 게이팅(서버 등가 trust boundary, 403) →
+// 3) revision stale-write 검사(409) → 4) idempotency(재전송 중복 방지) →
+// 5) 상태 전이 반영(ONTOLOGY_OVERRIDES revision++) + audit 기록.
+// Incident verb 는 INCIDENTS 모듈 상태(actIncidentCore)도 함께 갱신(비회귀).
+function actionResult(outcome: ActionOutcome, name: string, target: string, params: Record<string, unknown>, opts: { object?: OntologyObject; reason?: string; note?: string } = {}): ActionResult {
+  const audit: ActionAuditEntry = {
+    actionType: name, target, params, actor: "operator", ts: new Date().toISOString(), outcome, note: opts.note,
+  };
+  ACTION_AUDIT.unshift(audit);
+  return { outcome, object: opts.object, audit, reason: opts.reason };
+}
+
+// mock capability 게이팅 — genCapabilities 와 동일 규칙(단일 출처). 프론트 can() 과 어긋나지 않게.
+function mockCan(cap: string): boolean {
+  return !!genCapabilities().capabilities[cap] || !(cap in genCapabilities().capabilities);
+}
+
+function applyAction(name: string, body: Record<string, unknown>): Response {
+  const spec = ACTION_REGISTRY[name];
+  if (!spec) return ok({ error: `알 수 없는 action: ${name}` }, 404);
+
+  const target = String(body.target ?? "");
+  const params = (body.params as Record<string, unknown>) ?? {};
+  const idem = typeof body.idempotencyKey === "string" ? body.idempotencyKey : "";
+
+  // 4) idempotency — 동일 키 재전송이면 이전 결과를 그대로(중복 전이 없이).
+  if (idem && ACTION_IDEMPOTENCY[idem]) return ok(ACTION_IDEMPOTENCY[idem], 200);
+
+  // 대상 canonical 객체 조회(온톨로지 스냅샷).
+  const snapshot = buildOntology().objects.find((o) => o.id === target);
+  if (!snapshot) return ok(actionResult("error", name, target, params, { reason: `대상 객체를 찾을 수 없습니다: ${target}` }), 404);
+
+  // 2) 게이팅 — capability(서버 등가) + status predicate. UI 숨김만이 아니라 mock 도 거부(trust boundary).
+  const check = evaluateSubmission(spec, { can: mockCan, targetStatus: snapshot.status });
+  if (!check.ok) {
+    const r = actionResult("denied", name, target, params, { reason: check.reason, note: check.reason });
+    if (idem) ACTION_IDEMPOTENCY[idem] = r;
+    return ok(r, 403);
+  }
+
+  // 3) stale-write(409) — 클라가 보낸 revision 이 현재보다 낮으면 충돌(다른 쓰기가 앞섰음).
+  if (typeof body.revision === "number" && body.revision < snapshot.revision) {
+    const r = actionResult("conflict", name, target, params, {
+      reason: `stale revision (보낸 rev=${body.revision}, 현재 rev=${snapshot.revision}) — 새로고침 후 다시 시도하세요`,
+      note: "stale-write",
+    });
+    if (idem) ACTION_IDEMPOTENCY[idem] = r;
+    return ok(r, 409);
+  }
+
+  // Incident verb 는 기존 INCIDENTS 상태도 갱신(비회귀). target 은 incident:<id> 형식.
+  if (spec.target === "Incident") {
+    const incId = target.startsWith("incident:") ? target.slice("incident:".length) : target;
+    const incRes = actIncidentCore(incId, name, params);
+    if (incRes.error) {
+      const r = actionResult("error", name, target, params, { reason: incRes.error, note: incRes.error });
+      if (idem) ACTION_IDEMPOTENCY[idem] = r;
+      return ok(r, incRes.status ?? 400);
+    }
+  }
+
+  // 5) 상태 전이 반영 — Rules(STATE_TRANSITION) 대로 status 전이 + revision++.
+  const nextStatus = STATE_TRANSITION[name] ?? snapshot.status;
+  const nextRev = snapshot.revision + 1;
+  ONTOLOGY_OVERRIDES[target] = {
+    status: nextStatus,
+    revision: nextRev,
+    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), last_action: name },
+  };
+  const updated: OntologyObject = { ...snapshot, status: nextStatus, revision: nextRev, props: { ...snapshot.props, last_action: name } };
+  const result = actionResult("ok", name, target, params, { object: updated, note: spec.rulesNote });
+  if (idem) ACTION_IDEMPOTENCY[idem] = result;
+  return ok(result, 200);
+}
+
 // ───────────────────────── 라우터 ─────────────────────────
 type Json = unknown;
 function ok(body: Json, status = 200): Response {
@@ -1224,6 +1508,10 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /alerts/rules/preview": return ok(alertRulePreviewMock(q.get("metric") ?? "", q.get("window") ?? "1h"));
     case "GET /alerts/rules": return ok({ rules: ALERT_RULES, metrics: ALERT_METRIC_CATALOG, enabled: true });
     case "POST /alerts/rules": return ok(createAlertRuleMock(body as Record<string, unknown>));
+    // 온톨로지(IMP-56) — Object/Link 그래프 조회(후속 IMP-57/58/59/60/63 이 소비).
+    case "GET /ontology/objects": return ok(ontologyObjects(q.get("type") ?? undefined, q.get("filter") ?? undefined));
+    // AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. read tool 자동, mutation 은 별도 ActionForm confirm(포함 안 함).
+    case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
   }
 
   // 패턴 매칭 (path 변수 포함)
@@ -1235,6 +1523,22 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (one.configured && one.reachable && one.request) one.probe = mkProbeTrace(one);
     return ok(one);
   }
+  // 온톨로지 링크(IMP-56) — object id 는 model:foo / gpu:host/gpu0 처럼 콜론·슬래시를 포함할 수 있어
+  // encodeURIComponent 로 인코딩된 id 를 디코드해 매칭한다(/links 접미만 고정).
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/links$/))) {
+    const id = decodeURIComponent(m[1]);
+    const res = ontologyLinks(id, q.get("kind") ?? undefined);
+    if (!res) return notFound(path);
+    return ok(res);
+  }
+  // 온톨로지 단일 객체(IMP-57) — /links 정규식 뒤에 둬 구체 경로가 먼저 매칭되게 한다.
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)$/))) {
+    const one = ontologyObject(decodeURIComponent(m[1]));
+    if (!one) return notFound(path);
+    return ok(one);
+  }
+  // Action(writeback) 단일 계약(IMP-59) — verb 별 실행. 게이팅·revision·idempotency 는 applyAction 내부.
+  if (method === "POST" && (m = path.match(/^\/ontology\/actions\/([^/]+)$/))) { return applyAction(decodeURIComponent(m[1]), (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/incidents\/([^/]+)\/(ack|resolve|snooze)$/))) { return actIncident(m[1], m[2], (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/traces\/([^/]+)\/scores$/))) { return ok(recordScoreMock(m[1], body as Record<string, unknown>)); }
   if (method === "GET" && (m = path.match(/^\/traces\/(.+)$/))) { return ok(genTraceDetail(m[1])); }

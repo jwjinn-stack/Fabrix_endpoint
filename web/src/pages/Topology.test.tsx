@@ -34,7 +34,13 @@ const graph: TopologyGraph = {
 };
 
 const fetchTopology = vi.fn();
-vi.mock("../api/client", () => ({ fetchTopology: (...a: unknown[]) => fetchTopology(...a) }));
+// ObjectView(IMP-57) 온톨로지 fetch 스텁 — 이 테스트 그래프의 id 는 온톨로지에 없어 빈 상태.
+vi.mock("../api/client", () => ({
+  fetchTopology: (...a: unknown[]) => fetchTopology(...a),
+  fetchOntologyObject: () => Promise.reject(new Error("API 404")),
+  fetchOntologyLinks: () => Promise.reject(new Error("API 404")),
+  fetchOntologyObjects: () => Promise.resolve({ generated_at: "t", objects: [], source: "mock" }),
+}));
 
 const caps = { profile: "manage", readonly: false, capabilities: {}, data_source: "", integrations: {} };
 vi.mock("../capabilities", () => ({ useCap: () => ({ caps, can: () => true }) }));
@@ -107,16 +113,15 @@ describe("Topology 화면 (IMP-45/48)", () => {
     vi.useRealTimers();
   });
 
-  it("노드 클릭 → SlidePanel 상세(연결수) 노출 + selectedId 전파(비인접 dim)", async () => {
+  it("노드 클릭 → ObjectView 오픈 + selectedId 전파(그래프 하이라이트)", async () => {
     const { container } = render(<Topology />);
     await waitFor(() => expect(screen.getByText("Server 1")).toBeInTheDocument());
     // 그래프 노드 클릭(첫 노드 = srv).
     const node = container.querySelector(".topo-node")!;
     fireEvent.click(node);
-    // SlidePanel 상세 — 연결 수신/발신 라벨.
-    await waitFor(() => expect(screen.getByText("연결 (수신 / 발신)")).toBeInTheDocument());
-    // isolate: 인접하지 않은 노드에 dim 클래스가 붙는다(srv 선택 → g0 은 인접, svc 도 인접이라 없음;
-    // 이 그래프는 srv 가 svc·g0 모두와 연결이라 dim 이 없을 수 있으므로 selectedId 반영만 확인).
+    // IMP-57: ObjectView 패널(dialog)이 열린다(온톨로지 id 미존재 → 빈 상태여도 패널은 오픈).
+    await waitFor(() => expect(container.querySelector("dialog.slide-panel")).toBeTruthy());
+    // selectedId 반영 → 그래프 노드 하이라이트.
     expect(container.querySelector(".topo-node.selected")).toBeTruthy();
   });
 });

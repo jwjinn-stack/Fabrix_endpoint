@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { render, fireEvent, createEvent } from "@testing-library/react";
-import TopologyView from "./TopologyView";
+import TopologyView, { worseStatus } from "./TopologyView";
 import { layoutTopology } from "./layout";
 import type { TopologyGraph } from "../../api/types";
 
@@ -154,5 +154,33 @@ describe("TopologyView — hand-rolled SVG 렌더러 (IMP-47)", () => {
     );
     expect(zNode?.classList.contains("dim")).toBe(true);
     expect(container.querySelector(".topo-node.selected")).toBeTruthy();
+  });
+
+  // ── IMP-64 가법적 엣지 상태색(스키마 그래프에서 끝점 status → 엣지 색) ──
+  it("worseStatus: crit>warn>ok worst 반환", () => {
+    expect(worseStatus("ok", "warn")).toBe("warn");
+    expect(worseStatus("warn", "crit")).toBe("crit");
+    expect(worseStatus("ok", "ok")).toBe("ok");
+  });
+
+  it("edgeStatusColor 제공 시 끝점 status 로 엣지 stroke 색이 인코딩된다(geometry 불변)", () => {
+    // graph: svc(warn)→g0(crit) 엣지 → worst=crit → red.
+    const { container } = render(
+      <TopologyView
+        graph={graph}
+        edgeStatusColor={(_e, from, to) => (worseStatus(from, to) === "crit" ? "var(--red)" : worseStatus(from, to) === "warn" ? "var(--amber)" : null)}
+      />,
+    );
+    const strokes = Array.from(container.querySelectorAll<SVGPathElement>(".topo-edge")).map((p) => p.getAttribute("stroke"));
+    // srv(ok)→svc(warn) = amber, svc(warn)→g0(crit) = red.
+    expect(strokes).toContain("var(--red)");
+    expect(strokes).toContain("var(--amber)");
+  });
+
+  it("edgeStatusColor 미제공 → 기존 edgeColor(error_rate) 폴백(회귀 없음)", () => {
+    const { container } = render(<TopologyView graph={graph} />);
+    // error_rate 없는 엣지는 --border-strong(기본).
+    const strokes = Array.from(container.querySelectorAll<SVGPathElement>(".topo-edge")).map((p) => p.getAttribute("stroke"));
+    expect(strokes.every((s) => s === "var(--border-strong)")).toBe(true);
   });
 });

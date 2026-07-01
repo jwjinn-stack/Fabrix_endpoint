@@ -2420,3 +2420,432 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .u-label-xs { font-size: var(--fs-xs); color: var(--text-dim); }
 .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .stack-sm { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* Action(writeback) 폼 (IMP-59) — 파라미터 폼·게이팅·낙관적 수렴 배지. Backend.AI 라이트+스틸블루 토큰. */
+.action-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.action-form-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.action-target { font-size: var(--fs-xs); color: var(--text-faint); font-family: var(--mono, monospace); }
+.action-field { display: flex; flex-direction: column; gap: 4px; }
+.action-field > label { font-size: var(--fs-sm); color: var(--text-dim); font-weight: 600; }
+.action-field input, .action-field select {
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: var(--fs-body); background: var(--surface, #fff); color: var(--text);
+}
+.action-field input[aria-invalid="true"], .action-field select[aria-invalid="true"] { border-color: var(--danger, #c0392b); }
+.action-sideeffects { font-size: var(--fs-xs); color: var(--text-faint); }
+.action-denied-reason { font-size: var(--fs-sm); color: var(--danger, #c0392b); margin: 0; }
+.action-phase { display: inline-flex; align-items: center; gap: 5px; }
+.action-phase.phase-provisional { color: var(--text-dim); opacity: 0.85; }
+.action-phase.phase-reconciled { color: var(--primary); }
+.action-phase.phase-error { color: var(--danger, var(--red)); }
+/* IMP-65 — provisional 국면 pending pulse dot(스틸블루). "지금 반영 중"의 살아있는 신호.
+   pulse 는 prefers-reduced-motion 존중: 전역 규칙(맨 위 @media)이 animation-duration 을 죽이고,
+   아래 명시적 가드가 정적 dot 로 고정(색·크기 유지 — 정보는 안 사라짐). */
+.phase-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--primary);
+  animation: af-pulse 1.2s ease-in-out infinite;
+}
+@keyframes af-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phase-dot { animation: none; opacity: 1; transform: none; }
+}
+
+/* IMP-65 — destructive 확인 다이얼로그 내용(영향 요약 + type-to-confirm). ConfirmDialog 안에 렌더. */
+.action-confirm { display: flex; flex-direction: column; gap: var(--sp-2); }
+.action-confirm-lead { margin: 0; font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body, 1.5); }
+/* 영향 요약 — 위험 톤 카드(red-weak). 상태 전이·부수효과를 사전 고지. */
+.action-impact {
+  margin: 0; padding: var(--sp-2) var(--sp-3); list-style: none;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--red-weak); border: 1px solid var(--red-border); border-radius: var(--radius-sm);
+  font-size: var(--fs-sm); color: var(--text);
+}
+.action-impact li { display: flex; gap: var(--sp-2); align-items: baseline; }
+.action-impact-k { flex: none; min-width: 62px; font-size: var(--fs-xs); font-weight: 600; color: var(--red); text-transform: uppercase; letter-spacing: .02em; }
+.action-confirm-field { font-size: var(--fs-sm); color: var(--text-dim); margin-top: 2px; }
+.action-confirm-field code { font-family: var(--mono, monospace); font-size: var(--fs-xs); background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; color: var(--text); }
+.action-confirm-input {
+  padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-size: var(--fs-body); font-family: var(--mono, monospace);
+  background: var(--surface); color: var(--text);
+}
+.action-confirm-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.action-confirm-mismatch { margin: 0; font-size: var(--fs-xs); color: var(--red); }
+
+/* Object View(IMP-57) — Palantir Workshop 스타일 단일 엔티티 패널 */
+.ov-title { display: inline-flex; align-items: center; gap: var(--sp-2); }
+/* IMP-64: 타이틀 글리프 색은 objectTypeVisual(인라인 --otype color)로 주입 — 없으면 무채(fallback). */
+.ov-glyph { color: var(--text-dim); font-size: 15px; }
+.ov-foot { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* ── Object Type 시각 언어(IMP-64) — 단일 출처 objectTypeVisual 소비. 색으로 noun-type 위계.
+   .otype-chip: 헤더 타입 칩(글리프+색+약한 tint 배경). .otype-mark: 표/인라인 글리프 색만.
+   색은 인라인 --otype-color/--otype-tint 로 주입(기존 토큰만; 신규 색·네온 없음). ── */
+.otype-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: var(--fs-sm); font-weight: 600; line-height: 1.5;
+  color: var(--otype-color, var(--text-dim));
+  background: var(--otype-tint, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--otype-color, var(--border-strong)) 35%, transparent);
+}
+.otype-chip-glyph { font-size: 13px; line-height: 1; }
+.otype-mark { color: var(--otype-color, var(--text-dim)); }
+
+/* breadcrumb — traverse 경로 */
+.ov-crumbs { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.ov-crumbs ol { list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; }
+.ov-crumbs li { display: inline-flex; align-items: center; gap: 4px; }
+.ov-crumb-sep { color: var(--text-faint); }
+.ov-crumb { color: var(--text-dim); font-size: var(--fs-sm); }
+.ov-crumb-cur { color: var(--text); font-size: var(--fs-sm); font-weight: 600; }
+
+/* (1) Header — elevated 카드. IMP-64: 타입 칩+상태 게이지 밴드(row) 위에 metric. */
+.ov-header-card {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+/* 타입 칩 + 상태 밴드 한 줄(좁으면 wrap) */
+.ov-type-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+/* 상태 밴드 — Badge(텍스트) + Gauge(강도). 게이지는 남는 폭을 채운다(최소폭 확보). */
+.ov-status-band { display: flex; align-items: center; gap: var(--sp-2); flex: 1; min-width: 120px; }
+.ov-status-band .gauge { flex: 1; min-width: 60px; max-width: 180px; }
+.ov-metrics { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.ov-metric { display: flex; flex-direction: column; }
+.ov-metric-v { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.ov-metric-k { font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* 섹션 */
+.ov-section { margin-top: var(--sp-4); }
+.ov-h { font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); margin: 0 0 var(--sp-2); text-transform: uppercase; letter-spacing: .03em; }
+
+/* (3) Related — linkKind 그룹 + 클릭 가능한 이웃 */
+.ov-group { margin-bottom: var(--sp-3); }
+/* IMP-64: 그룹 헤더 = 방향 지시자(의미 화살표+관계 라벨) + count. */
+.ov-group-h { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.ov-link-dir { display: inline-flex; align-items: center; gap: 5px; }
+/* 방향 화살표 — 관계의 위계 방향(상류↑/하류⇊/영향⇢). 스틸블루 액센트로 관계를 "선"으로 읽히게. */
+.ov-link-arrow { color: var(--primary); font-weight: 700; font-size: 13px; line-height: 1; width: 14px; text-align: center; }
+.ov-count { color: var(--text-faint); font-weight: 400; font-size: var(--fs-xs); }
+.ov-neighbors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ov-neighbor {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left;
+  padding: 6px var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface, #fff); color: var(--text); cursor: pointer; font-size: var(--fs-body);
+  transition: box-shadow var(--ease), border-color var(--ease), transform var(--ease);
+}
+/* IMP-64: hover elevation(--shadow-card-hover) — Palantir/Linear 식 카드 lift. reduced-motion 은 전역 규칙이 정지. */
+.ov-neighbor:hover { background: var(--surface-2); border-color: var(--border-strong); box-shadow: var(--shadow-card-hover); transform: translateY(-1px); }
+/* glyph 색은 objectTypeVisual(인라인 --otype)로 주입 — fallback 무채. */
+.ov-neighbor-glyph { color: var(--text-dim); flex: none; }
+.ov-neighbor-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-neighbor-type { font-size: var(--fs-xs); color: var(--text-faint); }
+.ov-neighbor-dir { color: var(--text-faint); }
+.ov-rel-src { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
+.ov-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ov-dot-ok { background: var(--green); }
+.ov-dot-warn { background: var(--amber); }
+.ov-dot-crit { background: var(--red); }
+.ov-dot-unknown { background: var(--border-strong); }
+
+/* (4) Actions — verb 별 ActionForm 구분 */
+.ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
+.ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* (5) 실행 이력 — IMP-65 감사 타임라인. IncidentAuditEntry(IMP-38) 시각 패턴을 세로 rail 로 확장.
+   좌측 연속 rail(border-left) + outcome 색 dot → 시간순 사건을 "선"으로 읽히게(flat list 대비). */
+.audit-timeline { list-style: none; margin: 0; padding: 0; }
+.audit-item {
+  position: relative; display: flex; gap: var(--sp-2);
+  padding: 0 0 var(--sp-3) 0;
+}
+/* rail — dot 를 담고, dot 아래로 연결선(항목 사이). 마지막 항목은 연결선 없음. */
+.audit-rail { position: relative; flex: none; width: 12px; display: flex; justify-content: center; padding-top: 3px; }
+.audit-rail::before {
+  content: ""; position: absolute; top: 10px; bottom: -3px; left: 50%;
+  width: 1px; background: var(--border); transform: translateX(-0.5px);
+}
+.audit-item:last-child .audit-rail::before { display: none; }
+.audit-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; z-index: 1; box-shadow: 0 0 0 2px var(--surface); }
+.audit-dot-ok { background: var(--green); }
+.audit-dot-conflict, .audit-dot-denied { background: var(--amber); }
+.audit-dot-error { background: var(--red); }
+.audit-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.audit-line { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.audit-verb { font-size: var(--fs-body); font-weight: 600; color: var(--text); }
+.audit-meta { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-faint); }
+.audit-actor { font-weight: 500; }
+.audit-note { font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.45; }
+
+/* ───────────── Troubleshooting COP(IMP-58) — 근본원인 추적 화면 ───────────── */
+/* LEFT(진입) / CENTER(경로) 2열. 좁은 폭에선 세로로 스택(반응형). RIGHT 는 SlidePanel(ObjectView). */
+.cop-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+@media (max-width: 900px) { .cop-grid { grid-template-columns: 1fr; } }
+
+.cop-panel-h {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-body); font-weight: 700; color: var(--text);
+  padding-bottom: var(--sp-2); margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.cop-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); }
+.cop-hint { font-size: var(--fs-xs); color: var(--text-faint); margin: 0 0 var(--sp-3); line-height: var(--lh-body); }
+
+/* LEFT — 진입 후보 리스트 */
+.cop-entry { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: var(--sp-3); }
+.cop-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cop-cand {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left;
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); cursor: pointer; color: var(--text);
+}
+.cop-cand:hover { border-color: var(--border-strong); background: var(--surface); }
+.cop-cand.active { border-color: var(--primary); background: var(--primary-weak); }
+.cop-cand-glyph { color: var(--text-dim); flex: none; }
+.cop-cand-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cop-cand-title { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cop-cand-reason { font-size: var(--fs-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* CENTER — 경로 패널 + hop 스택 */
+.cop-path { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: var(--sp-3); }
+.cop-hops { list-style: none; margin: 0; padding: 0; }
+.cop-hop-wrap { display: flex; flex-direction: column; }
+
+/* hop 사이 edge-type badge(관계 종류) — 세로 연결선 위에 얹는다. */
+.cop-edge { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 0; }
+.cop-edge-line { width: 2px; height: 10px; background: var(--border-strong); }
+.cop-edge-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: .02em; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+}
+
+/* hop 카드 — 클릭 시 ObjectView. 임계=빨강 강조, blast=주의 점선. */
+.cop-hop {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  padding: var(--sp-3); box-shadow: var(--shadow-card);
+}
+.cop-hop:hover { border-color: var(--border-strong); box-shadow: var(--shadow-card-hover); }
+.cop-hop.active { border-color: var(--primary); }
+.cop-hop.crit { border-color: var(--red-border); background: var(--red-weak); }
+.cop-hop.blast { border-style: dashed; border-color: var(--amber-border); background: var(--amber-weak); }
+
+.cop-hop-top { display: flex; align-items: center; gap: var(--sp-2); }
+.cop-hop-glyph { color: var(--text-dim); flex: none; }
+.cop-hop-title { font-weight: 700; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cop-hop-type { font-size: var(--fs-xs); color: var(--text-faint); }
+.cop-hop-top > .badge { margin-left: auto; }
+
+.cop-hop-labels { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+.cop-time { font-size: var(--fs-xs); color: var(--text-dim); }
+.cop-tag { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 8px; letter-spacing: .02em; }
+.cop-tag-crit { color: var(--red); background: var(--red-weak); border: 1px solid var(--red-border); }
+.cop-tag-blast { color: var(--amber); background: var(--amber-weak); border: 1px solid var(--amber-border); }
+.cop-tag-entry { color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border); }
+
+/* 골든시그널 — Gauge + Sparkline 나란히. 여러 신호는 wrap. */
+.cop-signals { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-3); }
+.cop-signal { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.cop-signal-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+.cop-signal-label { font-size: var(--fs-xs); color: var(--text-faint); }
+.cop-signal-v { font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+
+.cop-foot-note { font-size: var(--fs-xs); color: var(--text-faint); margin: var(--sp-3) 0 0; line-height: var(--lh-body); }
+
+/* ───────────── 내장 데모 시나리오(IMP-61) — mock seeded walkthrough ───────────── */
+/* page-head 토글 버튼(재생 중이면 스틸블루 강조). */
+.demo-toggle.active { border-color: var(--primary); color: var(--primary-strong); background: var(--primary-weak); }
+
+/* 데모 컨트롤 바 — 진행 상태 + 이전/다음. 라이트+스틸블루, 네온 금지. */
+.demo-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+  margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--primary); border-left-width: 3px; border-radius: var(--radius);
+  background: var(--primary-weak);
+}
+.demo-bar-tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: var(--primary); border-radius: 999px; padding: 2px 8px; }
+.demo-bar-title { font-size: var(--fs-sm); font-weight: 600; color: var(--primary-strong); }
+.demo-bar-progress { font-size: var(--fs-xs); color: var(--text-dim); }
+.demo-bar-ctrls { display: flex; gap: var(--sp-2); }
+
+/* 데모 단계 목록(LEFT) — cop-cand 패턴 재사용. */
+.cop-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cop-step {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  padding: var(--sp-2) var(--sp-3);
+}
+.cop-step:hover { border-color: var(--border-strong); }
+.cop-step.active { border-color: var(--primary); background: var(--primary-weak); }
+.cop-step-n {
+  flex: none; width: 20px; height: 20px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+.cop-step.active .cop-step-n { color: #fff; background: var(--primary); border-color: var(--primary); }
+.cop-step-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cop-step-title { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cop-step-action { font-size: var(--fs-xs); color: var(--primary-strong); }
+
+/* 현재 step 의 hop 카드 강조(스틸블루 ring). crit/blast 배경과 공존. */
+.cop-hop.demo-active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-weak), var(--shadow-card-hover); }
+
+/* hop 카드 안 narration + 권장 조치 요약(데모 재생 시). */
+.cop-demo-note { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px dashed var(--border); }
+.cop-demo-narration { font-size: var(--fs-sm); color: var(--text); margin: 0; line-height: var(--lh-body); }
+.cop-demo-action { font-size: var(--fs-sm); color: var(--text-dim); margin: var(--sp-2) 0 0; line-height: var(--lh-body); }
+.cop-demo-action-hint { color: var(--text-faint); font-size: var(--fs-xs); }
+
+/* ───────────── AI Agent(IMP-60) — 온톨로지 접지 ReAct 패널 ───────────── */
+/* intent 입력 + ReAct 타임라인(LEFT) + RCA 후보/runbook(RIGHT) 2열. 좁은 폭에선 세로 스택. */
+.agent-intent { display: flex; gap: var(--sp-2); align-items: center; margin: var(--sp-2) 0; }
+.agent-intent-input {
+  flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font-size: var(--fs-body);
+}
+.agent-intent-input:focus { outline: none; border-color: var(--primary); }
+.agent-presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+
+.agent-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+@media (max-width: 980px) { .agent-grid { grid-template-columns: 1fr; } }
+
+/* LEFT — ReAct 타임라인 */
+.agent-trace-meta { font-size: var(--fs-xs); margin-bottom: var(--sp-3); }
+.agent-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.agent-step {
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border);
+  border-left-width: 3px; border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.agent-step-reason { border-left-color: var(--border-strong); }
+.agent-step-tool { border-left-color: var(--primary); }
+.agent-step-tool.empty { border-left-color: var(--amber-border); background: var(--amber-weak); }
+.agent-step-badge {
+  flex: none; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  border-radius: 999px; padding: 1px 8px; color: var(--text-dim);
+  background: var(--surface); border: 1px solid var(--border); margin-top: 1px;
+}
+.agent-step-badge.tool { color: var(--primary); border-color: var(--primary); }
+.agent-step-text { font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); }
+.agent-step-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.agent-tool-call { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.agent-tool-name { font-size: var(--fs-sm); font-weight: 700; color: var(--text); }
+.agent-tool-args { font-size: var(--fs-xs); color: var(--text-dim); word-break: break-all; }
+.agent-tool-auto {
+  font-size: 10px; font-weight: 700; color: var(--text-faint);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px;
+}
+.agent-tool-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.agent-tool-summary { font-size: var(--fs-xs); color: var(--text-dim); }
+.agent-cites { display: flex; flex-wrap: wrap; gap: 4px; }
+.agent-cite {
+  font-size: 10px; font-family: var(--font-mono, monospace); cursor: pointer;
+  color: var(--primary); background: var(--primary-weak); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 7px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-cite:hover { border-color: var(--primary); }
+.agent-cite-more { font-size: 10px; color: var(--text-faint); }
+
+/* RIGHT — RCA 후보 카드 / runbook fallback */
+.agent-cards { display: flex; flex-direction: column; gap: var(--sp-3); }
+.agent-card {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  box-shadow: var(--shadow-card); padding: var(--sp-3);
+}
+.agent-card.active { border-color: var(--primary); }
+.agent-card-top { display: flex; align-items: center; gap: var(--sp-2); }
+.agent-card-glyph { color: var(--text-dim); flex: none; }
+.agent-card-title {
+  font-weight: 700; font-size: var(--fs-body); color: var(--text); cursor: pointer;
+  background: none; border: none; padding: 0; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-card-title:hover { text-decoration: underline; }
+.agent-card-type { font-size: var(--fs-xs); color: var(--text-faint); }
+.agent-card-top > .badge { margin-left: auto; }
+
+.agent-conf { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: var(--sp-2) 0; }
+.agent-conf-fill { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+.agent-conf-fill.tone-red { background: var(--red); }
+.agent-conf-fill.tone-amber { background: var(--amber); }
+.agent-conf-fill.tone-neutral { background: var(--text-faint); }
+
+.agent-card-claim { font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); margin: 0 0 var(--sp-2); }
+.agent-card-cites { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.agent-card-cites-h { font-size: var(--fs-xs); color: var(--text-faint); margin-right: 2px; }
+.agent-card-action { margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
+.agent-action-note {
+  font-size: var(--fs-xs); color: var(--text-dim); background: var(--amber-weak);
+  border: 1px solid var(--amber-border); border-radius: var(--radius-sm);
+  padding: var(--sp-2); margin-bottom: var(--sp-2); line-height: var(--lh-body);
+}
+
+/* grounding 없음 → 정적 runbook fallback */
+.agent-fallback {
+  border: 1px dashed var(--amber-border); border-radius: var(--radius);
+  background: var(--amber-weak); padding: var(--sp-3);
+}
+.agent-fallback-h { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text); margin-bottom: var(--sp-2); }
+.agent-runbook { margin: 0 0 var(--sp-2); padding-left: var(--sp-4); font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); }
+.agent-runbook li { margin-bottom: 4px; }
+.agent-cop-link { margin-top: var(--sp-3); display: inline-block; }
+
+/* ───────────── Ontology 개요 화면 (IMP-63) ─────────────
+   개념 헤더 + Object Type 카탈로그 + Link Type 스키마 그래프 + Action Type 표.
+   추가형 — 기존 토큰/.card/.tag/.badge/.ov-dot 재사용, 신규 색 없음. */
+.onto-concept { padding: var(--sp-4); margin-bottom: var(--sp-4); }
+.onto-axes { font-size: var(--fs-body); color: var(--text); line-height: var(--lh-body); margin: 0 0 var(--sp-3); }
+.onto-feels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+.onto-feel { display: flex; gap: var(--sp-2); align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.onto-feel-glyph { color: var(--primary-strong); font-size: 16px; line-height: 1.4; flex: none; }
+.onto-feel-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-feel-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+
+.onto-section-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-3); }
+.onto-section-h h2 { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
+.onto-section-h h2 .muted { font-size: var(--fs-sm); font-weight: 500; }
+.onto-section-sub { font-size: var(--fs-sm); }
+
+/* Object Type 카탈로그 */
+.onto-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); }
+.onto-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); }
+.onto-card-empty { opacity: 0.72; }
+/* IMP-64: 카드 좌측에 타입 색 액센트 바(noun-type 위계). 색은 인라인 --otype-color 로 주입. */
+.onto-card { border-left: 3px solid var(--otype-color, var(--border)); }
+.onto-card-empty { border-left-color: var(--border); }
+.onto-card-head { display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  background: none; border: none; padding: 0; cursor: pointer; text-align: left; font: inherit; }
+.onto-card-head:disabled { cursor: default; }
+/* 글리프 — 타입 색 + 약한 tint 배경의 정사각 칩(위계 강조). */
+.onto-card-glyph {
+  display: grid; place-items: center; flex: none;
+  width: 30px; height: 30px; border-radius: var(--radius-sm);
+  font-size: 17px; line-height: 1;
+  color: var(--otype-color, var(--text-dim));
+  background: var(--otype-tint, var(--surface-2));
+}
+.onto-card-empty .onto-card-glyph { color: var(--text-faint); background: var(--surface-2); }
+.onto-card-titles { display: flex; flex-direction: column; line-height: 1.25; }
+.onto-card-type { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-card-label { font-size: var(--fs-xs); color: var(--text-dim); }
+.onto-card-count { margin-left: auto; font-size: var(--fs-metric); font-weight: 700; color: var(--primary-strong); line-height: 1; }
+.onto-card-head:disabled .onto-card-count { color: var(--border-strong); }
+.onto-card-desc { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); margin: 0; }
+.onto-card-dist { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.onto-card-samples { display: flex; flex-wrap: wrap; gap: var(--sp-1); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.onto-sample { display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 3px 7px; cursor: pointer; font: inherit; font-size: var(--fs-xs); color: var(--text); }
+.onto-sample:hover { border-color: var(--primary); }
+.onto-sample-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+
+.onto-edge-card { margin-top: var(--sp-3); }
+.onto-side { background: var(--surface-2); }

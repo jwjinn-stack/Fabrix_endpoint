@@ -1073,3 +1073,153 @@ export interface NetworkReport {
   links: NetworkLink[];
   source: string;
 }
+
+// ───────────── 온톨로지 데이터 모델 (IMP-56 — Palantir Foundry Object/Link/Action) ─────────────
+// docs/palantir-ontology-analysis.md §5.1–5.3 을 그대로 반영. 화면별 응답 타입(위)이 각 화면에 갇혀 있는
+// 것을 넘어, 도메인을 명사(Object)·관계(Link)·동사(Action)로 표현하는 공용 계약(common contract) 계층.
+// 단일 출처: 온톨로지는 기존 Model/Endpoint/Service/GpuDevice/Node/Trace/Incident mock 을 승격해 파생한다.
+
+// §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑.
+export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident";
+
+// §5.2 Link Types (관계 그래프) — 트러블슈팅 척추:
+//   Service --consumes--> Endpoint --serves--> Model --runsOn--> GpuDevice --hostedBy--> Node
+//   Trace --routedTo--> Endpoint · Trace --executedOn--> GpuDevice · Incident --affects--> {any object}
+export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects";
+
+// 온톨로지 공통 상태 렌즈 — 기존 NodeStatus(ok|warn|crit) + unknown(미배포/미측정). 소스에서 파생(단일 출처).
+export type ObjectStatus = "ok" | "warn" | "crit" | "unknown";
+
+// 온톨로지 객체 — Property 는 소스별 payload(props). revision 은 미래 Action writeback 의 stale-write(409)
+// 낙관적 동시성 경로를 지금 열어두기 위한 필드(IMP-59). 객체가 바뀔 때마다 증가.
+export interface OntologyObject<T = Record<string, unknown>> {
+  id: string;
+  type: ObjectType;
+  title: string;
+  props: T;
+  status: ObjectStatus;
+  revision: number;
+}
+
+// 방향 엣지(from→to). linkKind 로 §5.2 관계를 구분.
+export interface OntologyLink {
+  from: string;
+  to: string;
+  linkKind: LinkKind;
+}
+
+// §5.3 Action Types (동사 — 제어). name=Action 식별자, target=대상 Object Type,
+// params=사용자 입력 폼, requiredCap=capability 게이팅(§2 Submission Criteria), sideEffects=알림/audit 등.
+export interface ActionParam {
+  name: string;
+  kind: "text" | "number" | "enum" | "object";
+  required: boolean;
+  options?: string[]; // enum 후보
+}
+export interface ActionType {
+  name: string;
+  target: ObjectType;
+  params: ActionParam[];
+  requiredCap?: string; // 예: models.write (없으면 기본 허용)
+  sideEffects: string[]; // 예: ["audit", "알림"]
+}
+
+// §2 Submission Criteria 판정 결과 — ok=false 면 reason(기계판독 사유)으로 "disabled + why" 무료 획득.
+export interface SubmissionCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+// Action(writeback) audit 라인(IMP-59) — IncidentAuditEntry 를 일반화. 어떤 verb 든 동일 계약으로 기록.
+// outcome: ok=반영됨, conflict=stale revision(409), denied=capability 거부(403), error=기타.
+export type ActionOutcome = "ok" | "conflict" | "denied" | "error";
+export interface ActionAuditEntry {
+  actionType: string;      // verb 이름(scaleReplicas 등)
+  target: string;          // 대상 Object id
+  params: Record<string, unknown>;
+  actor: string;           // 실행 주체(mock=operator)
+  ts: string;
+  outcome: ActionOutcome;
+  note?: string;
+}
+
+// 단일 mutation 계약 응답(IMP-59) — mock/실백엔드 동일. object=reconcile 대상 canonical 객체.
+export interface ActionResult {
+  outcome: ActionOutcome;
+  object?: OntologyObject;   // 성공 시 갱신된 canonical 객체(provisional 을 이걸로 수렴)
+  audit: ActionAuditEntry;
+  reason?: string;           // 실패(denied/conflict) 사유 — 기계판독
+}
+
+// 응답 래퍼 — GET /ontology/objects, GET /ontology/objects/:id/links.
+export interface OntologyObjectList {
+  generated_at: string;
+  objects: OntologyObject[];
+  source: string;
+}
+export interface OntologyLinkList {
+  generated_at: string;
+  object_id: string;
+  links: OntologyLink[];
+  source: string;
+}
+
+// ───────────── AI Agent (IMP-60 — 로컬 모델 + MCP tool-calling 온톨로지 접지) ─────────────
+// docs/palantir-ontology-analysis.md §3·§5.4 + AWS Prescriptive Guidance grounded-agent Pattern 5.
+// "채팅"이 아니라 "온톨로지 위에서 tool 을 쓰는 운영 에이전트": LLM 이 온톨로지를 tool 로 조회(read-only)하고
+// 근본원인 후보 + 실행 가능 Action 을 제안한다. **핵심 안전장치**: 에이전트의 tool 은 조회 3종뿐이고
+// (mutating tool 없음), mutation 은 오직 <ActionForm>(IMP-59) confirm + capability 게이팅으로만 실행된다.
+
+// read-only tool 이름 — 모델이 자동 실행. mutating(invokeAction)은 의도적으로 tool 에서 배제(two-tier 게이팅).
+export type AgentToolName = "queryObjects" | "traverseLinks" | "getIncidents";
+
+// tool 호출(모델이 낸 typed call) — args 는 tool 별 파라미터(문자열 위주로 escape-safe 렌더).
+export interface AgentToolCall {
+  tool: AgentToolName;
+  args: Record<string, string>;
+}
+
+// tool 실행 결과 — grounding 소스인 objectId 목록을 항상 반환(RCA 인용의 출처). found=false → grounding 없음.
+export interface AgentToolResult {
+  objectIds: string[]; // 이 tool 이 접지한 온톨로지 객체 id(인용 소스)
+  summary: string;     // 사람용 한 줄 요약(escape 렌더)
+  found: boolean;      // 아무것도 못 찾으면 false → 정적 runbook fallback 트리거
+}
+
+// ReAct 타임라인 한 스텝(discriminated union) — reasoning(생각) 또는 tool(도구 호출+결과).
+export type AgentStep =
+  | { kind: "reasoning"; text: string }
+  | { kind: "tool"; call: AgentToolCall; result: AgentToolResult };
+
+// 근본원인 후보 카드 — 모든 claim 은 objectId/trace id 를 인용(citations)해야 한다(grounding 1급).
+// suggestedAction 은 "제안"일 뿐 — 실행은 사용자의 <ActionForm> confirm + capability 게이팅을 반드시 통과한다.
+export interface RcaCandidate {
+  objectId: string;            // 대상 온톨로지 객체 id(ObjectView deep-link)
+  title: string;
+  objectType: ObjectType;
+  confidence: number;          // 0..1 (순위·바 표시)
+  claim: string;               // 근본원인 추정 서술(escape 렌더 — "추정", 상관≠인과)
+  citations: string[];         // 근거 objectId/trace id(비어 있으면 grounding 없음)
+  suggestedAction?: { actionType: string; target: string }; // 제안 verb(ActionForm 확장으로만 실행)
+}
+
+// 에이전트 실행 1회 결과 — 전체 transcript 는 traceId 로 키잉되어 audit 표면과 연결된다.
+export interface AgentRun {
+  traceId: string;             // transcript 추적 id(audit 조인 키)
+  intent: string;             // 사용자 의도(자연어, escape 렌더)
+  steps: AgentStep[];          // ReAct 타임라인(순서 보존)
+  candidates: RcaCandidate[];  // confidence 순위 RCA 후보(grounding 있을 때만)
+  grounded: boolean;           // tool 이 근거를 찾았는지. false → fallbackRunbook 사용(hallucination 금지)
+  fallbackRunbook?: string[];  // grounding 없음 시 정적 runbook 절차(모델이 지어내지 않음)
+  audit: AgentAuditEntry[];    // transcript audit 라인(prompt/tool/reasoning/action)
+  generated_at: string;
+  source: string;             // "agent (mock)" | 실백엔드
+}
+
+// transcript audit 라인(IMP-60) — ActionAuditEntry 의 형제. 어떤 실행이든 traceId 로 묶는다.
+export interface AgentAuditEntry {
+  traceId: string;
+  kind: "prompt" | "tool" | "reasoning" | "action";
+  detail: string; // 마스킹된 메타데이터만(원문/시크릿 로깅 금지)
+  ts: string;
+}

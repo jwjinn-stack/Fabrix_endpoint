@@ -6,6 +6,7 @@ import { capForPage } from "../router";
 
 export type Page =
   | "dashboard"
+  | "ontology"
   | "usage"
   | "guard"
   | "traces"
@@ -19,6 +20,8 @@ export type Page =
   | "nodes"
   | "network"
   | "topology"
+  | "investigate"
+  | "agent"
   | "keys"
   | "traffic"
   | "settings"
@@ -29,21 +32,28 @@ type NavChild = { label: string; page: Page };
 type NavItem = { glyph: string; label: string; page?: Page; soon?: boolean; children?: NavChild[] };
 
 // 증권사 인퍼런스 관제 콘솔 — 의미가 또렷한 단색 글리프(이모지 배제로 톤 통일).
-// 모델/설정은 하위 메뉴(서브)를 가진다(Nutanix Enterprise AI 패턴).
-// 인프라·관측 성격 화면(GPU/노드/네트워크/토폴로지/트래픽)은 하나의 확장 그룹으로 묶어
-// flat nav 폭주를 막는다(IMP-53). 부모는 page 가 없어 클릭 시 확장/접힘만 한다(자식만 이동).
+// IA(정보구조)를 팔란티어식 object-centric·흐름 중심으로 재편(IMP-62, doc §7):
+// 최상위를 5개 흐름 그룹(탐색→관측→추적→제어→연동)으로 묶어 사용자가 관측→추적→제어 순으로 흐르게 한다.
+// 모든 그룹은 page 가 없는 groupless 그룹 — 부모 클릭 시 확장/접힘만(자식만 이동, IMP-53 패턴 재사용).
+// 2단 서브였던 모델 임포트·서드파티 자격증명은 NavChild 가 플랫이라 연동 그룹의 형제 항목으로 평탄화
+// (두 화면은 고유 라우트·App.tsx 렌더 스위치를 가져 nav shape 와 무관하게 도달 가능).
+// capability 게이팅(PAGE_CAP)은 불변 — observe 프로파일에선 mutating 항목이 빠져 제어/연동 그룹이 자연히 줄어든다.
 const NAV: NavItem[] = [
-  { glyph: "▦", label: "관제", page: "dashboard" },
-  { glyph: "▤", label: "사용량", page: "usage" },
-  { glyph: "▣", label: "가드레일", page: "guard" },
-  { glyph: "◆", label: "모델", page: "models", children: [{ label: "모델 임포트", page: "model-import" }] },
-  { glyph: "❯", label: "플레이그라운드", page: "playground" },
-  { glyph: "◎", label: "평가", page: "eval" },
-  { glyph: "⬡", label: "엔드포인트", page: "endpoints" },
+  // 탐색(Explore) — 온톨로지 렌즈로 Object 를 탐색(개요가 Object 탐색기를 겸함).
   {
-    glyph: "▥",
-    label: "인프라 · 관측",
+    glyph: "⬡",
+    label: "탐색",
+    children: [{ label: "온톨로지", page: "ontology" }],
+  },
+  // 관측(Observe) — 현상 보기: 관제·사용량·트레이스·세션·인프라(GPU/노드/네트워크/토폴로지)·트래픽.
+  {
+    glyph: "▦",
+    label: "관측",
     children: [
+      { label: "관제", page: "dashboard" },
+      { label: "사용량", page: "usage" },
+      { label: "트레이스", page: "traces" },
+      { label: "세션", page: "sessions" },
       { label: "GPU / MIG", page: "gpu" },
       { label: "노드", page: "nodes" },
       { label: "네트워크", page: "network" },
@@ -51,11 +61,37 @@ const NAV: NavItem[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  { glyph: "▢", label: "키·앱", page: "keys" },
-  { glyph: "≣", label: "트레이스", page: "traces" },
-  { glyph: "❑", label: "세션", page: "sessions" },
-  { glyph: "⇄", label: "연동 상태", page: "diagnostics" },
-  { glyph: "⚙", label: "설정", page: "settings", children: [{ label: "서드파티 자격증명", page: "credentials" }] },
+  // 추적(Investigate) — 원인 추적을 1급 시민으로. Incidents 는 investigate 화면 내부 surface.
+  {
+    glyph: "◈",
+    label: "추적",
+    children: [{ label: "근본원인 추적(COP)", page: "investigate" }],
+  },
+  // 제어(Operate) — 행위: AI Agent(MCP)·플레이그라운드. Actions 는 ObjectView/Investigate 내부.
+  {
+    glyph: "❯",
+    label: "제어",
+    children: [
+      { label: "AI Agent", page: "agent" },
+      { label: "플레이그라운드", page: "playground" },
+    ],
+  },
+  // 연동(Integrate) — 구성·거버넌스: 연동 상태·모델·엔드포인트·자격증명·키·가드레일·평가·설정.
+  {
+    glyph: "⇄",
+    label: "연동",
+    children: [
+      { label: "연동 상태", page: "diagnostics" },
+      { label: "모델", page: "models" },
+      { label: "모델 임포트", page: "model-import" },
+      { label: "엔드포인트", page: "endpoints" },
+      { label: "서드파티 자격증명", page: "credentials" },
+      { label: "키·앱", page: "keys" },
+      { label: "가드레일", page: "guard" },
+      { label: "평가", page: "eval" },
+      { label: "설정", page: "settings" },
+    ],
+  },
 ];
 
 // 전역 레이아웃 (Backend.AI 패턴): 오렌지 상단 바 + 라이트 사이드바 + 콘텐츠.

@@ -6,6 +6,7 @@ import { CapabilitiesProvider, useCap } from "./capabilities";
 import { TimeRangeProvider } from "./timeRange";
 import { ThemeProvider } from "./theme";
 import Dashboard from "./pages/Dashboard";
+import Ontology from "./pages/Ontology";
 import Usage from "./pages/Usage";
 import Guard from "./pages/Guard";
 import Traces from "./pages/Traces";
@@ -19,6 +20,8 @@ import Gpu from "./pages/Gpu";
 import NodeMetrics from "./pages/NodeMetrics";
 import Network from "./pages/Network";
 import Topology from "./pages/Topology";
+import Investigate from "./pages/Investigate";
+import AiAgent from "./pages/AiAgent";
 import Traffic from "./pages/Traffic";
 import Settings from "./pages/Settings";
 import Credentials from "./pages/Credentials";
@@ -96,6 +99,7 @@ function pageContent(
   return (
     <>
       {effPage === "dashboard" && <Dashboard onNavigate={navigate} />}
+      {effPage === "ontology" && <Ontology onNavigate={navigate} />}
       {effPage === "usage" && <Usage onNavigate={navigate} />}
       {effPage === "guard" && <Guard />}
       {effPage === "traces" && <Traces onNavigate={navigate} />}
@@ -109,6 +113,8 @@ function pageContent(
       {effPage === "nodes" && <NodeMetrics />}
       {effPage === "network" && <Network onNavigate={navigate} />}
       {effPage === "topology" && <Topology onNavigate={navigate} />}
+      {effPage === "investigate" && <Investigate />}
+      {effPage === "agent" && <AiAgent onNavigate={navigate} />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}
       {effPage === "credentials" && <Credentials />}

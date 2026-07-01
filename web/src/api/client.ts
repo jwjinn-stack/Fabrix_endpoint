@@ -43,6 +43,13 @@ import type {
   ModelMetricsReport,
   NetworkReport,
   NodeMetrics,
+  ObjectType,
+  LinkKind,
+  OntologyObject,
+  OntologyObjectList,
+  OntologyLinkList,
+  ActionResult,
+  AgentRun,
   OrgTree,
   TopologyGraph,
   ProxyStats,
@@ -512,6 +519,82 @@ export function fetchNodeMetrics(host: string, range: TimeRange = "1h", signal?:
 
 export function fetchNetwork(range: TimeRange = "1h", signal?: AbortSignal): Promise<NetworkReport> {
   return getJSON<NetworkReport>(`/network?range=${range}`, signal);
+}
+
+// 온톨로지(IMP-56) — Object/Link 그래프. type/filter 로 명사를 추리고, id 로 관계를 traverse.
+export function fetchOntologyObjects(type?: ObjectType, filter?: string, signal?: AbortSignal): Promise<OntologyObjectList> {
+  const q = new URLSearchParams();
+  if (type) q.set("type", type);
+  if (filter && filter.trim()) q.set("filter", filter.trim());
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return getJSON<OntologyObjectList>(`/ontology/objects${suffix}`, signal);
+}
+
+export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSignal): Promise<OntologyLinkList> {
+  const q = new URLSearchParams();
+  if (kind) q.set("kind", kind);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return getJSON<OntologyLinkList>(`/ontology/objects/${encodeURIComponent(id)}/links${suffix}`, signal);
+}
+
+// 단일 canonical 객체(IMP-57 Object View) — deep-link 복원·traverse 대상 해석. 미존재 → 404 throw.
+export function fetchOntologyObject(id: string, signal?: AbortSignal): Promise<OntologyObject> {
+  return getJSON<OntologyObject>(`/ontology/objects/${encodeURIComponent(id)}`, signal);
+}
+
+// Action(writeback) 단일 mutation 계약(IMP-59) — POST /ontology/actions/:name.
+// intentId(클라 시도 식별)·idempotencyKey(재전송 시 중복 방지)를 항상 실어 mock/실백엔드 계약을 동일하게 유지.
+// VITE_MOCK=off 면 이 함수는 그대로 실백엔드로 나가고(transport 만 스왑), 응답 스키마는 ActionResult 로 고정.
+// crypto.randomUUID 미지원 환경 폴백 포함(테스트 jsdom 대비).
+function newId(prefix: string): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  const uuid = c?.randomUUID ? c.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${uuid}`;
+}
+
+export async function submitAction(
+  name: string,
+  req: { target: string; params?: Record<string, unknown>; revision?: number; idempotencyKey?: string },
+): Promise<ActionResult> {
+  const body = {
+    target: req.target,
+    params: req.params ?? {},
+    revision: req.revision,
+    intentId: newId("intent"),
+    idempotencyKey: req.idempotencyKey ?? newId("idem"),
+  };
+  const res = await fetch(`${BASE}/ontology/actions/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  // 200(ok) 과 403(denied)·409(conflict) 모두 ActionResult 를 반환 — 호출부가 outcome 으로 분기한다.
+  const j = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  if (j && "outcome" in j) return j as unknown as ActionResult;
+  const errMsg = j && typeof j.error === "string" ? j.error : `API ${res.status}`;
+  throw new Error(errMsg);
+}
+
+// AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. POST /agent/run(mock/실백엔드 동일 계약).
+// read tool(queryObjects/traverseLinks/getIncidents)은 서버(에이전트)가 자동 실행하고, mutating 은 응답에
+// 포함되지 않는다 — mutation 은 오직 submitAction(<ActionForm>) + capability 게이팅으로만 실행된다(two-tier).
+// VITE_MOCK=off 면 이 함수는 그대로 실백엔드로 나가고(transport 만 스왑), 응답 스키마는 AgentRun 로 고정.
+export async function runAgent(
+  req?: { intent?: string; entity?: string },
+  signal?: AbortSignal,
+): Promise<AgentRun> {
+  const res = await fetch(`${BASE}/agent/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ intent: req?.intent, entity: req?.entity }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as AgentRun;
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {
