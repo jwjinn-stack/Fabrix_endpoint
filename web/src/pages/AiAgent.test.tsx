@@ -4,7 +4,7 @@
 //   mutating 은 ActionForm confirm 필요 + capability 게이팅(observe → not invokable) /
 //   grounding-empty → runbook fallback(hallucination 없음) / env-missing(reject).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import AiAgent from "./AiAgent";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
@@ -141,9 +141,14 @@ describe("AiAgent — mutating 은 ActionForm confirm + capability 게이팅(two
     // ActionForm 등장(graceSec 파라미터 필드 + 실행 버튼). 아직 submitAction 은 호출되지 않음(자동 실행 아님).
     await waitFor(() => expect(screen.getByLabelText(/graceSec/i)).toBeInTheDocument());
     expect(client.submitAction).not.toHaveBeenCalled();
-    // 사용자가 파라미터 입력 후 명시적 제출(confirm) → 그제서야 submitAction.
+    // 사용자가 파라미터 입력 후 명시적 제출 → drainGpu 는 destructive(IMP-65)이므로 confirm 다이얼로그가 열린다.
     fireEvent.change(screen.getByLabelText(/graceSec/i), { target: { value: "30" } });
-    fireEvent.click(screen.getByRole("button", { name: /GPU drain/ }));
+    fireEvent.submit(screen.getByRole("form", { name: /GPU drain 실행/ }));
+    expect(client.submitAction).not.toHaveBeenCalled(); // confirm 전엔 아직 실행 안 함.
+    // type-to-confirm(대상 id) 입력 후 danger 확인 버튼 → 그제서야 submitAction.
+    const dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/대상 id 확인 입력/), { target: { value: "gpu:g" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /GPU drain/ }));
     await waitFor(() => expect(client.submitAction).toHaveBeenCalledWith("drainGpu", expect.objectContaining({ target: "gpu:g" })));
   });
 

@@ -12,6 +12,7 @@ export default function ConfirmDialog({
   cancelLabel = "취소",
   danger = false,
   busy = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: {
@@ -23,6 +24,8 @@ export default function ConfirmDialog({
   /** 파괴적 액션이면 확인 버튼을 위험 톤(빨강)으로 */
   danger?: boolean;
   busy?: boolean;
+  /** type-to-confirm 등 추가 조건이 미충족이면 확인 버튼 비활성(IMP-65, 가산 옵션) */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -59,7 +62,7 @@ export default function ConfirmDialog({
             type="button"
             className={danger ? "btn-danger" : "btn-primary"}
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
           >
             {busy ? "처리 중…" : confirmLabel}
           </button>

@@ -8,9 +8,9 @@
 //    fetchOntologyLinks(id)(관계). 전부 mock/실백엔드 동일 계약. 미존재 id → 빈 상태(throw 소비).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOntologyLinks, fetchOntologyObject, fetchOntologyObjects } from "../api/client";
-import type { LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
+import type { ActionAuditEntry, ActionOutcome, LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
-import { ACTION_REGISTRY } from "../actions/registry";
+import { ACTION_REGISTRY, getActionSpec } from "../actions/registry";
 import { objectViewSchema, useUrlState } from "../urlState";
 import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
@@ -66,6 +66,16 @@ const KIND_ORDER: LinkKind[] = ["serves", "consumes", "routedTo", "runsOn", "exe
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };
 
+// Action outcome → 감사 타임라인 배지 톤/라벨(IMP-65). ok=반영, conflict/denied=주의, error=위험.
+const OUTCOME_TONE: Record<ActionOutcome, BadgeTone> = { ok: "green", conflict: "amber", denied: "amber", error: "red" };
+const OUTCOME_LABEL: Record<ActionOutcome, string> = { ok: "반영됨", conflict: "충돌", denied: "거부", error: "실패" };
+
+// 감사 시각 — 로케일 시분초(hour12=false). ISO 파싱 실패 시 원문 그대로(방어).
+function fmtAuditTs(ts: string): string {
+  const d = new Date(ts);
+  return Number.isNaN(d.getTime()) ? ts : d.toLocaleTimeString("ko-KR", { hour12: false });
+}
+
 function fmtVal(v: unknown): string {
   if (v == null || v === "") return "—";
   if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
@@ -105,6 +115,9 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   const [links, setLinks] = useState<OntologyLink[]>([]);
   const [loading, setLoading] = useState(false);
   const [missing, setMissing] = useState(false);
+  // IMP-65 — 이 객체에서 실행한 Action 감사 로그(세션-로컬). ActionForm.onDone 이 돌려준 res.audit 을
+  // 최근 순으로 누적. head 가 바뀌면 리셋(객체별 컨텍스트). 신규 fetch endpoint 없이 기존 계약만 소비.
+  const [auditLog, setAuditLog] = useState<ActionAuditEntry[]>([]);
 
   // head 변경 시 canonical + 관계 + 이웃 해석 인덱스 로드.
   useEffect(() => {
@@ -112,6 +125,7 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
     const ac = new AbortController();
     setLoading(true);
     setMissing(false);
+    setAuditLog([]); // 새 객체(traverse/재진입) — 감사 로그는 객체별 컨텍스트.
     Promise.all([
       fetchOntologyObject(head, ac.signal),
       fetchOntologyLinks(head, undefined, ac.signal),
@@ -355,10 +369,46 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
                     target={obj.id}
                     targetStatus={obj.status}
                     revision={obj.revision}
-                    onDone={(res) => { if (res.outcome === "ok") reloadHead(); }}
+                    onDone={(res) => {
+                      // 감사 타임라인에 최근 순 누적(성공/실패 모두 — 시도 자체가 기록 대상).
+                      setAuditLog((l) => [res.audit, ...l]);
+                      if (res.outcome === "ok") reloadHead();
+                    }}
                   />
                 ))}
               </div>
+            </section>
+          )}
+
+          {/* (5) 실행 이력 — IMP-65: IncidentAuditEntry(IMP-38) 시각 패턴을 세로 타임라인으로.
+              누가·언제·무엇을. flat list 아님 — 좌측 rail + outcome 색 dot. 비어 있으면 미표시. */}
+          {auditLog.length > 0 && (
+            <section className="ov-section" aria-label="실행 이력">
+              <h4 className="ov-h">실행 이력</h4>
+              <ol className="audit-timeline">
+                {auditLog.map((a, i) => {
+                  const label = getActionSpec(a.actionType)?.label ?? a.actionType;
+                  return (
+                    <li className={`audit-item audit-${a.outcome}`} key={`${a.ts}-${i}`}>
+                      <span className="audit-rail" aria-hidden="true">
+                        <span className={`audit-dot audit-dot-${a.outcome}`} />
+                      </span>
+                      <div className="audit-body">
+                        <div className="audit-line">
+                          <span className="audit-verb">{label}</span>
+                          <Badge tone={OUTCOME_TONE[a.outcome]} dot>{OUTCOME_LABEL[a.outcome]}</Badge>
+                        </div>
+                        <div className="audit-meta">
+                          <span className="audit-actor">{a.actor}</span>
+                          <span className="audit-sep" aria-hidden="true">·</span>
+                          <time className="audit-ts" dateTime={a.ts}>{fmtAuditTs(a.ts)}</time>
+                        </div>
+                        {a.note && <div className="audit-note">{a.note}</div>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
             </section>
           )}
         </>

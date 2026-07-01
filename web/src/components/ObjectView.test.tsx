@@ -2,11 +2,11 @@
 // back pop, Action 게이팅(observe disabled+사유 / manage enabled), deep-link 복원, 미존재 id 빈 상태.
 // client 온톨로지 fetch 와 capabilities 를 모킹해 결정적으로 구동한다(백엔드 0개).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
 import ObjectView from "./ObjectView";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
-import type { OntologyObject, OntologyLink, OntologyObjectList, OntologyLinkList } from "../api/types";
+import type { ActionResult, OntologyObject, OntologyLink, OntologyObjectList, OntologyLinkList } from "../api/types";
 
 // can() 를 테스트별로 갈아끼운다(observe/manage).
 let mockCan = (_cap: string) => true;
@@ -191,5 +191,49 @@ describe("ObjectView — deep-link / 미존재 id", () => {
   it("objectId=null → 렌더 안 함(패널 닫힘)", () => {
     const { container } = renderView(null);
     expect(container.querySelector("dialog")).toBeNull();
+  });
+});
+
+describe("ObjectView — 실행 이력 타임라인(IMP-65)", () => {
+  it("Action 실행 시 감사 타임라인이 최근 순으로 항목을 렌더한다(verb 라벨 + outcome 배지)", async () => {
+    // model:foo(Model) verb = restartModel/scaleReplicas(둘 다 destructive). 각기 다른 revision 으로 응답.
+    const okFor = (name: string, rev: number): ActionResult => ({
+      outcome: "ok",
+      object: { ...OBJS["model:foo"], revision: rev },
+      audit: { actionType: name, target: "model:foo", params: {}, actor: "operator", ts: new Date(rev * 1000).toISOString(), outcome: "ok" },
+    });
+    const spy = vi.spyOn(client, "submitAction").mockImplementation((name: string) =>
+      Promise.resolve(okFor(name, name === "restartModel" ? 3 : 4)),
+    );
+
+    renderView(); // model:foo
+    await waitFor(() => expect(screen.getByRole("button", { name: /모델 재기동/ })).toBeInTheDocument());
+
+    // 1) 모델 재기동(destructive) — reason 입력 → submit → confirm(type-to-confirm) → 확인.
+    fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "rolling" } });
+    fireEvent.submit(screen.getByRole("form", { name: /모델 재기동 실행/ }));
+    let dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/대상 id 확인 입력/), { target: { value: "model:foo" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /모델 재기동/ }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("restartModel", expect.anything()));
+
+    // 2) 레플리카 조정 — count 입력 → submit → confirm → 확인.
+    fireEvent.change(screen.getByLabelText(/count/i), { target: { value: "2" } });
+    fireEvent.submit(screen.getByRole("form", { name: /레플리카 조정 실행/ }));
+    dialog = screen.getByRole("alertdialog");
+    fireEvent.change(within(dialog).getByLabelText(/대상 id 확인 입력/), { target: { value: "model:foo" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: /레플리카 조정/ }));
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("scaleReplicas", expect.anything()));
+
+    // 타임라인 — 2건, flat list 아닌 <ol class=audit-timeline>. 최신(레플리카 조정)이 맨 위.
+    await waitFor(() => {
+      const items = document.querySelectorAll(".audit-timeline .audit-item");
+      expect(items.length).toBe(2);
+    });
+    const verbs = Array.from(document.querySelectorAll(".audit-timeline .audit-verb")).map((n) => n.textContent);
+    expect(verbs[0]).toMatch(/레플리카 조정/); // 최근 순(prepend)
+    expect(verbs[1]).toMatch(/모델 재기동/);
+    // outcome 배지(반영됨) 존재.
+    expect(document.querySelectorAll(".audit-timeline .badge").length).toBeGreaterThanOrEqual(2);
   });
 });

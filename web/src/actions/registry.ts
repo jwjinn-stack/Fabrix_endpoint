@@ -6,6 +6,11 @@
 // evaluateSubmission()로 판정하고, mock 도 동일 규칙으로 서버 등가 거부(403)를 낸다(trust boundary).
 import type { ActionParam, ObjectStatus, ObjectType, SubmissionCheck } from "../api/types";
 
+// Action 위험 위계(IMP-65) — 시각 레이어 전용(마찰 강도 결정). 계약/게이팅과 무관한 가산 필드.
+//  destructive: 실제 blast radius(상태 전이·워크로드 이전) → 명시적 확인 + type-to-confirm.
+//  low: 온톨로지 status 불변 또는 해소(ack/snooze/resolve) → 확인 없이 즉시.
+export type ActionSeverity = "low" | "destructive";
+
 export interface ActionSpec {
   name: string;             // verb 식별자(라우트 /ontology/actions/:name 과 동일)
   target: ObjectType;       // 대상 Object Type
@@ -15,6 +20,7 @@ export interface ActionSpec {
   allowedStatus?: ObjectStatus[]; // Submission Criteria — 이 상태에서만 실행(없으면 무제한)
   sideEffects: string[];    // Side Effects — audit·알림 라벨(실행은 프레임워크가 담당)
   rulesNote: string;        // Rules — 상태 전이 설명(사람용). 실제 전이는 STATE_TRANSITION.
+  severity?: ActionSeverity; // IMP-65 — 확인 마찰 강도(가산). 미지정 시 actionSeverity()가 "low" fallback.
 }
 
 // Rules — verb 실행 시 대상 Object 의 canonical status 전이(mock 이 반영, 실백엔드도 동일 규약).
@@ -36,6 +42,7 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
     requiredCap: "models.write",
     sideEffects: ["audit", "알림"],
     rulesNote: "파드 롤링 재기동 → status=ok 로 수렴",
+    severity: "destructive", // 파드 재기동 = 순간 서빙 중단(blast radius) → 확인
   },
   scaleReplicas: {
     name: "scaleReplicas", target: "Model", label: "레플리카 조정",
@@ -43,6 +50,7 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
     requiredCap: "models.write",
     sideEffects: ["audit", "상태전이 pending→running"],
     rulesNote: "replica 수 변경 → pending(warn) 후 running(ok)",
+    severity: "destructive", // 용량 변경 = 트래픽 영향 → 확인
   },
   cordonNode: {
     name: "cordonNode", target: "Node", label: "노드 cordon",
@@ -50,6 +58,7 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
     requiredCap: "endpoints.write", // manage 프로파일에서만(observe 는 endpoints.write=false)
     sideEffects: ["audit", "trace 재라우팅 표시"],
     rulesNote: "스케줄 차단 → status=warn",
+    severity: "destructive", // 스케줄 차단 = 재라우팅 유발 → 확인
   },
   drainGpu: {
     name: "drainGpu", target: "GpuDevice", label: "GPU drain",
@@ -57,6 +66,7 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
     requiredCap: "endpoints.write",
     sideEffects: ["audit", "영향 Service 경고"],
     rulesNote: "워크로드 이전(graceSec) → status=warn",
+    severity: "destructive", // 워크로드 강제 이전 = 가장 큰 blast radius → 확인
   },
   // 기존 인시던트 동사 — 일반화된 계약으로 흡수(비회귀).
   ack: {
@@ -82,6 +92,12 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
 
 export function getActionSpec(name: string): ActionSpec | undefined {
   return ACTION_REGISTRY[name];
+}
+
+// IMP-65 — 확인 마찰 강도. 미지정 spec 은 "low"(가벼운 동사) 로 안전 fallback.
+// destructive 만 명시적 확인 + type-to-confirm 을 요구한다(ActionForm 시각 레이어).
+export function actionSeverity(spec: ActionSpec): ActionSeverity {
+  return spec.severity ?? "low";
 }
 
 // §2 Submission Criteria — capability + 대상 status predicate 판정. 불가면 기계판독 reason 을 준다.

@@ -2434,9 +2434,47 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .action-field input[aria-invalid="true"], .action-field select[aria-invalid="true"] { border-color: var(--danger, #c0392b); }
 .action-sideeffects { font-size: var(--fs-xs); color: var(--text-faint); }
 .action-denied-reason { font-size: var(--fs-sm); color: var(--danger, #c0392b); margin: 0; }
-.action-phase.phase-provisional { color: var(--text-dim); opacity: 0.8; }
+.action-phase { display: inline-flex; align-items: center; gap: 5px; }
+.action-phase.phase-provisional { color: var(--text-dim); opacity: 0.85; }
 .action-phase.phase-reconciled { color: var(--primary); }
-.action-phase.phase-error { color: var(--danger, #c0392b); }
+.action-phase.phase-error { color: var(--danger, var(--red)); }
+/* IMP-65 — provisional 국면 pending pulse dot(스틸블루). "지금 반영 중"의 살아있는 신호.
+   pulse 는 prefers-reduced-motion 존중: 전역 규칙(맨 위 @media)이 animation-duration 을 죽이고,
+   아래 명시적 가드가 정적 dot 로 고정(색·크기 유지 — 정보는 안 사라짐). */
+.phase-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--primary);
+  animation: af-pulse 1.2s ease-in-out infinite;
+}
+@keyframes af-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phase-dot { animation: none; opacity: 1; transform: none; }
+}
+
+/* IMP-65 — destructive 확인 다이얼로그 내용(영향 요약 + type-to-confirm). ConfirmDialog 안에 렌더. */
+.action-confirm { display: flex; flex-direction: column; gap: var(--sp-2); }
+.action-confirm-lead { margin: 0; font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body, 1.5); }
+/* 영향 요약 — 위험 톤 카드(red-weak). 상태 전이·부수효과를 사전 고지. */
+.action-impact {
+  margin: 0; padding: var(--sp-2) var(--sp-3); list-style: none;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--red-weak); border: 1px solid var(--red-border); border-radius: var(--radius-sm);
+  font-size: var(--fs-sm); color: var(--text);
+}
+.action-impact li { display: flex; gap: var(--sp-2); align-items: baseline; }
+.action-impact-k { flex: none; min-width: 62px; font-size: var(--fs-xs); font-weight: 600; color: var(--red); text-transform: uppercase; letter-spacing: .02em; }
+.action-confirm-field { font-size: var(--fs-sm); color: var(--text-dim); margin-top: 2px; }
+.action-confirm-field code { font-family: var(--mono, monospace); font-size: var(--fs-xs); background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; color: var(--text); }
+.action-confirm-input {
+  padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-size: var(--fs-body); font-family: var(--mono, monospace);
+  background: var(--surface); color: var(--text);
+}
+.action-confirm-input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.action-confirm-mismatch { margin: 0; font-size: var(--fs-xs); color: var(--red); }
 
 /* Object View(IMP-57) — Palantir Workshop 스타일 단일 엔티티 패널 */
 .ov-title { display: inline-flex; align-items: center; gap: var(--sp-2); }
@@ -2519,6 +2557,31 @@ tr.row-sel { background: var(--primary-weak) !important; }
 /* (4) Actions — verb 별 ActionForm 구분 */
 .ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
 .ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* (5) 실행 이력 — IMP-65 감사 타임라인. IncidentAuditEntry(IMP-38) 시각 패턴을 세로 rail 로 확장.
+   좌측 연속 rail(border-left) + outcome 색 dot → 시간순 사건을 "선"으로 읽히게(flat list 대비). */
+.audit-timeline { list-style: none; margin: 0; padding: 0; }
+.audit-item {
+  position: relative; display: flex; gap: var(--sp-2);
+  padding: 0 0 var(--sp-3) 0;
+}
+/* rail — dot 를 담고, dot 아래로 연결선(항목 사이). 마지막 항목은 연결선 없음. */
+.audit-rail { position: relative; flex: none; width: 12px; display: flex; justify-content: center; padding-top: 3px; }
+.audit-rail::before {
+  content: ""; position: absolute; top: 10px; bottom: -3px; left: 50%;
+  width: 1px; background: var(--border); transform: translateX(-0.5px);
+}
+.audit-item:last-child .audit-rail::before { display: none; }
+.audit-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; z-index: 1; box-shadow: 0 0 0 2px var(--surface); }
+.audit-dot-ok { background: var(--green); }
+.audit-dot-conflict, .audit-dot-denied { background: var(--amber); }
+.audit-dot-error { background: var(--red); }
+.audit-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.audit-line { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.audit-verb { font-size: var(--fs-body); font-weight: 600; color: var(--text); }
+.audit-meta { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-faint); }
+.audit-actor { font-weight: 500; }
+.audit-note { font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.45; }
 
 /* ───────────── Troubleshooting COP(IMP-58) — 근본원인 추적 화면 ───────────── */
 /* LEFT(진입) / CENTER(경로) 2열. 좁은 폭에선 세로로 스택(반응형). RIGHT 는 SlidePanel(ObjectView). */
