@@ -953,29 +953,52 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
-// Action(writeback) mock 상태(IMP-59) — buildOntology 는 매 호출 결정적으로 재구성되므로,
+// Action(writeback) mock 상태(IMP-59) — buildOntology 는 결정적으로 재구성되므로,
 // 실행된 action 의 결과(status 전이·revision 증가)를 여기 override 로 얹어 다음 조회에 반영한다.
-// (단일 출처: 아래 applyAction 만 여길 쓰고, buildOntology 의 add 가 얹는다.)
+// (단일 출처: applyAction 만 여길 쓰고, buildOntology 의 add 와 applyAction 응답이 mergeOverride 로 함께 얹는다.)
 interface OntologyOverride { status?: ObjectStatus; revision: number; props?: Record<string, unknown>; }
 const ONTOLOGY_OVERRIDES: Record<string, OntologyOverride> = {};
+
+// writeback ↔ 재구성 정합(IMP-81) — override 를 canonical base 에 얹는 **단일 순수 merge**.
+// 재구성 경로(buildOntology 의 add)와 writeback 응답 경로(applyAction 의 object)가 이 함수 하나만
+// 쓰므로, 같은 객체가 "직접 조회" 든 "그래프 재구성" 이든 절대 어긋나지 않는다(revision 기준 병합).
+function mergeOverride(base: OntologyObject, ov?: OntologyOverride): OntologyObject {
+  if (!ov) return base;
+  return {
+    ...base,
+    status: ov.status ?? base.status,
+    revision: ov.revision ?? base.revision,
+    props: ov.props ? { ...base.props, ...ov.props } : base.props,
+  };
+}
 // idempotencyKey → 이미 반영된 ActionResult. 동일 키 재전송 시 중복 전이 없이 같은 결과 반환.
 const ACTION_IDEMPOTENCY: Record<string, ActionResult> = {};
 // 전체 audit 라인(최근 실행 순). 미래 Notifications/audit 화면 소비용.
 const ACTION_AUDIT: ActionAuditEntry[] = [];
 
+// 온톨로지 스냅샷 요청단위 메모이즈(IMP-81) — buildOntology 는 파생(objects/links/metrics/agent/action)이
+// 각자 부르면 buildTopology·genGpuHardware·genTraceList 를 매번 재계산해 O(N) 중복이 된다.
+// 한 요청에서 스냅샷을 **한 번만** 만들어 모든 파생이 공유하도록 캐시한다. route() 가 요청 경계에서
+// resetOntologySnapshot() 으로 무효화하므로, 요청 사이의 "살아있는" 변동은 그대로 유지된다.
+type OntologySnapshot = { objects: OntologyObject[]; links: OntologyLink[] };
+let SNAPSHOT_CACHE: OntologySnapshot | null = null;
+// 캐시 무효화 — 요청 경계(route 진입) + writeback 반영(applyAction override 갱신) 직후에 호출.
+function resetOntologySnapshot(): void { SNAPSHOT_CACHE = null; }
+
+// §5.2 척추 그래프 조회 — 요청단위 캐시. 없으면 buildOntologyFresh 로 결정적 재구성 후 저장.
+function buildOntology(): OntologySnapshot {
+  if (SNAPSHOT_CACHE) return SNAPSHOT_CACHE;
+  SNAPSHOT_CACHE = buildOntologyFresh();
+  return SNAPSHOT_CACHE;
+}
+
 // §5.2 척추 그래프를 결정적으로 구성. seed 는 buildTopology 와 동일 소스라 재현 가능.
-function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
+function buildOntologyFresh(): OntologySnapshot {
   const objects: OntologyObject[] = [];
   const links: OntologyLink[] = [];
   const add = <T extends Record<string, unknown>>(id: string, type: ObjectType, title: string, status: ObjectStatus, props: T) => {
-    // action 으로 반영된 override(status/revision/props)를 canonical 로 얹는다.
-    const ov = ONTOLOGY_OVERRIDES[id];
-    objects.push({
-      id, type, title,
-      props: ov?.props ? { ...props, ...ov.props } : props,
-      status: ov?.status ?? status,
-      revision: ov?.revision ?? 1,
-    });
+    // action 으로 반영된 override(status/revision/props)를 canonical 로 얹는다(mergeOverride 단일 출처).
+    objects.push(mergeOverride({ id, type, title, props, status, revision: 1 }, ONTOLOGY_OVERRIDES[id]));
   };
 
   // ── Model (MODELS) ── id 접두 model: 로 네임스페이스 충돌 회피.
@@ -1109,15 +1132,18 @@ const AGENT_AUDIT: import("./types").AgentAuditEntry[] = [];
 let AGENT_SEQ = 0;
 
 function runAgentMock(body: Record<string, unknown>): import("./types").AgentRun {
-  const { objects, links } = buildOntology();
+  // 순수/부작용 경계(IMP-81) — 여기서 딱 둘로 나뉜다:
+  //  (1) 순수 계산: runAgentLoop(공유 스냅샷 → 결정적 결과). 부작용·시각 의존 없음.
+  //  (2) mock 부작용: transcript 를 전역 AGENT_AUDIT 에 append(향후 audit/trace 표면 소비).
+  // 향후 실제 추론 옵션(IMP-78)은 (1)의 runAgentLoop 자리만 transport 로 스왑하고 (2)는 그대로 두면 된다.
+  const { objects, links } = buildOntology(); // 요청단위 공유 스냅샷(재구성 중복 없음).
   const intent = typeof body.intent === "string" ? body.intent : undefined;
   const entity = typeof body.entity === "string" ? body.entity : undefined;
   AGENT_SEQ++;
   // traceId — 결정적 접두 + 시퀀스(테스트가 존재만 검증). 원문/시크릿은 담지 않는다.
   const traceId = `agtr_${AGENT_SEQ.toString(36)}_${hash(`${intent ?? ""}:${entity ?? ""}`).toString(36)}`;
-  const run = runAgentLoop(objects, links, { intent, entity, traceId });
-  // transcript 를 전역 audit 에 append(최근 실행 순) — trace ID 로 키잉.
-  for (const a of run.audit) AGENT_AUDIT.unshift(a);
+  const run = runAgentLoop(objects, links, { intent, entity, traceId }); // (1) 순수
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);                      // (2) 부작용
   return run;
 }
 
@@ -1250,12 +1276,17 @@ function applyAction(name: string, body: Record<string, unknown>): Response {
   // 5) 상태 전이 반영 — Rules(STATE_TRANSITION) 대로 status 전이 + revision++.
   const nextStatus = STATE_TRANSITION[name] ?? snapshot.status;
   const nextRev = snapshot.revision + 1;
-  ONTOLOGY_OVERRIDES[target] = {
+  const nextOverride: OntologyOverride = {
     status: nextStatus,
     revision: nextRev,
     props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), last_action: name },
   };
-  const updated: OntologyObject = { ...snapshot, status: nextStatus, revision: nextRev, props: { ...snapshot.props, last_action: name } };
+  ONTOLOGY_OVERRIDES[target] = nextOverride;
+  // 요청단위 스냅샷 무효화(IMP-81) — override 를 갱신했으니 이 요청에서 만든 캐시를 버려
+  // 이후 재구성이 새 canonical 을 반영하게 한다(writeback ↔ 재구성 정합).
+  resetOntologySnapshot();
+  // 응답 object 는 재구성 경로와 **동일한 mergeOverride** 로 만든다 — direct-fetch 와 어긋날 수 없다.
+  const updated = mergeOverride(snapshot, nextOverride);
   const result = actionResult("ok", name, target, params, { object: updated, note: spec.rulesNote });
   if (idem) ACTION_IDEMPOTENCY[idem] = result;
   return ok(result, 200);
@@ -1576,6 +1607,11 @@ function createAlertRuleMock(b: Record<string, unknown>): Record<string, unknown
 async function route(method: string, path: string, q: URLSearchParams, body: Json): Promise<Response> {
   // 사람이 보기엔 의미상 mock 지연(80~220ms) — skeleton/loading 상태가 실제로 보이게.
   await new Promise((res) => setTimeout(res, 80 + Math.random() * 140));
+
+  // 요청단위 온톨로지 스냅샷 경계(IMP-81) — 이 요청의 모든 파생(objects/links/metrics/agent/action)이
+  // buildOntology() 한 번의 결과를 공유하도록 진입에서 캐시를 무효화한다. 재구성 중복·요청 내 시각
+  // 흔들림(trace ts, GPU 15초 버킷)을 제거하면서, 요청 사이의 "살아있는" 변동은 그대로 유지.
+  resetOntologySnapshot();
 
   // 정확 매칭 우선
   switch (`${method} ${path}`) {
