@@ -2492,3 +2492,78 @@ tr.row-sel { background: var(--primary-weak) !important; }
 /* (4) Actions — verb 별 ActionForm 구분 */
 .ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
 .ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
+
+/* ───────────── Troubleshooting COP(IMP-58) — 근본원인 추적 화면 ───────────── */
+/* LEFT(진입) / CENTER(경로) 2열. 좁은 폭에선 세로로 스택(반응형). RIGHT 는 SlidePanel(ObjectView). */
+.cop-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+@media (max-width: 900px) { .cop-grid { grid-template-columns: 1fr; } }
+
+.cop-panel-h {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-body); font-weight: 700; color: var(--text);
+  padding-bottom: var(--sp-2); margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.cop-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); }
+.cop-hint { font-size: var(--fs-xs); color: var(--text-faint); margin: 0 0 var(--sp-3); line-height: var(--lh-body); }
+
+/* LEFT — 진입 후보 리스트 */
+.cop-entry { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: var(--sp-3); }
+.cop-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cop-cand {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left;
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); cursor: pointer; color: var(--text);
+}
+.cop-cand:hover { border-color: var(--border-strong); background: var(--surface); }
+.cop-cand.active { border-color: var(--primary); background: var(--primary-weak); }
+.cop-cand-glyph { color: var(--text-dim); flex: none; }
+.cop-cand-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cop-cand-title { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cop-cand-reason { font-size: var(--fs-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* CENTER — 경로 패널 + hop 스택 */
+.cop-path { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); padding: var(--sp-3); }
+.cop-hops { list-style: none; margin: 0; padding: 0; }
+.cop-hop-wrap { display: flex; flex-direction: column; }
+
+/* hop 사이 edge-type badge(관계 종류) — 세로 연결선 위에 얹는다. */
+.cop-edge { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px 0; }
+.cop-edge-line { width: 2px; height: 10px; background: var(--border-strong); }
+.cop-edge-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: .02em; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px;
+}
+
+/* hop 카드 — 클릭 시 ObjectView. 임계=빨강 강조, blast=주의 점선. */
+.cop-hop {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  padding: var(--sp-3); box-shadow: var(--shadow-card);
+}
+.cop-hop:hover { border-color: var(--border-strong); box-shadow: var(--shadow-card-hover); }
+.cop-hop.active { border-color: var(--primary); }
+.cop-hop.crit { border-color: var(--red-border); background: var(--red-weak); }
+.cop-hop.blast { border-style: dashed; border-color: var(--amber-border); background: var(--amber-weak); }
+
+.cop-hop-top { display: flex; align-items: center; gap: var(--sp-2); }
+.cop-hop-glyph { color: var(--text-dim); flex: none; }
+.cop-hop-title { font-weight: 700; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cop-hop-type { font-size: var(--fs-xs); color: var(--text-faint); }
+.cop-hop-top > .badge { margin-left: auto; }
+
+.cop-hop-labels { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
+.cop-time { font-size: var(--fs-xs); color: var(--text-dim); }
+.cop-tag { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 1px 8px; letter-spacing: .02em; }
+.cop-tag-crit { color: var(--red); background: var(--red-weak); border: 1px solid var(--red-border); }
+.cop-tag-blast { color: var(--amber); background: var(--amber-weak); border: 1px solid var(--amber-border); }
+.cop-tag-entry { color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border); }
+
+/* 골든시그널 — Gauge + Sparkline 나란히. 여러 신호는 wrap. */
+.cop-signals { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-3); }
+.cop-signal { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 4px; }
+.cop-signal-h { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+.cop-signal-label { font-size: var(--fs-xs); color: var(--text-faint); }
+.cop-signal-v { font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+
+.cop-foot-note { font-size: var(--fs-xs); color: var(--text-faint); margin: var(--sp-3) 0 0; line-height: var(--lh-body); }

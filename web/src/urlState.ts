@@ -61,6 +61,12 @@ export const objectViewSchema = {
   objstack: csvField([]), // 이전 스택(breadcrumb 복원)
 } as const;
 
+// Investigate COP(IMP-58) deep-link 스키마 — entity=진입 Object id(문제 Endpoint/Incident).
+// 빈 문자열이면 기본 진입(가장 아픈 후보)을 페이지가 결정한다.
+export const investigateSchema = {
+  entity: strField(""),
+} as const;
+
 // ───────────────────────── 순수 인코더/디코더 ─────────────────────────
 // (테스트 용이성 — DOM/History 없이 schema + search string 만으로 동작.)
 // 스키마 제약 — 필드 값 타입은 필드마다 다르므로 `any` 로 둔다(매핑 타입이 정확한 T 를 복원).
