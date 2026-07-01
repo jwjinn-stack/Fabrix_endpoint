@@ -355,6 +355,59 @@ export interface UsageTrend {
   points: UsageTrendPoint[];
 }
 
+// ── 풀-피델리티 GPU 하드웨어 필드 (IMP-76 track A) ──
+// DCGM 확정 필드셋(deep-research 검증). 경쟁자(DCGM Exporter/Run:ai/Datadog)가 노출하는
+// 하드웨어 근본원인 신호 — XID·throttle reason·NVLink/PCIe·ECC·clock — 를 온톨로지 GpuDevice 에 부착.
+// 괄호 안은 실제 DCGM field id. 실 수집은 IMP-79 spike(일부 opt-in) — 지금은 mock 결정적 생성.
+
+// NVLink 링크별/집계 throughput + 오류 카운터 (DCGM_FI_DEV_NVLINK_* 400–445).
+export interface NvlinkStats {
+  throughput_kibs: number[]; // 링크 L0–L5 throughput (KiB/s) — NVLINK_BANDWIDTH_L0..L5
+  total_kibs: number;        // 합계(NVLINK_BANDWIDTH_TOTAL, default-on)
+  crc_errors: number;        // CRC 오류 누적(count)
+  replay_errors: number;     // replay 오류 누적(count)
+  recovery_errors: number;   // recovery 오류 누적(count)
+}
+
+// PCIe throughput + replay (DCGM_FI_PROF_PCIE_TX/RX_BYTES 1009/1010, REPLAY_COUNTER 202).
+export interface PcieStats {
+  tx_bytes: number;      // 송신 누적 bytes
+  rx_bytes: number;      // 수신 누적 bytes
+  replay_counter: number; // PCIe replay(count, default-on)
+}
+
+// ECC 오류 (DCGM_FI_DEV_ECC_SBE/DBE_VOL/AGG_TOTAL 310–313). SBE=정정가능, DBE=정정불가.
+export interface EccStats {
+  sbe_volatile: number;  // single-bit, volatile(재부팅 리셋)
+  dbe_volatile: number;  // double-bit, volatile
+  sbe_aggregate: number; // single-bit, aggregate(영구 누적)
+  dbe_aggregate: number; // double-bit, aggregate
+}
+
+// per-process GPU 사용 (DCGM_FI_DEV_PROCESS_ACCOUNTING_STATS 205 — accounting 활성 필요).
+// DCGM 은 time-sharing/MIG 에서 per-process 귀속 제약이 있어 대표 프로세스만 표시(spec note).
+export interface GpuProcess {
+  pid: number;
+  name: string;       // 프로세스 이름(escape 렌더)
+  mem_used_mb: number; // 이 프로세스가 점유한 VRAM(MiB)
+}
+
+// GPU 하드웨어 상세 — GPUDevice.hw 로 옵션 부착(additive; 레거시/실백엔드 미제공 시 undefined).
+export interface GpuHardware {
+  sm_clock_mhz: number;   // DCGM_FI_DEV_SM_CLOCK (100)
+  mem_clock_mhz: number;  // DCGM_FI_DEV_MEM_CLOCK (101)
+  // 최근 XID 코드 1개 — DCGM_FI_DEV_XID_ERRORS(230)는 "가장 최근 코드"만 담는 gauge(카운터/스트림 아님).
+  // 0 = 최근 XID 없음. 라벨은 xidLabel(code) 로. 전체 이력은 dmesg/kubelet 파싱 필요(out of scope).
+  xid_recent: number;
+  // clock-throttle 사유 비트마스크 — DCGM_FI_DEV_CLOCKS_EVENT_REASONS(112). 0 = 제약 없음.
+  // decodeClocksEventReasons(mask) 로 사람이 읽는 reason 리스트로 디코드.
+  clocks_event_reasons: number;
+  nvlink: NvlinkStats;
+  pcie: PcieStats;
+  ecc: EccStats;
+  processes: GpuProcess[];
+}
+
 export interface GPUDevice {
   hostname: string;
   gpu: string;
@@ -369,6 +422,7 @@ export interface GPUDevice {
   sm_active: number;
   tensor_active: number;
   mig_efficiency: number;
+  hw?: GpuHardware; // 풀-피델리티 하드웨어 상세(IMP-76). 옵션 — 미제공 시 하드웨어 섹션 미렌더.
 }
 
 export interface GPUReport {

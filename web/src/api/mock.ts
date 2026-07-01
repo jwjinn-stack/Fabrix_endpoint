@@ -10,7 +10,7 @@
 
 import type {
   APIKeyView, Capabilities, ConfigStatus, ConfigView, DiagReport, DiagStatus, ChatResponse, DashboardOverview, Endpoint, EndpointPreview,
-  EnginePipeline, EvalResult, EvalDataset, EvalDatasetItem, Experiment, ExperimentCaseResult, ExperimentConfig, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
+  EnginePipeline, EvalResult, EvalDataset, EvalDatasetItem, Experiment, ExperimentCaseResult, ExperimentConfig, GPUDevice, GPUReport, GPUTimeseries, GpuHardware, GuardAuditReport,
   GuardAuditRow, GuardDecision, GuardPolicy, GuardVerdict, HarborModel, HarborStatus,
   ImportResult, Incident, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
   OrgTree, ProxyStats, Score, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
@@ -23,6 +23,8 @@ import type {
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
+// GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
+import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
 import { runAgentLoop } from "./agent";
 
@@ -381,6 +383,85 @@ function genUsageTrend(range: TimeRange): UsageTrend {
   return { range, generated_at: new Date().toISOString(), bucket_sec: stepSec, points };
 }
 
+// ── 풀-피델리티 GPU 하드웨어 (IMP-76 track A) ─────────────────────────────
+// DCGM 확정 필드셋을 결정적으로 생성. 실 수집은 IMP-79 spike(일부 opt-in) — 여기선 mock.
+// XID 라벨·throttle 비트마스크 디코더는 도메인 모듈(gpuHardware.ts)에서 재사용(단일 출처).
+// (호환: 테스트가 ./mock 에서 참조하던 것도 아래 re-export 로 유지.)
+export { XID_LABELS, xidLabel, decodeClocksEventReasons };
+
+// GpuHardware 를 seedKey 로 결정적 생성(hash+rng, mockFactory 관례). idle/온도 힌트로 시나리오 정합:
+//  - hot=true(온도 높음) → thermal 비트 + throttle · XID 확률↑ · NVLink replay↑
+//  - 15s 버킷 seed 로 "살아있는" 변동(같은 버킷/키 → 동일 값 = 결정적).
+function genGpuHardware(seedKey: string, opts: { util?: number; hot?: boolean } = {}): GpuHardware {
+  const r = rng(hash(`hw:${seedKey}:${Math.floor(Date.now() / 15000)}`));
+  const util = opts.util ?? r();
+  const hot = opts.hot ?? false;
+
+  // clock: 부하·throttle 에 따라 base clock 대비 하락. H100 SM ~1980MHz, HBM3 ~2619MHz 근사.
+  const throttled = hot || r() > 0.82;
+  const smClock = Math.round((throttled ? 1400 : 1830) + util * 150 - (throttled ? r() * 200 : 0));
+  const memClock = throttled ? Math.round(2200 + r() * 200) : 2619;
+
+  // throttle 비트마스크 — hot 이면 thermal(0x8|0x40), 가끔 power(0x4). 아니면 대개 0(제약 없음).
+  let reasons = 0;
+  if (hot) reasons |= 0x0000000000000008 | 0x0000000000000040; // HW+SW thermal
+  if (throttled && r() > 0.5) reasons |= 0x0000000000000004; // SW power cap
+  if (util < 0.05) reasons |= 0x0000000000000200; // low utilization
+
+  // 최근 XID — 대부분 0(정상). hot 이거나 낮은 확률로 대표 결함 코드 하나.
+  const xidPool = [48, 63, 74, 79, 94, 31, 13, 43];
+  const xidRecent = (hot && r() > 0.55) || r() > 0.94 ? xidPool[Math.floor(r() * xidPool.length)] : 0;
+
+  // NVLink — H100 은 18 링크지만 표시는 대표 6링크(L0–L5). throughput KiB/s, 오류는 hot 에서 급증.
+  const nvBase = util * 22_000_000; // ~22 GiB/s 근사(KiB/s 스케일)
+  const throughput = Array.from({ length: 6 }, (_, i) =>
+    Math.round(nvBase * (0.6 + r() * 0.8) * (i === 2 && hot ? 1.4 : 1)));
+  const nvErrScale = hot ? 40 : 1;
+  const nvlink = {
+    throughput_kibs: throughput,
+    total_kibs: throughput.reduce((s, v) => s + v, 0),
+    crc_errors: Math.round(r() * 3 * nvErrScale),
+    replay_errors: Math.round(r() * 5 * nvErrScale),
+    recovery_errors: Math.round(r() * 2 * (hot ? 8 : 1)),
+  };
+
+  // PCIe — Gen5 x16 ~ 63 GB/s. 누적 bytes(단조 증가 근사).
+  const pcie = {
+    tx_bytes: Math.round((5 + util * 55) * 1e9 + r() * 4e9),
+    rx_bytes: Math.round((6 + util * 50) * 1e9 + r() * 4e9),
+    replay_counter: Math.round(r() * (hot ? 30 : 4)),
+  };
+
+  // ECC — aggregate 는 영구 누적(작지만 0 아닐 수 있음), volatile 은 대개 0. DBE 는 hot/XID 와 상관.
+  const dbe = xidRecent === 48 || xidRecent === 94 ? 1 + Math.floor(r() * 2) : 0;
+  const ecc = {
+    sbe_volatile: Math.floor(r() * (hot ? 6 : 2)),
+    dbe_volatile: dbe,
+    sbe_aggregate: Math.floor(20 + r() * 400),
+    dbe_aggregate: dbe + Math.floor(r() * 2),
+  };
+
+  // per-process — 대표 프로세스 1–2개(DCGM accounting 제약 note). 이름은 서빙 스택 관례.
+  const procNames = ["python (vllm)", "tritonserver", "python (sglang)", "dynamo-worker"];
+  const nProc = 1 + Math.floor(r() * 2);
+  const processes = Array.from({ length: nProc }, (_, i) => ({
+    pid: 1000 + Math.floor(r() * 60000),
+    name: procNames[Math.floor(r() * procNames.length)] || procNames[i % procNames.length],
+    mem_used_mb: Math.round((8000 + r() * 50000) / nProc),
+  }));
+
+  return {
+    sm_clock_mhz: smClock,
+    mem_clock_mhz: memClock,
+    xid_recent: xidRecent,
+    clocks_event_reasons: reasons,
+    nvlink,
+    pcie,
+    ecc,
+    processes,
+  };
+}
+
 function genGPU(): GPUReport {
   const hosts = ["gpu-node-01", "gpu-node-02", "gpu-node-03"];
   const devices: GPUDevice[] = [];
@@ -399,6 +480,8 @@ function genGPU(): GPUReport {
         sm_active: +(util / 100 * (0.7 + r() * 0.3)).toFixed(2),
         tensor_active: +(util / 100 * (0.5 + r() * 0.4)).toFixed(2),
         mig_efficiency: +(0.6 + r() * 0.35).toFixed(2),
+        // 풀-피델리티 하드웨어(IMP-76) — uuid seed 로 결정적. 온도 높으면 thermal throttle 시나리오.
+        hw: genGpuHardware(`GPU-${host}-${g}`, { util: util / 100, hot: temp >= 87 }),
       });
     }
   });
@@ -922,7 +1005,17 @@ function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
     if (n.kind === "server") {
       add(`node:${n.id}`, "Node", n.label, topoStatus(n.status), { hostname: n.id, ...(n.metrics ?? {}) });
     } else if (n.kind === "gpu") {
-      add(`gpu:${n.id}`, "GpuDevice", n.label, topoStatus(n.status), { device: n.id, ...(n.metrics ?? {}) });
+      // 풀-피델리티 하드웨어(IMP-76) — 온톨로지 GpuDevice 객체에 하드웨어 필드를 얹어
+      // ObjectView 'GPU 하드웨어' 섹션이 읽게 한다. seed 는 node id(결정적). temp≥87 → thermal 시나리오.
+      const gm = n.metrics ?? {};
+      const hw = genGpuHardware(n.id, { util: gm.util_perc, hot: (gm.temp_c ?? 0) >= 87 });
+      add(`gpu:${n.id}`, "GpuDevice", n.label, topoStatus(n.status), {
+        device: n.id, ...gm,
+        // 요약 키(ObjectView Properties/badge 가 바로 읽음) + 중첩 hw(하드웨어 섹션이 재구성).
+        xid_recent: hw.xid_recent,
+        throttle: decodeClocksEventReasons(hw.clocks_event_reasons).join(", ") || "제약 없음",
+        hw,
+      });
     } else {
       // service — Topology service id 는 model id 와 겹칠 수 있어 service: 접두로 분리.
       add(`service:${n.id}`, "Service", n.label, topoStatus(n.status), { name: n.id, ...(n.metrics ?? {}) });

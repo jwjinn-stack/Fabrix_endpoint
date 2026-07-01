@@ -16,6 +16,8 @@ import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
+import GpuHardwareSection from "./GpuHardwareSection";
+import type { GpuHardware } from "../api/types";
 
 // 어느 페이지든 붙이는 ObjectView URL 배선 훅(IMP-57) — obj/objstack 를 단일 출처로.
 //  open(id): 진입점에서 특정 객체를 연다. close(): 닫는다. <ObjectView {...props}/> 로 스프레드.
@@ -81,6 +83,15 @@ function fmtVal(v: unknown): string {
   if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+// props.hw 를 GpuHardware 로 안전 추출(IMP-76). 최소 구조 검증 — 미제공/형식불일치면 null(섹션 skip).
+function extractGpuHw(v: unknown): GpuHardware | null {
+  if (!v || typeof v !== "object") return null;
+  const hw = v as Partial<GpuHardware>;
+  if (!hw.nvlink || !hw.pcie || !hw.ecc || !Array.isArray(hw.processes)) return null;
+  if (typeof hw.clocks_event_reasons !== "number" || typeof hw.xid_recent !== "number") return null;
+  return hw as GpuHardware;
 }
 
 interface GroupedNeighbor {
@@ -208,6 +219,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   const vis = obj ? typeVisual(obj.type) : null;
   const metricKeys = obj ? TYPE_METRICS[obj.type] : null;
   const crumbs = stack.map((id) => index[id]?.title ?? id);
+  // GpuDevice props 에 mock 이 얹은 중첩 GpuHardware(IMP-76). 구조 최소검증(nvlink 유무)으로 실백엔드/레거시 방어.
+  const gpuHw = extractGpuHw(obj?.props.hw);
 
   return (
     <SlidePanel
@@ -300,15 +313,21 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
             </div>
           </div>
 
-          {/* (2) Properties — props 전부를 DetailRow 로. */}
+          {/* (2) Properties — props 를 DetailRow 로. 중첩 hw(하드웨어 상세)는 아래 전용 섹션이 렌더하므로 제외. */}
           <section className="ov-section" aria-label="속성">
             <h4 className="ov-h">속성</h4>
             <DetailRow label="id">{obj.id}</DetailRow>
             <DetailRow label="종류">{vis.label}</DetailRow>
-            {Object.entries(obj.props).map(([k, v]) => (
-              <DetailRow key={k} label={k}>{fmtVal(v)}</DetailRow>
-            ))}
+            {Object.entries(obj.props)
+              .filter(([k]) => k !== "hw")
+              .map(([k, v]) => (
+                <DetailRow key={k} label={k}>{fmtVal(v)}</DetailRow>
+              ))}
           </section>
+
+          {/* (2b) GPU 하드웨어(IMP-76) — GpuDevice 이고 props.hw(GpuHardware)가 있으면 전용 섹션.
+              XID·throttle reason·NVLink·PCIe·ECC·clock 을 그룹+단위+뱃지로. 없으면(레거시/실백엔드) skip. */}
+          {obj.type === "GpuDevice" && gpuHw && <GpuHardwareSection hw={gpuHw} />}
 
           {/* (3) Related — linkKind 그룹. 이웃 클릭 → in-place traverse. */}
           <section className="ov-section" aria-label="관계">

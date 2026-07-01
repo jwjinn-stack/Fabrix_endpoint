@@ -4,6 +4,7 @@ import type { GPUDevice, GPUReport, GPUTimeseries } from "../api/types";
 import StatCard from "../components/StatCard";
 import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import GpuHardwareSection from "../components/GpuHardwareSection";
 import Sparkline from "../components/Sparkline";
 import GpuLedGrid from "../components/GpuLedGrid";
 import InfoTip from "../components/InfoTip";
@@ -224,6 +225,9 @@ export default function Gpu() {
             <DetailRow label="SM Active">{pct(detail.sm_active)}</DetailRow>
             <DetailRow label="Tensor Active">{pct(detail.tensor_active)}</DetailRow>
             <DetailRow label="GR_ENGINE 효율">{detail.mig_efficiency.toFixed(3)}</DetailRow>
+
+            {/* 풀-피델리티 하드웨어(IMP-76) — XID·throttle·NVLink·PCIe·ECC·clock. hw 있을 때만. */}
+            {detail.hw && <GpuHardwareSection hw={detail.hw} />}
 
             {/* MIG 슬라이스 — 현재 클러스터는 미파티션(전체 GPU 모드). 사실대로 표시. */}
             <div className="gpu-mig-note">

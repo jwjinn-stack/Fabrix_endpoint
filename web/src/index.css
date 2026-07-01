@@ -2558,6 +2558,21 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
 .ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
 
+/* 풀-피델리티 GPU 하드웨어 섹션 (IMP-76) — Gpu.tsx SlidePanel + ObjectView 공용. 그룹 카드 + 단위 병기. */
+.gpu-hw { margin-top: var(--sp-4); }
+.gpu-hw .hw-src { font-size: 10px; font-weight: 500; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-left: 6px; text-transform: none; letter-spacing: 0; }
+.hw-group { margin-bottom: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.hw-group-h { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; margin-bottom: var(--sp-2); }
+.hw-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--sp-2); }
+.hw-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: 3px 0; font-size: var(--fs-sm); }
+.hw-row-label { color: var(--text-faint); }
+.hw-row-value { font-variant-numeric: tabular-nums; color: var(--text); }
+/* NVLink 링크별 throughput — L0–L5 미니 칩 그리드. */
+.hw-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: var(--sp-2); }
+.hw-link { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface, #fff); }
+.hw-link-k { font-size: 10px; color: var(--text-faint); }
+.hw-link-v { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text); }
+
 /* (5) 실행 이력 — IMP-65 감사 타임라인. IncidentAuditEntry(IMP-38) 시각 패턴을 세로 rail 로 확장.
    좌측 연속 rail(border-left) + outcome 색 dot → 시간순 사건을 "선"으로 읽히게(flat list 대비). */
 .audit-timeline { list-style: none; margin: 0; padding: 0; }
