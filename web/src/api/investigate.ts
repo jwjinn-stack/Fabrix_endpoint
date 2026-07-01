@@ -52,6 +52,7 @@ export const EDGE_BADGE: Record<LinkKind, string> = {
   executedOn: "executedOn",
   consumes: "consumes",
   affects: "impacts",
+  routes: "routes", // IMP-89 — Endpoint→App
 };
 
 // 시계열 포인트 수·간격(결정적). now 의존이라 값만 재현되지만 first-anomaly index 는 안정.

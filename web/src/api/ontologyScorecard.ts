@@ -98,6 +98,7 @@ const RULES: ScoreRule[] = [
         Service: ["qps", "error_rate"],
         Trace: [], // 채점 제외 타입 — applies 로 걸리지 않지만 완전성 위해.
         Incident: [],
+        App: [], // IMP-89 소비자 엔티티 — 준비도 채점 제외(SCORABLE 아님).
       };
       return (keysByType[o.type] ?? []).some((k) => has(o, k));
     },
@@ -119,6 +120,7 @@ const RULES: ScoreRule[] = [
         Service: ["error_rate", "qps"],
         Trace: [],
         Incident: [],
+        App: [], // IMP-89 소비자 엔티티 — SLO 채점 제외.
       };
       return (keysByType[o.type] ?? []).some((k) => has(o, k));
     },

@@ -1020,13 +1020,31 @@ function buildOntologyFresh(): OntologySnapshot {
   }
 
   // ── Endpoint (ENDPOINTS) ── serves→Model, consumes(Service→Endpoint)는 아래 Service 에서.
+  //  IMP-89: 각 EP 의 app_id 를 App(소비자) 객체로 승격하고 Endpoint --routes--> App 로 잇는다.
+  //  app_id 별로 어느 EP 들이 라우팅되나를 모아 App props(라우팅 요약)와 상태(worst)를 결정적으로 파생한다.
+  interface AppAgg { app_id: string; endpointNames: string[]; worst: ObjectStatus; requests: number }
+  const appAgg = new Map<string, AppAgg>();
+  const worstOf = (a: ObjectStatus, b: ObjectStatus): ObjectStatus => {
+    const rank: Record<ObjectStatus, number> = { crit: 0, warn: 1, ok: 2, unknown: 3 };
+    return rank[b] < rank[a] ? b : a;
+  };
   for (const e of ENDPOINTS) {
-    add(`endpoint:${e.name}`, "Endpoint", e.name, e.ready ? "ok" : "crit", {
+    const epStatus: ObjectStatus = e.ready ? "ok" : "crit";
+    add(`endpoint:${e.name}`, "Endpoint", e.name, epStatus, {
       namespace: e.namespace, model: e.model, backend: e.backend, replicas: e.replicas,
       app_id: e.app_id ?? "", dept_id: e.dept_id ?? "", ready: e.ready,
     });
     if (e.model && MODELS.some((m) => m.id === e.model)) {
       links.push({ from: `endpoint:${e.name}`, to: `model:${e.model}`, linkKind: "serves" });
+    }
+    // app_id 가 있을 때만 App 으로 승격(부재 시 graceful — App 객체·routes 링크 생성 안 함).
+    if (e.app_id) {
+      const agg = appAgg.get(e.app_id) ?? { app_id: e.app_id, endpointNames: [], worst: "unknown", requests: 0 };
+      agg.endpointNames.push(e.name);
+      agg.worst = worstOf(agg.worst, epStatus);
+      appAgg.set(e.app_id, agg);
+      // Endpoint --routes--> App (이 엔드포인트가 라우팅하는 소비자 앱).
+      links.push({ from: `endpoint:${e.name}`, to: `app:${e.app_id}`, linkKind: "routes" });
     }
   }
 
@@ -1089,6 +1107,11 @@ function buildOntologyFresh(): OntologySnapshot {
   // ── Trace (대표 몇 건) ── routedTo→Endpoint, executedOn→GpuDevice.
   const traceList = genTraceList("24h", {});
   const gpuIds = topo.nodes.filter((n) => n.kind === "gpu").map((n) => n.id);
+  // IMP-89: App 라우팅 요약의 request_count — 대표 트레이스(전량 표본)의 app_id 별 집계(결정적).
+  const appTraceCount = new Map<string, number>();
+  for (const t of traceList.traces) {
+    if (t.app_id) appTraceCount.set(t.app_id, (appTraceCount.get(t.app_id) ?? 0) + 1);
+  }
   for (const t of traceList.traces.slice(0, 8)) {
     const status: ObjectStatus = t.status === "error" ? "crit" : t.decision === "blocked" ? "warn" : "ok";
     add(`trace:${t.trace_id}`, "Trace", t.trace_id, status, {
@@ -1102,6 +1125,22 @@ function buildOntologyFresh(): OntologySnapshot {
       const gid = gpuIds[hash(t.trace_id) % gpuIds.length];
       links.push({ from: `trace:${t.trace_id}`, to: `gpu:${gid}`, linkKind: "executedOn" });
     }
+  }
+
+  // ── App (소비자 — IMP-89) ── app_id 를 leaf 컬럼이 아니라 traversable 객체로.
+  //  Endpoint --routes--> App 링크는 위 Endpoint 루프에서 이미 push. 여기선 App 객체 자체를 만든다.
+  //  props = 라우팅 요약(어느 EP 들이·몇 개·요청 몇 건). 상태 = 소비 EP 들의 worst(단일 출처).
+  //  app_id 가 어떤 EP 에도 없으면 App 도 없다(부재 graceful). id 접두 app: 로 네임스페이스 충돌 회피.
+  for (const agg of [...appAgg.values()].sort((a, b) => (a.app_id < b.app_id ? -1 : 1))) {
+    const meta = APPS.find((a) => a.app_id === agg.app_id);
+    add(`app:${agg.app_id}`, "App", meta?.name ?? agg.app_id, agg.worst, {
+      app_id: agg.app_id,
+      name: meta?.name ?? agg.app_id,
+      dept_id: meta?.dept_id ?? "",
+      endpoints: agg.endpointNames.length,
+      endpoint_names: agg.endpointNames.join(", "),
+      request_count: appTraceCount.get(agg.app_id) ?? 0,
+    });
   }
 
   // ── Incident (INCIDENTS 승격) ── affects→{object}. dedup_key 로 영향 대상을 유추.

@@ -53,6 +53,7 @@ const TYPE_DESC: Record<ObjectType, string> = {
   Node: "GPU 를 담은 물리 노드(CPU·mem·GPU 수)",
   Trace: "추론 요청 1건의 실행 궤적(지연·토큰·판정)",
   Incident: "장애/이상 이벤트(심각도·영향 대상)",
+  App: "엔드포인트를 소비하는 앱(app_id·라우팅 EP·요청 수)", // IMP-89
 };
 
 // linkKind → 사람용 라벨(스키마 엣지 표 병기). ObjectView LINK_LABEL 과 통일.
@@ -64,6 +65,7 @@ const LINK_LABEL: Record<LinkKind, string> = {
   routedTo: "routedTo (라우팅)",
   executedOn: "executedOn (실행)",
   affects: "affects (영향)",
+  routes: "routes (app 라우팅)", // IMP-89 — Endpoint→App
 };
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };

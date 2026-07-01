@@ -166,8 +166,8 @@ describe("Ontology — 스키마 그래프 = 보조 탭(still reachable)", () =>
     expect(screen.getByText(/serves \(서빙\)/)).toBeInTheDocument();
     expect(screen.getByText("온톨로지 렌즈")).toBeInTheDocument();
     expect(screen.getByText("접지된 AI")).toBeInTheDocument();
-    // Object Type 카탈로그(타입당 1장, count 0 타입 포함) — 7장.
-    expect(container.querySelectorAll(".onto-card").length).toBe(7);
+    // Object Type 카탈로그(타입당 1장, count 0 타입 포함) — 8장(IMP-89 App 추가).
+    expect(container.querySelectorAll(".onto-card").length).toBe(8);
     // Action Type 목록.
     expect(screen.getByText("restartModel")).toBeInTheDocument();
     expect(screen.getAllByText(/models\.write/).length).toBeGreaterThan(0);
@@ -208,14 +208,14 @@ describe("Ontology — all-pass / empty / env-missing", () => {
     await waitFor(() => expect(screen.getByText(/모든 인스턴스가 규칙을 통과/)).toBeInTheDocument());
   });
 
-  it("empty: 빈 objects → 스코어카드 empty 안내 + 스키마 참조 탭 여전히 카드 7장", async () => {
+  it("empty: 빈 objects → 스코어카드 empty 안내 + 스키마 참조 탭 여전히 카드 8장", async () => {
     fetchOntologyObjects.mockResolvedValue({ generated_at: "t", objects: [], source: "mock" });
     fetchOntologyLinks.mockResolvedValue({ generated_at: "t", object_id: "x", links: [], source: "mock" });
     const { container } = render(<Ontology />);
     await waitFor(() => expect(screen.getByText(/채점할 인스턴스가 없습니다/)).toBeInTheDocument());
-    // 스키마 참조 탭 — 카탈로그 카드는 그대로 7장(그리드 유지) + 스키마 빈 상태 graceful.
+    // 스키마 참조 탭 — 카탈로그 카드는 그대로 8장(그리드 유지, IMP-89 App 포함) + 스키마 빈 상태 graceful.
     fireEvent.click(screen.getByRole("tab", { name: "스키마 참조" }));
-    await waitFor(() => expect(container.querySelectorAll(".onto-card").length).toBe(7));
+    await waitFor(() => expect(container.querySelectorAll(".onto-card").length).toBe(8));
     expect(screen.getByText(/관측된 관계가 없습니다/)).toBeInTheDocument();
   });
 

@@ -62,7 +62,8 @@
               "GpuDevice",
               "Node",
               "Trace",
-              "Incident"
+              "Incident",
+              "App"
             ],
             "type": "string"
           }
@@ -81,6 +82,7 @@
             "enum": [
               "consumes",
               "serves",
+              "routes",
               "runsOn",
               "hostedBy",
               "routedTo",

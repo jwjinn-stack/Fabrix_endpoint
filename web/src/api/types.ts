@@ -1135,13 +1135,16 @@ export interface NetworkReport {
 
 // §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑. 전부 SUBJECT-MATTER(디지털트윈) 층.
 // (IMP-90: PROCESS 층 Task 는 제거 — 관제 콘솔은 과업 배정이 아니라 알림+즉시대응(KineticStrip)으로 수렴.)
-export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident";
+// (IMP-89: App = 소비자(Consumer) 엔티티. app_id 를 leaf 컬럼이 아니라 traversable 객체로 승격 —
+//  Endpoint→App(어느 앱이 이 EP 로 라우팅되나) 관계를 COP/ObjectView/스키마 그래프에 노출.)
+export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident" | "App";
 
 // §5.2 Link Types (관계 그래프) — 트러블슈팅 척추:
 //   Service --consumes--> Endpoint --serves--> Model --runsOn--> GpuDevice --hostedBy--> Node
 //   Trace --routedTo--> Endpoint · Trace --executedOn--> GpuDevice · Incident --affects--> {any object}
+//   Endpoint --routes--> App (IMP-89: 이 엔드포인트가 라우팅하는 소비자 앱)
 // (IMP-90: PROCESS↔SUBJECT-MATTER 다리 spawns/tracks 는 Task 제거와 함께 삭제.)
-export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects";
+export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects" | "routes";
 
 // 온톨로지 공통 상태 렌즈 — 기존 NodeStatus(ok|warn|crit) + unknown(미배포/미측정). 소스에서 파생(단일 출처).
 export type ObjectStatus = "ok" | "warn" | "crit" | "unknown";

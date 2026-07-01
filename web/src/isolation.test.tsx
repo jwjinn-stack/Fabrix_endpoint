@@ -178,6 +178,8 @@ const FULL_OBJECTS: OntologyObject[] = [
   { id: "node:n0", type: "Node", title: "Node 0", props: { hostname: "n0", cpu_util: 0.9 }, status: "warn", revision: 1 },
   { id: "trace:t-1", type: "Trace", title: "trace 1", props: { model: "m-a", endpoint: "ep-a", total_ms: 900, ttft_ms: 300, decision: "allowed" }, status: "ok", revision: 1 },
   { id: "incident:i-1", type: "Incident", title: "Incident 1", props: { severity: "high", state: "firing", count: 3 }, status: "crit", revision: 1 },
+  // IMP-89: App(소비자) — app_id 를 traversable 객체로 승격. Endpoint --routes--> App.
+  { id: "app:a1", type: "App", title: "앱 1", props: { app_id: "a1", name: "앱 1", endpoints: 1, request_count: 5 }, status: "crit", revision: 1 },
 ];
 const FULL_LINKS: OntologyLink[] = [
   { from: "service:svc-a", to: "endpoint:ep-a", linkKind: "consumes" },
@@ -186,6 +188,7 @@ const FULL_LINKS: OntologyLink[] = [
   { from: "gpu:g0", to: "node:n0", linkKind: "hostedBy" },
   { from: "trace:t-1", to: "endpoint:ep-a", linkKind: "routedTo" },
   { from: "incident:i-1", to: "endpoint:ep-a", linkKind: "affects" },
+  { from: "endpoint:ep-a", to: "app:a1", linkKind: "routes" }, // IMP-89 — Endpoint→App
 ];
 
 // objects 에서 주어진 타입들을 제거하고, dangling 이 되는 링크도 함께 제거(무결성 — buildOntology 규약과 동형).
@@ -214,7 +217,7 @@ describe("IMP-88 — mock 파생 크래시 가드(타입 부재 → degrade, not
   });
 
   // 각 객체 타입을 하나씩 제거해도(그 기능만 배포 제외 = 그 타입 부재) 파생이 크래시하지 않는지 전수 확인.
-  const ALL_TYPES = ["Service", "Endpoint", "Model", "GpuDevice", "Node", "Trace", "Incident"];
+  const ALL_TYPES = ["Service", "Endpoint", "Model", "GpuDevice", "Node", "Trace", "Incident", "App"];
   for (const t of ALL_TYPES) {
     it(`'${t}' 타입 부재 — 모든 파생이 throw 없이 degrade`, () => {
       const { objects, links } = withoutTypes([t]);

@@ -60,6 +60,7 @@ const TYPE_METRICS: Record<OntologyObject["type"], string[]> = {
   Node: ["cpu_perc", "mem_perc"],
   Trace: ["total_ms", "ttft_ms"],
   Incident: ["severity", "count"],
+  App: ["endpoints", "request_count"], // IMP-89 — 라우팅 EP 수 · 요청 건수(라우팅 요약)
 };
 
 // linkKind → Related 섹션 라벨 + 방향 지시자(IMP-64). dir 는 head 기준 "대표" 방향의 의미 화살표:
@@ -73,6 +74,7 @@ const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> 
   executedOn: { label: "실행 GPU", dir: "⇊", hint: "하류" },
   consumes: { label: "소비 Service", dir: "↑", hint: "상류" },
   affects: { label: "영향 대상", dir: "⇢", hint: "영향" },
+  routes: { label: "app_id 라우팅", dir: "↑", hint: "상류(소비자 앱)" }, // IMP-89 — Endpoint→App
 };
 
 // ObjectStatus → 상태 게이지 밴드 위치(IMP-64). Gauge(warn=0.75/crit=0.9/max=1) 밴드에 안착하도록:
@@ -80,7 +82,7 @@ const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> 
 const STATUS_GAUGE_VALUE: Record<ObjectStatus, number> = { ok: 0.3, warn: 0.8, crit: 1.0, unknown: 0 };
 
 // Related 그룹 표시 순서(Replicas/Endpoint → GPU → Service → Trace → Incident 우선순).
-const KIND_ORDER: LinkKind[] = ["serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
+const KIND_ORDER: LinkKind[] = ["serves", "routes", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };

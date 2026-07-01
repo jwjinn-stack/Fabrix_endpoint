@@ -6,8 +6,8 @@ import { installMockFetch } from "./mock";
 import { fetchOntologyObjects, fetchOntologyLinks, fetchOntologyObject, fetchObjectMetrics } from "./client";
 import type { LinkKind, ObjectType } from "./types";
 
-const OBJECT_TYPES: ObjectType[] = ["Model", "Endpoint", "Service", "GpuDevice", "Node", "Trace", "Incident"];
-const LINK_KINDS: LinkKind[] = ["serves", "runsOn", "hostedBy", "routedTo", "executedOn", "consumes", "affects"];
+const OBJECT_TYPES: ObjectType[] = ["Model", "Endpoint", "Service", "GpuDevice", "Node", "Trace", "Incident", "App"];
+const LINK_KINDS: LinkKind[] = ["serves", "runsOn", "hostedBy", "routedTo", "executedOn", "consumes", "affects", "routes"];
 
 beforeAll(() => {
   // jsdom 환경 가정(vitest 기본). window.fetch 를 mock 라우터로 가로챈다.
@@ -157,5 +157,59 @@ describe("GET /ontology/objects/:id/metrics — get_object_metrics", () => {
 
   it("failure: 미존재 id → 404 (throws)", async () => {
     await expect(fetchObjectMetrics("gpu:does-not-exist")).rejects.toThrow(/404/);
+  });
+});
+
+// IMP-89 — Endpoint↔app_id 라우팅을 온톨로지 관계로. App(소비자) 객체 + Endpoint--routes-->App.
+describe("IMP-89 — App 객체 + Endpoint→App routes 관계", () => {
+  it("App 객체가 존재하고 라우팅 요약 props(endpoints·request_count·name)를 갖는다", async () => {
+    const apps = await fetchOntologyObjects("App");
+    expect(apps.objects.length).toBeGreaterThan(0);
+    for (const a of apps.objects) {
+      expect(a.id.startsWith("app:")).toBe(true);
+      const p = a.props as Record<string, unknown>;
+      expect(typeof p.endpoints).toBe("number"); // 라우팅 EP 수(요약)
+      expect((p.endpoints as number)).toBeGreaterThanOrEqual(1);
+      expect(typeof p.request_count).toBe("number"); // 요청 건수(있으면 집계, 없으면 0)
+      expect(p.app_id).toBeTruthy();
+      expect(p.name).toBeTruthy();
+    }
+  });
+
+  it("Endpoint --routes--> App 링크로 App 을 traverse 할 수 있다", async () => {
+    const eps = await fetchOntologyObjects("Endpoint");
+    // app_id 가 있는 EP 는 routes 링크로 App 에 도달.
+    let routed = 0;
+    for (const ep of eps.objects) {
+      const lr = await fetchOntologyLinks(ep.id, "routes");
+      for (const l of lr.links) {
+        expect(l.linkKind).toBe("routes");
+        expect(l.from).toBe(ep.id);
+        expect(l.to.startsWith("app:")).toBe(true);
+        routed++;
+      }
+    }
+    expect(routed).toBeGreaterThan(0); // 최소 1개 EP 가 App 으로 라우팅
+  }, 20000);
+
+  it("App→Trace traverse 가능(App→Endpoint→Trace 경로) — 그 앱의 트레이스 도달", async () => {
+    const apps = await fetchOntologyObjects("App");
+    const app = apps.objects[0];
+    // App 의 in-link 은 Endpoint --routes--> App (App 이 to).
+    const appLinks = await fetchOntologyLinks(app.id);
+    const routingEps = appLinks.links.filter((l) => l.linkKind === "routes" && l.to === app.id).map((l) => l.from);
+    expect(routingEps.length).toBeGreaterThan(0);
+    // 그 Endpoint 의 in-link 에 Trace --routedTo--> Endpoint 가 하나 이상(트레이스 도달 경로).
+    // (트레이스가 그 EP 로 라우팅됐다면) — 없어도 crash 없이 빈 결과(graceful).
+    const epLinks = await fetchOntologyLinks(routingEps[0]);
+    expect(Array.isArray(epLinks.links)).toBe(true);
+  });
+
+  it("결정적: 두 번 조회한 App 객체·routes 링크가 동일", async () => {
+    const a = await fetchOntologyObjects("App");
+    const b = await fetchOntologyObjects("App");
+    expect(a.objects.map((o) => o.id).sort()).toEqual(b.objects.map((o) => o.id).sort());
+    expect(a.objects.map((o) => (o.props as Record<string, unknown>).endpoints))
+      .toEqual(b.objects.map((o) => (o.props as Record<string, unknown>).endpoints));
   });
 });

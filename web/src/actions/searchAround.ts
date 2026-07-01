@@ -32,6 +32,7 @@ export const SEARCH_AROUND_KINDS: LinkKind[] = [
 export const AROUND_LABEL: Record<LinkKind, string> = {
   serves: "서빙 모델", runsOn: "실행 GPU", hostedBy: "호스트 노드", routedTo: "라우팅 엔드포인트",
   executedOn: "실행 GPU", consumes: "소비 Service", affects: "영향 대상",
+  routes: "app_id 라우팅", // IMP-89 — Endpoint→App
 };
 
 // object-context 서브페이지를 만들 때 필요한 실행 콜백(팔레트 shell 로부터 주입).

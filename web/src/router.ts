@@ -98,6 +98,7 @@ export function queryParam(name: string): string | undefined {
 // 도착 화면이 동일 컨텍스트로 좁혀 보이게 한다(deep-link 가능).
 export type NavParams = {
   model?: string; // playground 모델 / 차원=model 선택값
+  app?: string; // IMP-89: app_id drill-through — Traces 의 app 필터 seed(어느 앱의 트레이스로 좁힘)
   dim?: string; // groupby 차원: model|endpoint|namespace
   key?: string; // 선택된 차원 값(그룹)
   range?: string; // 시간 범위 코드(1h/6h/24h/7d)

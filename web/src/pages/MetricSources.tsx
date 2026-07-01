@@ -25,7 +25,7 @@ const STATUS_BADGE: Record<MetricSourceStatus, { tone: BadgeTone; label: string 
 // 대상 객체 타입 → 한국어 라벨(온톨로지 ObjectType 정합).
 const OBJ_LABEL: Record<ObjectType, string> = {
   Model: "Model", Endpoint: "Endpoint", Service: "Service",
-  GpuDevice: "GpuDevice", Node: "Node", Trace: "Trace", Incident: "Incident",
+  GpuDevice: "GpuDevice", Node: "Node", Trace: "Trace", Incident: "Incident", App: "App",
 };
 
 // GAP 셀 드릴다운 라벨 — 어디로 이동하는지 사람이 읽게.
