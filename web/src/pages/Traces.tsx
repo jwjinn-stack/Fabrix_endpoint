@@ -8,11 +8,14 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import ExportButton from "../components/ExportButton";
+import StatMini from "../components/StatMini";
 import ViewBar from "../components/ViewBar";
 import { useUrlState, decodeState, strField, enumField, rangeField } from "../urlState";
 import { useCap } from "../capabilities";
 import { humanizeError } from "../utils/errors";
 import { spanGeometry, spanDepth, selfMs, kindCounts } from "../components/spanWaterfall";
+import type { NavFn } from "../router";
+import { setPrefill, type PlaygroundPrefill } from "./playgroundPrefill";
 
 // IMP-24: 필터·기간을 URL 단일 출처로(시드+되쓰기 통합). 미세조정은 replaceState.
 const TRACE_SCHEMA = {
@@ -64,7 +67,7 @@ function p95(vals: number[]): number {
 }
 const timeFmt = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hour12: false });
 
-export default function Traces() {
+export default function Traces({ onNavigate }: { onNavigate?: NavFn }) {
   // IMP-24: 필터·기간·드릴다운 컨텍스트가 URL 단일 출처로 산다(시드+되쓰기 통합).
   // L2→L3 drill-through 로 넘어온 model/decision/range 쿼리도 그대로 복원된다.
   const [st, patch] = useUrlState(TRACE_SCHEMA);
@@ -80,6 +83,7 @@ export default function Traces() {
   const cap = useCap();
   const canSave = !cap.caps.readonly; // 뷰 저장(쓰기)은 manage 프로파일만 — 링크 복사는 항상 허용
   const canEval = cap.can("eval"); // 평가 점수 기록(인라인 "이거 평가")은 eval cap(manage)만
+  const canReplay = cap.can("playground"); // IMP-37: replay 는 추론(playground) cap 필요 — observe 면 disable
   const { density, setDensity } = useTableDensity("traces");
   const [data, setData] = useState<TraceListReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -184,10 +188,10 @@ export default function Traces() {
       </div>
 
       <div className="cards-4">
-        <div className="card stat-mini"><div className="sm-label">트레이스</div><div className="sm-val">{stats.count}<span className="sm-unit">건</span></div><div className="sm-sub">표본 (기간 {RANGES.find((r) => r.value === range)?.label})</div></div>
-        <div className="card stat-mini"><div className="sm-label">TTFT p95</div><div className="sm-val">{stats.ttft}<span className="sm-unit">ms</span></div><div className="sm-sub">첫 토큰 지연 95퍼센타일</div></div>
-        <div className="card stat-mini"><div className="sm-label">E2E p95</div><div className="sm-val">{fmtMs(stats.e2e)}</div><div className="sm-sub">요청 종단 지연 95퍼센타일</div></div>
-        <div className="card stat-mini"><div className="sm-label">차단 / 에러</div><div className="sm-val" style={{ color: stats.blocked || stats.errored ? "var(--red)" : "var(--green)" }}>{stats.blocked}<span className="sm-unit">/ {stats.errored}</span></div><div className="sm-sub">가드레일 차단 / 엔진 에러</div></div>
+        <StatMini label="트레이스" value={stats.count} unit="건" sub={`표본 (기간 ${RANGES.find((r) => r.value === range)?.label})`} />
+        <StatMini label="TTFT p95" value={stats.ttft} unit="ms" sub="첫 토큰 지연 95퍼센타일" />
+        <StatMini label="E2E p95" value={fmtMs(stats.e2e)} sub="요청 종단 지연 95퍼센타일" />
+        <StatMini label="차단 / 에러" value={stats.blocked} unit={`/ ${stats.errored}`} sub="가드레일 차단 / 엔진 에러" tone={stats.blocked || stats.errored ? "red" : "green"} />
       </div>
 
       <div className="card">
@@ -293,7 +297,7 @@ export default function Traces() {
         onClose={() => setSelId(null)}
       >
         {detailLoading && <div className="state" role="status">트레이스 스팬을 불러오는 중…</div>}
-        {detail && <TraceDetailView detail={detail} openSpan={openSpan} onToggleSpan={(id) => setOpenSpan((s) => (s === id ? null : id))} canEval={canEval} onScoreAdded={(sc) => setDetail((d) => (d ? { ...d, summary: { ...d.summary, scores: [...(d.summary.scores ?? []), sc] } } : d))} />}
+        {detail && <TraceDetailView detail={detail} openSpan={openSpan} onToggleSpan={(id) => setOpenSpan((s) => (s === id ? null : id))} canEval={canEval} onScoreAdded={(sc) => setDetail((d) => (d ? { ...d, summary: { ...d.summary, scores: [...(d.summary.scores ?? []), sc] } } : d))} canReplay={canReplay} onNavigate={onNavigate} />}
       </SlidePanel>
     </>
   );
@@ -316,6 +320,38 @@ function num(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+// IMP-37: 트레이스 → 플레이그라운드 replay 페이로드 구성.
+// 현 스키마 제약: raw 멀티턴 messages·구조화 params 가 trace 에 없다. 확실히 복원되는 것만 시드한다:
+//   model = summary.model, prompt = input_preview(단일 user), params = span attributes 에서 추출 가능 시.
+// 차단 트레이스는 input_preview 가 "[차단됨] …" 플레이스홀더(원문 없음) → note 로 한계를 명시.
+function paramFromSpans(spans: TraceSpan[], keys: string[]): number | undefined {
+  for (const sp of spans) {
+    const a = sp.attributes ?? {};
+    for (const k of keys) {
+      const v = num(a[k]);
+      if (v != null) return v;
+    }
+  }
+  return undefined;
+}
+function buildReplayPrefill(detail: TraceDetail): PlaygroundPrefill {
+  const s = detail.summary;
+  const blocked = s.decision === "blocked";
+  // OTel/Langfuse 공통 request 파라미터 키(있을 때만 — 없으면 Playground 기본값 유지).
+  const temperature = paramFromSpans(detail.spans, ["gen_ai.request.temperature", "llm.request.temperature"]);
+  const maxTokens = paramFromSpans(detail.spans, ["gen_ai.request.max_tokens", "llm.request.max_tokens"]);
+  return {
+    prompt: blocked ? "" : (detail.input_preview ?? ""),
+    model: s.model,
+    temperature,
+    maxTokens,
+    origin: `트레이스 ${s.trace_id}`,
+    note: blocked
+      ? "차단된 트레이스라 입력 원문이 보존되지 않았습니다 — 모델·파라미터만 시드됩니다."
+      : undefined,
+  };
+}
+
 // 스팬 속성에서 에러 사유 추출 — OTel/Langfuse 공통 키 중 먼저 잡히는 값.
 function spanErrReason(sp: TraceSpan): string | undefined {
   const a = sp.attributes ?? {};
@@ -324,8 +360,15 @@ function spanErrReason(sp: TraceSpan): string | undefined {
 }
 
 // ───────────────────────── 상세: 요약 + waterfall + 속성 ─────────────────────────
-function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded }: { detail: TraceDetail; openSpan: string | null; onToggleSpan: (id: string) => void; canEval: boolean; onScoreAdded: (sc: Score) => void }) {
+function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded, canReplay, onNavigate }: { detail: TraceDetail; openSpan: string | null; onToggleSpan: (id: string) => void; canEval: boolean; onScoreAdded: (sc: Score) => void; canReplay: boolean; onNavigate?: NavFn }) {
   const s = detail.summary;
+
+  // IMP-37: 이 요청을 플레이그라운드에 실어 재현. 페이로드는 모듈 핸드오프(URL 비대상), 모델은 NavParams 로도.
+  const onReplay = () => {
+    if (!canReplay || !onNavigate) return;
+    setPrefill(buildReplayPrefill(detail));
+    onNavigate("playground", { model: s.model });
+  };
   const total = Math.max(1, s.total_ms);
   const ttftPct = (s.ttft_ms / total) * 100;
   const children = detail.spans.filter((sp) => sp.parent_id);
@@ -447,6 +490,21 @@ function TraceDetailView({ detail, openSpan, onToggleSpan, canEval, onScoreAdded
         <span>· TTFT <b>{s.ttft_ms}ms</b></span>
         <span>· E2E <b>{fmtMs(s.total_ms)}</b></span>
         <span>· {fmtTokens(s.prompt_tokens)}→{fmtTokens(s.completion_tokens)} tok</span>
+        <span className="spacer" style={{ flex: 1 }} />
+        {/* IMP-37: 트레이스 → 플레이그라운드 replay 진입점. observe(추론 불가)면 disable. */}
+        {onNavigate && (
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={onReplay}
+            disabled={!canReplay}
+            title={canReplay
+              ? "이 요청의 모델·입력·파라미터를 플레이그라운드에 실어 재현합니다"
+              : "이 배포 프로파일에서는 추론(플레이그라운드) 호출이 비활성화되어 있습니다"}
+          >
+            ▷ 플레이그라운드에서 재현
+          </button>
+        )}
       </div>
 
       {/* IMP-18: 평가 점수 패널 (Langfuse scores 부착) + 인라인 "이거 평가" */}

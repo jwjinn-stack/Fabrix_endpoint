@@ -1479,6 +1479,18 @@ dialog.drawer[open] { display: flex; }
 .vb-chip.on { background: var(--primary-weak); border-color: var(--primary); color: var(--primary-strong); }
 .vb-chip input { accent-color: var(--primary); }
 .vb-hint { font-size: var(--fs-xs); color: var(--text-faint); margin-left: auto; }
+/* IMP-40 위젯 편집(show/hide + reorder) — 행 목록(드래그 미도입, 위/아래 버튼) */
+.view-builder { align-items: stretch; }
+.vb-widgets { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; }
+.vb-row { display: flex; align-items: center; gap: var(--sp-2); padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.vb-row.off { opacity: 0.55; }
+.vb-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.vb-toggle input { accent-color: var(--primary); }
+.vb-row-title { font-size: var(--fs-body); }
+.vb-persona { font-size: var(--fs-xs); color: var(--text-faint); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+.vb-move { width: 28px; height: 28px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); cursor: pointer; font-size: var(--fs-sm); color: var(--text); }
+.vb-move:hover:not(:disabled) { border-color: var(--primary); color: var(--primary-strong); }
+.vb-move:disabled { opacity: 0.35; cursor: default; }
 
 /* 평가 점수 (#17) */
 .eval-score { font-size: 22px; font-weight: 700; }
@@ -1702,6 +1714,75 @@ dialog.slide-panel::backdrop { background: rgba(16, 24, 40, 0.28); }
 .note-reason { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.12); color: inherit; opacity: 0.85; }
 .note-reason.guard { background: rgba(200,30,30,0.2); }
 
+/* IMP-38 인시던트 인박스 — 상태 필터 탭·상태 배지·발생횟수·시각·액션 */
+.inc-tabs { margin: var(--sp-2) var(--sp-3) 0; }
+.inc-tabs button { flex: 1; }
+
+/* IMP-43 시각 위계 — severity 좌측 컬러바·아이콘·상대시각·호버 액션·미처리 강조.
+   카드형 행(Datadog event stream / Grafana OnCall / Linear inbox 밀도 기준). */
+.note.inc {
+  position: relative;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  padding-left: var(--sp-4); /* 좌측 컬러바 자리 */
+  border: 1px solid transparent;
+  transition: background var(--ease), border-color var(--ease);
+}
+.note.inc:hover,
+.note.inc:focus-within { background: var(--surface-2); border-color: var(--border); }
+.note.inc .note-body { flex: 1; min-width: 0; }
+
+/* severity 좌측 컬러바 (4px) — 색은 .inc-sev-* 매핑 */
+.inc-bar {
+  position: absolute; left: 0; top: var(--sp-1); bottom: var(--sp-1);
+  width: 3px; border-radius: 999px; background: var(--text-dim);
+}
+/* severity 아이콘 글리프 */
+.inc-glyph { flex: 0 0 auto; margin-top: 1px; }
+.inc-icon { font-size: 11px; line-height: 1; color: var(--text-dim); }
+
+/* severity 토큰 매핑 — info=중성, warning=amber, critical=red */
+.inc-sev-info .inc-bar { background: var(--text-dim); }
+.inc-sev-info .inc-icon { color: var(--text-dim); }
+.inc-sev-warning .inc-bar { background: var(--amber); }
+.inc-sev-warning .inc-icon { color: var(--amber); }
+.inc-sev-critical .inc-bar { background: var(--red); }
+.inc-sev-critical .inc-icon { color: var(--red); }
+
+/* 미처리(triggered) 강조 — 약한 배경 틴트 + 컬러바 굵게 + 미읽음 도트 */
+.note.inc.inc-unhandled { background: color-mix(in srgb, var(--red) 5%, transparent); }
+.note.inc.inc-unhandled .inc-bar { width: 4px; }
+.note.inc.inc-unhandled.inc-sev-warning { background: color-mix(in srgb, var(--amber) 6%, transparent); }
+.note.inc.inc-unhandled.inc-sev-info { background: color-mix(in srgb, var(--text-dim) 6%, transparent); }
+.note.inc.inc-unhandled .inc-glyph::before {
+  content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  margin-right: 4px; vertical-align: middle; background: var(--red);
+}
+.note.inc.inc-unhandled.inc-sev-warning .inc-glyph::before { background: var(--amber); }
+.note.inc.inc-unhandled.inc-sev-info .inc-glyph::before { background: var(--text-dim); }
+
+.inc-state { font-size: 10px; font-weight: 600; padding: 1px 6px; border: 1px solid var(--border); }
+.inc-state.inc-triggered { color: var(--red, #c8281e); border-color: var(--red, #c8281e); background: var(--red-weak, rgba(200,40,30,0.1)); }
+.inc-state.inc-acked { color: var(--primary); border-color: var(--primary); background: var(--primary-weak); }
+.inc-state.inc-snoozed { color: var(--text-faint); }
+.inc-state.inc-resolved { color: var(--ok, #1a7f5a); border-color: var(--ok, #1a7f5a); background: color-mix(in srgb, var(--ok, #1a7f5a) 10%, transparent); }
+.inc-count { font-size: var(--fs-xs); font-weight: 700; color: var(--text-faint); }
+/* 상대시각 — 모노 폰트로 정렬감(Datadog/Linear 타임스탬프) */
+.inc-rel { font-family: var(--mono, monospace); font-size: var(--fs-xs); color: var(--text-faint); letter-spacing: -0.01em; }
+.inc-times { display: flex; gap: var(--sp-3); font-size: var(--fs-xs); color: var(--text-faint); margin-top: 3px; font-family: var(--mono, monospace); letter-spacing: -0.01em; }
+
+/* 호버 액션 — 기본 흐릿, 행 호버/포커스·미처리 행에서 드러남 */
+.inc-actions {
+  display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-2);
+  opacity: 0; transition: opacity var(--ease);
+}
+.note.inc:hover .inc-actions,
+.note.inc:focus-within .inc-actions,
+.note.inc.inc-unhandled .inc-actions { opacity: 1; }
+@media (hover: none) { .inc-actions { opacity: 1; } }
+
 /* P4-1 추론 지연 3분할 게이지 패널 */
 .lat-panel .lat-body { display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-2); }
 .lat-row { position: relative; }
@@ -1733,11 +1814,35 @@ dialog.slide-panel::backdrop { background: rgba(16, 24, 40, 0.28); }
 
 /* ══════════════════ 추론 트레이스 (신규) ══════════════════ */
 /* 미니 통계 카드 (KPI baseline 표기 일관화에도 재사용) */
-.stat-mini { padding: var(--sp-4); }
-.sm-label { font-size: var(--fs-sm); color: var(--text-dim); font-weight: 600; }
-.sm-val { font-size: var(--fs-metric); font-weight: 700; color: var(--text); line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.sm-unit { font-size: var(--fs-sm); color: var(--text-faint); font-weight: 600; margin-left: 4px; }
-.sm-sub { font-size: var(--fs-xs); color: var(--text-faint); margin-top: 4px; }
+/* IMP-44: stat-mini 통합 — 임계 좌측바 + 인라인 델타 + 우하단 미니 스파크라인. */
+.stat-mini { position: relative; padding: var(--sp-4); overflow: hidden; }
+/* 임계 도달 톤: 카드 좌측에 색 바(데이터값 색은 인라인 style 로 보강). */
+.stat-mini::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: transparent; border-top-left-radius: inherit; border-bottom-left-radius: inherit;
+}
+.stat-mini.tone-green::before { background: var(--green); }
+.stat-mini.tone-red::before { background: var(--red); }
+.stat-mini.tone-amber::before { background: var(--amber); }
+.sm-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
+.sm-val {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px;
+  font-size: var(--fs-metric); font-weight: 700; color: var(--text); line-height: 1.1;
+  margin-top: 4px; font-variant-numeric: tabular-nums;
+}
+.sm-unit { font-size: var(--fs-sm); color: var(--text-faint); font-weight: 600; margin-left: 2px; }
+.sm-sub { font-size: var(--fs-xs); color: var(--text-faint); margin-top: 4px; max-width: calc(100% - 64px); }
+/* 우하단 미니 스파크라인 — 본문과 겹치지 않게 코너에 격하. */
+.sm-spark { position: absolute; right: var(--sp-4); bottom: var(--sp-3); opacity: 0.85; pointer-events: none; }
+/* 델타 배지 — StatCard 의 .metric .num .delta 와 동일 시각언어. */
+.sm-val .delta {
+  font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  margin-left: var(--sp-1); white-space: nowrap; padding: 1px 6px; border-radius: 999px;
+  line-height: 1.5; align-self: center;
+}
+.sm-val .delta.good { color: var(--green); background: var(--green-weak); }
+.sm-val .delta.bad { color: var(--red); background: var(--red-weak); }
+.sm-val .delta.flat { color: var(--text-faint); background: var(--brand-gray-weak); font-weight: 600; }
 
 /* 필터 바 (트레이스·Analytics 공용) */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3); margin-bottom: var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border); }

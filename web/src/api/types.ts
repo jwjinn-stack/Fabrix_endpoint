@@ -497,6 +497,48 @@ export interface EvalResult {
   guard?: GuardVerdict;
 }
 
+// ── eval suite (IMP-39) — 데이터셋·실험·회귀 비교. backend server.Eval* 와 1:1 ──
+export interface EvalDatasetItem {
+  id: string;
+  input: string;
+  expected_output?: string; // OPTIONAL — reference-free 허용(golden answer 강제 금지)
+  criteria?: string;        // 케이스별 채점 기준(선택)
+  metadata?: string;
+}
+export interface EvalDataset {
+  id: string;
+  name: string;
+  version: number;
+  items: EvalDatasetItem[];
+  created_at: string;
+  updated_at: string;
+}
+export interface ExperimentConfig {
+  model: string;
+  judge_model: string;
+  prompt_version?: string;
+  criteria: string;
+}
+export interface ExperimentCaseResult {
+  item_id: string;
+  input: string;
+  response: string;
+  score: number; // 0..5 (0=차단/실패)
+  rationale: string;
+  blocked: boolean;
+}
+export interface Experiment {
+  id: string;
+  dataset_id: string;
+  dataset_name: string;
+  dataset_version: number;
+  config: ExperimentConfig; // pinned config snapshot
+  cases: ExperimentCaseResult[];
+  mean_score: number;
+  pass_rate: number;
+  created_at: string;
+}
+
 export interface User {
   user_id: string;
   email: string;
@@ -660,6 +702,43 @@ export interface AlertSendRecord {
   token: string; // 해시(평문 키 아님)
   ok: boolean;
   reason?: string;
+}
+
+// 알림 인시던트 라이프사이클(IMP-38) — OnCall/PagerDuty 모델.
+export type IncidentState = "triggered" | "acked" | "resolved" | "snoozed";
+
+export interface IncidentOccurrence {
+  ts: string;
+}
+
+export interface IncidentAuditEntry {
+  ts: string;
+  from: IncidentState;
+  to: IncidentState;
+  by: string;
+  note?: string;
+}
+
+export interface Incident {
+  id: string;
+  dedup_key: string;
+  severity: AlarmSeverity;
+  title: string;
+  state: IncidentState;
+  first_seen: string;
+  last_seen: string;
+  count: number;
+  occurrences?: IncidentOccurrence[];
+  acked_by?: string;
+  resolved_by?: string;
+  silenced_until?: string;
+  note?: string;
+  audit?: IncidentAuditEntry[];
+}
+
+export interface IncidentList {
+  incidents: Incident[];
+  counts: Record<string, number>; // triggered|acked|resolved|snoozed → count
 }
 
 // 지표 기반 알림 룰(IMP-36). latency/error/block 임계 알림. 발송은 IMP-15 디스패처 재사용.

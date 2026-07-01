@@ -10,9 +10,9 @@
 
 import type {
   APIKeyView, Capabilities, ConfigStatus, ConfigView, DiagReport, DiagStatus, ChatResponse, DashboardOverview, Endpoint, EndpointPreview,
-  EnginePipeline, EvalResult, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
+  EnginePipeline, EvalResult, EvalDataset, EvalDatasetItem, Experiment, ExperimentCaseResult, ExperimentConfig, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
   GuardAuditRow, GuardDecision, GuardPolicy, GuardVerdict, HarborModel, HarborStatus,
-  ImportResult, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
+  ImportResult, Incident, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
   OrgTree, ProxyStats, Score, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
   SpanKind, ThirdPartyCred, TimePoint, TimeRange, Timeseries,
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
@@ -140,6 +140,63 @@ let MASKING_POLICY: MaskingPolicy = {
     { type: "address", label: "주소", action: "mask" },
   ],
 };
+
+// ───────────────────────── 인시던트 인박스(IMP-38) ─────────────────────────
+// OnCall/PagerDuty 모델: group-merge dedup + ack/resolve/snooze. 모듈 상태에 반영(QA 데이터 흐름).
+const INCIDENTS: Incident[] = [
+  { id: "inc_seed_ep", dedup_key: "endpoint:qwen25-vl-7b:not-ready", severity: "critical", title: "qwen25-vl-7b 엔드포인트 NotReady — 파드 기동 실패", state: "triggered", first_seen: isoMinusHours(3), last_seen: isoMinusHours(0.1), count: 1, occurrences: [{ ts: isoMinusHours(0.1) }] },
+  { id: "inc_seed_q", dedup_key: "scheduler:queue-backpressure", severity: "warning", title: "대기 큐 적체 — 스케줄러 backpressure", state: "triggered", first_seen: isoMinusHours(1.5), last_seen: isoMinusHours(0.05), count: 2, occurrences: [{ ts: isoMinusHours(1.5) }, { ts: isoMinusHours(0.05) }] },
+  { id: "inc_seed_g", dedup_key: "guard:pii-jailbreak-spike", severity: "info", title: "가드레일 차단 급증 (PII·Jailbreak)", state: "acked", first_seen: isoMinusHours(2), last_seen: isoMinusHours(0.8), count: 5, acked_by: "hjkim", occurrences: [{ ts: isoMinusHours(0.8) }] },
+];
+
+function incidentTick(): void {
+  // snooze 만료 → triggered 자동 re-fire(silenced_until 경과).
+  const now = Date.now();
+  for (const i of INCIDENTS) {
+    if (i.state === "snoozed" && i.silenced_until && new Date(i.silenced_until).getTime() <= now) {
+      i.state = "triggered";
+      i.silenced_until = undefined;
+    }
+  }
+}
+
+function incidentCounts(): Record<string, number> {
+  const c: Record<string, number> = { triggered: 0, acked: 0, resolved: 0, snoozed: 0 };
+  for (const i of INCIDENTS) c[i.state] = (c[i.state] ?? 0) + 1;
+  return c;
+}
+
+function listIncidents(state?: string, severity?: string): Response {
+  incidentTick();
+  let rows = [...INCIDENTS];
+  if (state) rows = rows.filter((i) => i.state === state);
+  if (severity) rows = rows.filter((i) => i.severity === severity);
+  rows.sort((a, b) => (a.last_seen < b.last_seen ? 1 : -1));
+  return ok({ incidents: rows, counts: incidentCounts() });
+}
+
+function actIncident(id: string, action: string, body: Record<string, unknown>): Response {
+  incidentTick();
+  const inc = INCIDENTS.find((i) => i.id === id);
+  if (!inc) return notFound(`/incidents/${id}`);
+  const now = new Date().toISOString();
+  if (inc.state === "resolved" && action !== "snooze") return ok({ error: "이미 해소된 인시던트입니다" }, 409);
+  switch (action) {
+    case "ack":
+      inc.state = "acked"; inc.acked_by = "operator"; inc.silenced_until = undefined; break;
+    case "resolve":
+      inc.state = "resolved"; inc.resolved_by = "operator"; inc.silenced_until = undefined; break;
+    case "snooze": {
+      const minutes = Number(body.minutes);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return ok({ error: "snooze 시간(minutes)은 1~1440 사이여야 합니다" }, 400);
+      inc.state = "snoozed"; inc.silenced_until = new Date(Date.now() + minutes * 60_000).toISOString(); break;
+    }
+    default:
+      return notFound(`/incidents/${id}/${action}`);
+  }
+  inc.last_seen = now;
+  return ok({ incident: inc });
+}
 
 // ───────────────────────── 시계열/요약 생성기 ─────────────────────────
 const rangeBuckets: Record<TimeRange, { n: number; stepSec: number }> = {
@@ -1140,11 +1197,16 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "PUT /config": return saveConfigMock(body as { fields?: Record<string, string> });
     case "GET /config/status": return ok(genConfigStatus());
     case "POST /eval/run": return ok(runEval(body as Record<string, unknown>));
+    case "GET /eval/datasets": return ok({ datasets: EVAL_DATASETS });
+    case "POST /eval/datasets": return createDatasetMock(body as Record<string, unknown>);
+    case "GET /eval/experiments": return ok({ experiments: [...EVAL_EXPERIMENTS].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)) });
+    case "POST /eval/experiments": return runExperimentMock(body as Record<string, unknown>);
     case "POST /playground/chat": return ok(playgroundChat(body as Record<string, unknown>));
     case "GET /users": return ok({ users: USERS, roles: ["admin", "super", "user"] });
     case "GET /org": return ok(genOrg());
     case "POST /users": return ok(createUser(body as Record<string, unknown>));
     case "POST /endpoints": return ok(createEndpoint(body as Record<string, unknown>, q.get("apply") === "true"));
+    case "GET /incidents": return listIncidents(q.get("state") ?? undefined, q.get("severity") ?? undefined);
     case "GET /traces": return ok(genTraceList(parseRange(q), { decision: q.get("decision") ?? undefined, status: q.get("status") ?? undefined, model: q.get("model") ?? undefined, app: q.get("app") ?? undefined, q: q.get("q") ?? undefined }));
     case "GET /sessions": return ok(genSessionList(parseRange(q), q.get("app") ?? undefined));
     case "GET /alerts/rules/preview": return ok(alertRulePreviewMock(q.get("metric") ?? "", q.get("window") ?? "1h"));
@@ -1161,6 +1223,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (one.configured && one.reachable && one.request) one.probe = mkProbeTrace(one);
     return ok(one);
   }
+  if (method === "POST" && (m = path.match(/^\/incidents\/([^/]+)\/(ack|resolve|snooze)$/))) { return actIncident(m[1], m[2], (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/traces\/([^/]+)\/scores$/))) { return ok(recordScoreMock(m[1], body as Record<string, unknown>)); }
   if (method === "GET" && (m = path.match(/^\/traces\/(.+)$/))) { return ok(genTraceDetail(m[1])); }
   if (method === "GET" && (m = path.match(/^\/sessions\/(.+)$/))) { return ok(genSessionDetail(m[1])); }
@@ -1283,6 +1346,86 @@ function runEval(b: Record<string, unknown>): EvalResult {
     latency_ms: Math.round(800 + r() * 1800),
   };
 }
+// ── eval suite (IMP-39) — 데이터셋·실험(배치 채점)·회귀 비교. 인메모리 누적(이전 run 보존). ──
+let EVAL_DATASETS: EvalDataset[] = [
+  {
+    id: "ds_kr_qa", name: "한국어 사실 QA (샘플)", version: 1,
+    created_at: "2026-06-25T09:00:00Z", updated_at: "2026-06-25T09:00:00Z",
+    items: [
+      { id: "c1", input: "대한민국의 수도와 인구를 한 문장으로 알려줘", expected_output: "서울이며 인구는 약 940만 명입니다.", criteria: "정확성·간결성" },
+      { id: "c2", input: "환율이 오르면 수출 기업에 어떤 영향이 있나요?", criteria: "정확성·근거 제시" },
+      { id: "c3", input: "ETF와 펀드의 차이를 두 문장으로 설명해줘", expected_output: "ETF는 거래소에 상장되어 실시간 거래가 가능하고, 펀드는 기준가로 하루 한 번 거래됩니다." },
+    ],
+  },
+];
+let EVAL_EXPERIMENTS: Experiment[] = [];
+let evalSeq = 0;
+
+function createDatasetMock(b: Record<string, unknown>): Response {
+  const name = String(b.name ?? "").trim();
+  const rawItems = Array.isArray(b.items) ? (b.items as Record<string, unknown>[]) : [];
+  if (!name) return ok({ error: "name 은 필수입니다" }, 400);
+  if (rawItems.length === 0) return ok({ error: "items 는 최소 1건 필요합니다" }, 400);
+  if (rawItems.length > 50) return ok({ error: "items 는 최대 50건까지 허용됩니다" }, 400);
+  const items: EvalDatasetItem[] = [];
+  for (let i = 0; i < rawItems.length; i++) {
+    const input = String(rawItems[i].input ?? "").trim();
+    if (!input) return ok({ error: "각 케이스의 input 은 필수입니다" }, 400);
+    items.push({
+      id: String(rawItems[i].id ?? `c${i + 1}`),
+      input,
+      expected_output: rawItems[i].expected_output ? String(rawItems[i].expected_output) : undefined,
+      criteria: rawItems[i].criteria ? String(rawItems[i].criteria) : undefined,
+    });
+  }
+  evalSeq++;
+  const now = new Date().toISOString();
+  const ds: EvalDataset = { id: `ds_${Math.random().toString(36).slice(2, 8)}`, name, version: 1, items, created_at: now, updated_at: now };
+  EVAL_DATASETS = [ds, ...EVAL_DATASETS];
+  return ok(ds);
+}
+
+function runExperimentMock(b: Record<string, unknown>): Response {
+  const datasetId = String(b.dataset_id ?? "");
+  const cfgIn = (b.config as Record<string, unknown>) ?? {};
+  if (!datasetId || !cfgIn.model) return ok({ error: "dataset_id 와 config.model 은 필수입니다" }, 400);
+  const ds = EVAL_DATASETS.find((d) => d.id === datasetId);
+  if (!ds) return ok({ error: "데이터셋을 찾을 수 없습니다" }, 404);
+  const config: ExperimentConfig = {
+    model: String(cfgIn.model),
+    judge_model: cfgIn.judge_model ? String(cfgIn.judge_model) : String(cfgIn.model),
+    prompt_version: cfgIn.prompt_version ? String(cfgIn.prompt_version) : undefined,
+    criteria: cfgIn.criteria ? String(cfgIn.criteria) : "정확성·완결성·한국어 표현의 자연스러움",
+  };
+  const cases: ExperimentCaseResult[] = ds.items.map((it) => {
+    const guard = classify(it.input);
+    if (guard.decision === "blocked") {
+      return { item_id: it.id, input: it.input, response: guard.reason ?? "", score: 0, rationale: "가드레일 차단으로 평가하지 않음", blocked: true };
+    }
+    // 결정적 점수 — 데이터셋·케이스·config(model+promptVersion) 조합으로 회귀 비교가 의미 있게.
+    const r = rng(hash(it.id + config.model + (config.prompt_version ?? "")));
+    const score = Math.max(1, Math.min(5, Math.round(2 + r() * 3)));
+    return {
+      item_id: it.id, input: it.input,
+      response: `(mock) "${it.input.slice(0, 24)}" 에 대한 ${config.model} 응답입니다.`,
+      score, rationale: `${config.criteria} 기준 ${score}/5.${it.expected_output ? " 기대답변 대비 평가." : " reference-free 평가."}`,
+      blocked: false,
+    };
+  });
+  const scored = cases.filter((c) => !c.blocked);
+  const mean = scored.length ? +(scored.reduce((a, c) => a + c.score, 0) / scored.length).toFixed(2) : 0;
+  const pass = scored.length ? +(scored.filter((c) => c.score >= 4).length / scored.length).toFixed(2) : 0;
+  evalSeq++;
+  const exp: Experiment = {
+    id: `ex_${Math.random().toString(36).slice(2, 8)}`,
+    dataset_id: ds.id, dataset_name: ds.name, dataset_version: ds.version,
+    config, cases, mean_score: mean, pass_rate: pass,
+    created_at: new Date(Date.now() + evalSeq).toISOString(),
+  };
+  EVAL_EXPERIMENTS = [exp, ...EVAL_EXPERIMENTS];
+  return ok(exp);
+}
+
 function playgroundChat(b: Record<string, unknown>): ChatResponse {
   const msgs = (b.messages as { role: string; content: string }[]) || [];
   const lastUser = [...msgs].reverse().find((m) => m.role === "user")?.content ?? "";

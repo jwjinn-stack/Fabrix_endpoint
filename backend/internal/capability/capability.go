@@ -28,24 +28,31 @@ const (
 	Users          = "users"           // 조직·사용자 조회 (read, RBAC)
 	UsersWrite     = "users.write"     // 사용자 생성·수정·삭제, 앱 부서 설정
 	Credentials    = "credentials"     // 서드파티 자격증명 조회·설정(민감)
+	IncidentAck    = "incident.ack"    // 알림 인시던트 acknowledge(IMP-38) — observe 도 허용(ack-only)
+	IncidentWrite  = "incident.write"  // 인시던트 resolve/snooze — manage 전용(상태 변경)
 )
 
 // all 은 정의된 모든 cap. manage 기본(=전부 on)과 /capabilities 응답 완전성의 단일 출처.
 var all = []string{
 	Dashboard, Traces, Guard, GuardWrite, Models, ModelsWrite,
 	Playground, Eval, Endpoints, EndpointsWrite, Keys, KeysWrite,
-	Users, UsersWrite, Credentials,
+	Users, UsersWrite, Credentials, IncidentAck, IncidentWrite,
 }
 
 // observeDefaults 는 observe 프로파일에서 기본 on 인 cap(읽기 관제 화면).
 // 엔드포인트/키/사용자 읽기 등은 고객사별로 FABRIX_FEATURES 로 추가로 켠다.
-var observeDefaults = []string{Dashboard, Traces, Guard, Models}
+// incident.ack 는 관제 운영자가 인시던트를 *처리중* 으로 표시할 수 있어야 하므로 observe 기본 on
+// (IMP-38: observe=ack-only, resolve/snooze=manage).
+var observeDefaults = []string{Dashboard, Traces, Guard, Models, IncidentAck}
 
 // mutating 은 상태를 바꾸거나 외부로 부수효과를 내는 cap. 하나라도 켜지면 Readonly=false.
 // (".write" 외에 playground/eval/credentials 도 mutating 으로 본다.)
+// incident.ack 는 mutating 이 아니다(상태 표시일 뿐 — observe 의 read-only 성질을 깨지 않는다).
+// incident.write(resolve/snooze)만 mutating.
 var mutating = map[string]bool{
 	GuardWrite: true, ModelsWrite: true, Playground: true, Eval: true,
 	EndpointsWrite: true, KeysWrite: true, UsersWrite: true, Credentials: true,
+	IncidentWrite: true,
 }
 
 // known 은 override 파싱 시 알 수 없는 키를 걸러내기 위한 색인.

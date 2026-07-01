@@ -30,6 +30,17 @@ type DataStore interface {
 	Probe(ctx context.Context) error
 }
 
+// EvalStore 는 평가 데이터셋·실험(배치 채점 레코드) 영속(IMP-39). DataStore 와 동일한 seam 식 —
+// mock 은 internal/mockstore 인메모리, live 는 후속에서 PostgreSQL 구현으로 교체. 핸들러는 불변.
+// v1 은 소량 동기 배치라 단순 CRUD; SaveExperiment 는 이전 run 을 보존(append)해 run-vs-run 비교를 가능케 한다.
+type EvalStore interface {
+	ListDatasets(ctx context.Context) ([]EvalDataset, error)
+	CreateDataset(ctx context.Context, d EvalDataset) (EvalDataset, error)
+	GetDataset(ctx context.Context, id string) (EvalDataset, bool)
+	ListExperiments(ctx context.Context) ([]Experiment, error)
+	SaveExperiment(ctx context.Context, e Experiment) (Experiment, error)
+}
+
 // AlertRuleStore 는 지표 기반 알림 룰(IMP-36) CRUD seam. DataStore 와 분리한 옵셔널 능력 —
 // mock(인메모리)은 구현하고, live(*store.Store)는 미구현일 수 있어 핸들러에서 type-assert 한다.
 type AlertRuleStore interface {

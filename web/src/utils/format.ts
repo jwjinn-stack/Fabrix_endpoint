@@ -16,3 +16,26 @@ export function formatMetric(unit: string, v: number): string {
   if (unit === "req/s") return v.toFixed(2);
   return compact(v);
 }
+
+// relativeTime — ISO 타임스탬프를 "방금 전 / N분 전 / N시간 전 / N일 전" 상대 표기로 (IMP-43).
+// 인시던트 인박스 등 "언제 발생했나"를 한눈에 트리아지하는 표면용. 절대시각은 호출부에서 title 로 보존.
+// 미래 시각(예: snooze ~까지)은 "N분 후" 로 대칭 처리.
+export function relativeTime(ts?: string, now: number = Date.now()): string {
+  if (!ts) return "—";
+  const t = new Date(ts).getTime();
+  if (Number.isNaN(t)) return "—";
+  const diff = now - t; // 과거면 양수
+  const fut = diff < 0;
+  const s = Math.floor(Math.abs(diff) / 1000);
+  const suffix = fut ? "후" : "전";
+  if (s < 45) return "방금 전";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분 ${suffix}`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 ${suffix}`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}일 ${suffix}`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}개월 ${suffix}`;
+  return `${Math.floor(mo / 12)}년 ${suffix}`;
+}

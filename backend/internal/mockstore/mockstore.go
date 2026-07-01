@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/maymust/fabrix-endpoint/internal/domain"
+	"github.com/maymust/fabrix-endpoint/internal/server"
 	"github.com/maymust/fabrix-endpoint/internal/usage"
 )
 
@@ -57,14 +58,22 @@ func seed(s string) uint64 {
 // ── Store (server.DataStore 구현) ──
 
 type Store struct {
-	mu      sync.Mutex
-	keys    []domain.APIKeyView
-	users   []domain.User
-	appDept map[string]string // appID → deptID (SetAppDept 로 변경 가능)
-	masking domain.MaskingPolicy
-	rules   []domain.AlertRule // 지표 기반 알림 룰(IMP-36)
-	keySeq  int
-	userSeq int
+	mu       sync.Mutex
+	keys     []domain.APIKeyView
+	users    []domain.User
+	appDept  map[string]string // appID → deptID (SetAppDept 로 변경 가능)
+	masking  domain.MaskingPolicy
+	keySeq   int
+	userSeq  int
+
+	// IMP-39 — eval suite(데이터셋·실험). 키/유저 경로와 독립된 별도 mutex 로 보호(server.EvalStore 구현, eval.go).
+	evalMu      sync.Mutex
+	datasets    []server.EvalDataset
+	experiments []server.Experiment
+	evalSeq     int
+
+	// IMP-36 — 지표 기반 알림 룰(server.AlertRuleStore 구현, alertrules.go).
+	rules   []domain.AlertRule
 	ruleSeq int
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/maymust/fabrix-endpoint/internal/diag"
 	"github.com/maymust/fabrix-endpoint/internal/guard"
 	"github.com/maymust/fabrix-endpoint/internal/harbor"
+	"github.com/maymust/fabrix-endpoint/internal/incident"
 	"github.com/maymust/fabrix-endpoint/internal/httpx"
 	"github.com/maymust/fabrix-endpoint/internal/k8s"
 	"github.com/maymust/fabrix-endpoint/internal/langfuse"
@@ -29,12 +30,14 @@ type Server struct {
 	dashboard  provider.Dashboard
 	catalog    *catalog.Catalog
 	store      DataStore // nil 가능(DB 미구성 시 키 기능 비활성). live=*store.Store / mock=mockstore
+	evalStore  EvalStore // 평가 데이터셋·실험(IMP-39). nil 가능 → 미구성 시 503. store 가 EvalStore 면 자동 주입.
 	guard      *guard.Client
 	audit      *audit.Sink
 	usage      UsageSource // live=*usage.Sink / mock=mockstore
 	quota      *quota.Limiter
 	alerts     *alerting.Dispatcher // 예산·임계 초과 아웃바운드 통지(IMP-15). observe 는 발송 비활성.
 	alertNotify sync.Map             // map[apiKeyID]bool — 키별 '초과 시 통지' 토글(인메모리)
+	incidents  *incident.Store      // 알림 인시던트 라이프사이클(IMP-38) — ack/resolve/snooze·group-merge(인메모리)
 	alertEval   *alertrules.Evaluator // 지표 기반 알림 룰 평가 상태머신(IMP-36). 발송은 alerts 재사용.
 	k8s        *k8s.Client
 	harbor     *harbor.Client
@@ -71,6 +74,7 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 		usage:      us,
 		quota:      q,
 		alerts:     alerts,
+		incidents:  incident.NewStore(),
 		alertEval:  alertrules.NewEvaluator(),
 		k8s:        kc,
 		harbor:     hc,
@@ -125,6 +129,14 @@ func New(cfg config.Config, caps capability.Set, dashboard provider.Dashboard, c
 			EventMessage: alertMessage(kind, ratio),
 		})
 	})
+	// IMP-38 — 인시던트 인박스 seed(mockstore 정합·결정적). 운영 연동 시 quota/guard 교차 hook 이
+	// srv.incidents.Observe/AutoResolve 를 호출하도록 교체하면 되고, 핸들러·모델은 불변이다.
+	srv.seedIncidents()
+	// IMP-39 — 주입된 DataStore 가 EvalStore(데이터셋·실험)도 구현하면 자동 연결.
+	// mockstore.Store 는 양쪽을 모두 구현한다. 미구현(또는 store==nil)이면 eval suite 엔드포인트는 503.
+	if es, ok := st.(EvalStore); ok {
+		srv.evalStore = es
+	}
 	return srv
 }
 
@@ -201,6 +213,11 @@ func (s *Server) Handler() http.Handler {
 	if can(capability.Eval) {
 		mux.HandleFunc("POST /api/v1/eval/run", s.handleEvalRun)
 		mux.HandleFunc("POST /api/v1/traces/{id}/scores", s.handleRecordScore) // 평가 점수를 라이브 trace 에 부착(IMP-18)
+		// IMP-39 — eval suite: 데이터셋·실험(배치 채점)·회귀 비교. 동일 Eval cap 게이트.
+		mux.HandleFunc("GET /api/v1/eval/datasets", s.handleListDatasets)
+		mux.HandleFunc("POST /api/v1/eval/datasets", s.handleCreateDataset)
+		mux.HandleFunc("GET /api/v1/eval/experiments", s.handleListExperiments)
+		mux.HandleFunc("POST /api/v1/eval/experiments", s.handleRunExperiment)
 	}
 
 	// 가드레일 증적(4-3) — Semantic Router 판정 → ClickHouse guard_audit. 조회는 read cap.
@@ -212,6 +229,20 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/v1/guard/content", s.handleGuardContent)
 		// 마스킹 정책 조회 — 게이트웨이 글루가 폴링(ingestion 전 캡처/마스킹 적용).
 		mux.HandleFunc("GET /api/v1/masking/policy", s.handleGetMaskingPolicy)
+	}
+
+	// 알림 인시던트 라이프사이클(IMP-38) — 인박스 조회는 Guard read(observe·manage 공통).
+	// ack 는 incident.ack(observe 기본 on, ack-only), resolve/snooze 는 incident.write(=manage).
+	// 미등록이 실제 차단을 담당한다(observe 는 write 라우트 미등록 → 404).
+	if can(capability.Guard) {
+		mux.HandleFunc("GET /api/v1/incidents", s.handleListIncidents)
+	}
+	if can(capability.IncidentAck) {
+		mux.HandleFunc("POST /api/v1/incidents/{id}/ack", s.handleAckIncident)
+	}
+	if can(capability.IncidentWrite) {
+		mux.HandleFunc("POST /api/v1/incidents/{id}/resolve", s.handleResolveIncident)
+		mux.HandleFunc("POST /api/v1/incidents/{id}/snooze", s.handleSnoozeIncident)
 	}
 	// 정책 변경(PUT)·분류 테스트(POST) — guard.write cap. observe 는 GET 만 노출.
 	if can(capability.GuardWrite) {

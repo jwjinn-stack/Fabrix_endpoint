@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,8 +16,75 @@ import (
 	"github.com/maymust/fabrix-endpoint/internal/alertrules"
 	"github.com/maymust/fabrix-endpoint/internal/capability"
 	"github.com/maymust/fabrix-endpoint/internal/domain"
-	"github.com/maymust/fabrix-endpoint/internal/mockstore"
 )
+
+// fakeRuleStore — server 패키지 내에서 AlertRuleStore seam 만 충족하는 경량 인메모리 구현(테스트용).
+// DataStore 를 임베드해 store 필드 타입을 만족시키되(그 메서드는 호출 안 함), 알림 룰 CRUD 만 실제 구현.
+// mockstore 를 직접 import 하면 server(test)→mockstore→server 순환이 생기므로 여기 로컬 fake 를 쓴다
+// (eval_suite_test.go 의 fakeEvalStore 와 동일한 이유·패턴).
+type fakeRuleStore struct {
+	DataStore
+	mu    sync.Mutex
+	rules []domain.AlertRule
+	seq   int
+}
+
+func (f *fakeRuleStore) ListAlertRules(context.Context) ([]domain.AlertRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]domain.AlertRule, len(f.rules))
+	copy(out, f.rules)
+	return out, nil
+}
+
+func (f *fakeRuleStore) GetAlertRule(_ context.Context, id string) (domain.AlertRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.rules {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return domain.AlertRule{}, fmt.Errorf("알림 룰 없음: %s", id)
+}
+
+func (f *fakeRuleStore) CreateAlertRule(_ context.Context, r domain.AlertRule) (domain.AlertRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.seq++
+	r = r.WithDefaults()
+	r.ID = fmt.Sprintf("rule_%04x", f.seq)
+	r.State = domain.StateOK
+	f.rules = append(f.rules, r)
+	return r, nil
+}
+
+func (f *fakeRuleStore) UpdateAlertRule(_ context.Context, id string, r domain.AlertRule) (domain.AlertRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, cur := range f.rules {
+		if cur.ID == id {
+			r = r.WithDefaults()
+			r.ID = id
+			r.State = cur.State
+			f.rules[i] = r
+			return r, nil
+		}
+	}
+	return domain.AlertRule{}, fmt.Errorf("알림 룰 없음: %s", id)
+}
+
+func (f *fakeRuleStore) DeleteAlertRule(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, r := range f.rules {
+		if r.ID == id {
+			f.rules = append(f.rules[:i], f.rules[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("알림 룰 없음: %s", id)
+}
 
 // stubDashboard 는 metricSnapshot 이 읽을 overview 를 고정값으로 제공한다.
 type stubDashboard struct{ ov domain.DashboardOverview }
@@ -35,7 +103,7 @@ func newRuleTestServer(t *testing.T, ov domain.DashboardOverview) *Server {
 	t.Helper()
 	return &Server{
 		dashboard: stubDashboard{ov: ov},
-		store:     mockstore.New(),
+		store:     &fakeRuleStore{},
 		alertEval: alertrules.NewEvaluator(),
 		alerts:    alerting.NewDispatcher(true, "salt"),
 	}
@@ -104,7 +172,7 @@ func TestObserveWriteRoutesNotRegistered(t *testing.T) {
 	caps := capability.Resolve("observe", "")
 	s := &Server{
 		dashboard: stubDashboard{},
-		store:     mockstore.New(),
+		store:     &fakeRuleStore{},
 		alertEval: alertrules.NewEvaluator(),
 		alerts:    alerting.NewDispatcher(false, "salt"),
 		caps:      caps,
