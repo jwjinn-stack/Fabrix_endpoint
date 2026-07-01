@@ -113,7 +113,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-66 | oss | 온톨로지 관계 그래프 상태 traverse — 클라이언트 그래프 라이브러리(graphology) 채택 저울질 | medium | M | medium | done | 2026-07-01 |
 | IMP-67 | platform | 온톨로지 Action 의 side-effect/워크플로 백본을 검증된 워크플로 엔진(Temporal)으로 백킹 | low | L | medium | spike-needed | 2026-07-01 |
 | IMP-68 | ux | /ontology 재설계 — 추상 타입 카탈로그 → 운영 준비도 스코어카드(무엇이 지금 주의를 요하나) | high | M | high | accepted | 2026-07-01 |
-| IMP-69 | ux | PROCESS 레이어 + Action Inbox — Incident/Task 1급 process object(assignee·priority·status·workflow) 과업 큐 진입점 | high | L | high | grounded | 2026-07-01 |
+| IMP-69 | ux | PROCESS 레이어 + Action Inbox — Incident/Task 1급 process object(assignee·priority·status·workflow) 과업 큐 진입점 | high | L | high | accepted | 2026-07-01 |
 | IMP-70 | ux | 온톨로지 진입점 재배치 — 과업/COP/객체 랜딩, 스키마 그래프는 참조 보조 탭으로 강등(박물관 정문 제거) | medium | M | high | grounded | 2026-07-01 |
 | IMP-71 | ux | GPU·노드 전량-메트릭 드릴다운 — 엔티티 앵커 Metric Explorer(요약 아님, 그룹·검색·facet·단위·스파크라인) | high | L | high | accepted | 2026-07-02 |
 | IMP-72 | ux | 이상 감지 → 온톨로지 객체 위 즉시 Action(kinetic) — 감지·근거·추천 조치를 한 카드에서(Probable Cause 4-슬롯) | high | L | high | accepted | 2026-07-02 |
