@@ -2684,6 +2684,14 @@ tr.row-sel { background: var(--primary-weak) !important; }
   border-bottom: 1px solid var(--border);
 }
 .cop-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); }
+
+/* IMP-82 — 로컬 모델 연결 상태 칩. Badge + 지연 배지 + InfoTip 을 한 줄로 정렬(색 비의존). */
+.model-conn-chip { display: inline-flex; align-items: center; gap: var(--sp-1); font-weight: 400; }
+.model-conn-latency {
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; padding: 1px 6px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2);
+}
 .cop-hint { font-size: var(--fs-xs); color: var(--text-faint); margin: 0 0 var(--sp-3); line-height: var(--lh-body); }
 
 /* LEFT — 진입 후보 리스트 */

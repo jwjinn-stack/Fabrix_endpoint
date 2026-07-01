@@ -8,6 +8,8 @@ import DataFreshness from "../components/DataFreshness";
 import InfoTip from "../components/InfoTip";
 import ActionForm from "../components/ActionForm";
 import ObjectView, { useObjectView } from "../components/ObjectView";
+import ModelStatusChip from "../components/ModelStatusChip";
+import { loadModelConfig, type ModelConnConfig } from "../api/modelConnection";
 import { agentSchema, useUrlState } from "../urlState";
 import { humanizeError } from "../utils/errors";
 import type { Page } from "../components/Layout";
@@ -77,6 +79,9 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightError, setInsightError] = useState<string | null>(null);
   const view = useObjectView(); // 카드/인용 클릭 → ObjectView(IMP-57) + inline Action(IMP-59)
+  // IMP-82 — 로컬 모델 연결 설정(설정·관리에서 localStorage 저장). 마운트 1회 로드 → 상태 칩에 전달.
+  //   기본은 mock(정직) — 실 연결 여부/모델/지연을 칩이 정직하게 드러낸다("연결됨" 위장 금지).
+  const [modelConfig] = useState(() => loadModelConfig());
 
   // 에이전트 실행 — read tool 은 서버(mock)가 자동 실행, 응답에 mutating 없음(two-tier).
   const analyze = useCallback(
@@ -149,6 +154,8 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
           조회는 자동이지만 <b>변경(Action)은 반드시 확인(confirm)</b>이 필요하며, 표시는 <b>추정 근본원인</b> — 상관이 곧 인과는 아닙니다.
         </InfoTip>
         <div className="spacer" />
+        {/* IMP-82 — 로컬 모델 연결 상태 칩(정직: mock 기본, 실경로면 /health·/v1/models 프로브·TTFT). */}
+        <ModelStatusChip config={modelConfig} />
         <DataFreshness updatedAt={lastLoaded} intervalMs={0} />
       </div>
 
@@ -282,6 +289,7 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
           error={insightError}
           onReload={() => loadInsights()}
           onCite={(id) => view.open(id)}
+          modelConfig={modelConfig}
         />
       )}
 
@@ -413,12 +421,14 @@ function InsightsPanel({
   error,
   onReload,
   onCite,
+  modelConfig,
 }: {
   run: AgentInsightRun | null;
   loading: boolean;
   error: string | null;
   onReload: () => void;
   onCite: (id: string) => void;
+  modelConfig: ModelConnConfig;
 }) {
   // 방어적 필터 — HARD grounding: 인용 없는 claim 은 표시하지 않는다(서버가 이미 드롭했더라도 UI 에서 재확인).
   const shown = (run?.insights ?? []).filter((i) => i.citations.length > 0);
@@ -428,6 +438,8 @@ function InsightsPanel({
       <div className="cop-panel-h">
         클러스터 인사이트 · 로컬 모델(온톨로지 접지)
         {run?.grounded && shown.length > 0 && <span className="cop-count">{shown.length} 인사이트</span>}
+        {/* IMP-82 — 이 패널이 "로컬 모델(Dynamo) 근거"를 주장하므로, 바로 여기 연결 상태 칩을 붙여 정직성 확보. */}
+        <ModelStatusChip config={modelConfig} />
         <div className="spacer" />
         <button type="button" className="btn-ghost btn-sm" onClick={onReload} disabled={loading}>
           {loading ? "분석 중…" : "다시 분석"}

@@ -9,6 +9,10 @@ import { SkeletonRows } from "../components/Skeleton";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
 import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
+import {
+  loadModelConfig, saveModelConfig, probeModel, resolveConnState, isMockMode, DYNAMO_PRESET,
+  type ModelConnConfig, type ProbeResult,
+} from "../api/modelConnection";
 import InfoTip from "../components/InfoTip";
 import { humanizeError } from "../utils/errors";
 import { useToast } from "../toast";
@@ -147,6 +151,117 @@ export function AlertWebhookCard() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// IMP-82 — 로컬 추론 모델(Dynamo) 연결 설정 카드. BrandColorCard/AlertWebhookCard 의 localStorage 패턴.
+//   엔드포인트 URL·모델 식별자·타임아웃 + Dynamo :8000 프리셋 + "연결 테스트"(/health·/v1/models 프로브).
+//   canConfig=manage 에서만 편집(observe 는 읽기 전용). 저장값은 config(시크릿 아님) — 본문 로깅 없음.
+//   **정직성**: mock 모드면 "실 연결 안 됨"을 명시하고, 저장은 VITE_MOCK=off 실경로에서만 효력이 있음을 알린다.
+export function LocalModelCard({ canEdit }: { canEdit: boolean }) {
+  const toast = useToast();
+  const mock = isMockMode();
+  const [cfg, setCfg] = useState<ModelConnConfig>(() => loadModelConfig());
+  const [form, setForm] = useState<ModelConnConfig>(() => loadModelConfig());
+  const [testing, setTesting] = useState(false);
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
+
+  const dirty = form.endpoint !== cfg.endpoint || form.model !== cfg.model || form.timeoutMs !== cfg.timeoutMs;
+
+  const save = () => {
+    const next: ModelConnConfig = {
+      endpoint: form.endpoint.trim(),
+      model: form.model.trim(),
+      timeoutMs: form.timeoutMs > 0 ? form.timeoutMs : 8000,
+    };
+    saveModelConfig(next);
+    setCfg(next);
+    setForm(next);
+    toast.success("로컬 모델 연결 설정을 저장했습니다(이 브라우저).");
+  };
+
+  const applyPreset = () => setForm({ ...DYNAMO_PRESET, model: form.model });
+
+  // 연결 테스트 — 입력된 값으로 즉시 프로브(저장과 별개, 인라인 리포트). read-only.
+  const test = async () => {
+    if (!form.endpoint.trim()) { toast.error("엔드포인트 URL 을 입력하세요."); return; }
+    setTesting(true);
+    setProbe(null);
+    try {
+      const r = await probeModel({ endpoint: form.endpoint.trim(), model: form.model.trim(), timeoutMs: form.timeoutMs || 8000 });
+      setProbe(r);
+    } catch {
+      // probeModel 은 throw 하지 않도록 설계됐지만 방어적으로 offline 표기.
+      setProbe({ healthOk: false, models: [], resolvedModel: null, modelMatch: false, latencyMs: 0, ttftMs: null, error: "프로브 실패" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  // 프로브 결과를 상태로 해석(mock=false 강제 — 실제 프로브 결과를 정직히 보여준다).
+  const conn = probe ? resolveConnState(probe, { endpoint: form.endpoint.trim(), model: form.model.trim(), timeoutMs: form.timeoutMs || 8000 }, false) : null;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>로컬 추론 모델 연결</h3>
+        <InfoTip>AI Agent·클러스터 인사이트가 근거로 삼는 로컬 추론 모델(Dynamo, OpenAI-호환)의 엔드포인트·모델·타임아웃을 지정합니다. 상태 확인은 /health(200)와 /v1/models(로드 모델)만 읽는 저비용 read-only 프로브입니다. 이 브라우저에 저장됩니다.</InfoTip>
+      </div>
+      <p className="policy-hint" style={{ marginTop: 0 }}>
+        {mock
+          ? <>현재 <b>mock 모드</b>입니다 — 실제 모델에 연결되지 않으며 결과는 결정적 mock 데이터입니다. 아래 설정은 <code>VITE_MOCK=off</code> 실경로에서만 효력이 있습니다(정직 표기 유지).</>
+          : <>설정된 엔드포인트의 <code>/health</code>·<code>/v1/models</code>로 연결 상태와 로드 모델을 확인합니다. Dynamo 는 통상 별도 <code>:8000</code> 추론 서비스입니다.</>}
+      </p>
+
+      <label className="pg-field">
+        <span>엔드포인트 URL</span>
+        <input
+          value={form.endpoint}
+          onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+          placeholder="http://localhost:8000"
+          disabled={!canEdit}
+        />
+      </label>
+      <div className="pg-field-row">
+        <label className="pg-field">
+          <span>모델 식별자</span>
+          <input
+            value={form.model}
+            onChange={(e) => setForm({ ...form, model: e.target.value })}
+            placeholder="예: Qwen/Qwen2.5-7B-Instruct (비우면 첫 로드 모델)"
+            disabled={!canEdit}
+          />
+        </label>
+        <label className="pg-field">
+          <span>타임아웃(ms)</span>
+          <input
+            value={String(form.timeoutMs)}
+            onChange={(e) => setForm({ ...form, timeoutMs: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
+            inputMode="numeric"
+            disabled={!canEdit}
+          />
+        </label>
+      </div>
+
+      {!canEdit && <p className="policy-hint" style={{ marginTop: 0 }}>읽기 전용(observe) 프로파일입니다 — 편집은 manage 프로파일에서만 가능합니다.</p>}
+
+      <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+        {canEdit && <button type="button" className="btn-ghost" onClick={applyPreset}>Dynamo :8000 프리셋</button>}
+        {canEdit && <button type="button" className="btn-primary" onClick={save} disabled={!dirty}>저장</button>}
+        <button type="button" className="btn-ghost" onClick={test} disabled={testing || !form.endpoint.trim()}>
+          {testing ? "테스트 중…" : "연결 테스트"}
+        </button>
+      </div>
+
+      {/* 연결 테스트 인라인 리포트 — /health·/v1/models 결과. 색 비의존(Badge dot + 텍스트). */}
+      {conn && (
+        <div className="policy-hint" role="status" style={{ marginBottom: 0 }}>
+          <Badge tone={conn.tone} dot>{conn.label}</Badge>{" "}
+          <span className="muted">{conn.detail}</span>
+          {conn.latencyMs != null && <span className="muted"> · 왕복 {conn.latencyMs}ms</span>}
         </div>
       )}
     </div>
@@ -417,6 +532,8 @@ export default function Settings() {
 
       {error && <div className="state error" role="alert">{error}</div>}
       {canConfig && <ReconfigurePanel />}
+      {/* IMP-82 — 로컬 모델 연결 카드. 목록/테스트는 항상 표시, 편집은 manage(credentials)에서만. */}
+      <LocalModelCard canEdit={canConfig} />
       {canConfig && <AlertWebhookCard />}
       {/* 지표 기반 알림 룰(IMP-36) — 목록은 읽기전용으로 항상, 편집은 manage(credentials)에서만 */}
       <AlertRulesCard canEdit={canConfig} />

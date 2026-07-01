@@ -126,7 +126,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-79 | platform | K8s 메트릭·익스포터 백본 채택(kube-prometheus-stack: DCGM+kube-state-metrics+cAdvisor / VictoriaMetrics) | medium | L | medium | spike-needed | 2026-07-02 |
 | IMP-80 | aesthetic | 대량 메트릭 분석 레이아웃 — 평면 key/value 상세를 Object View 360° 3층 위계(요약 스트립→카테고리 카드→전체 테이블) | low | M | medium | accepted | 2026-07-02 |
 | IMP-81 | code | 온톨로지 mock 매 호출 재구성 + 결정적 agent 루프의 상태·성능 리스크 정리(요청단위 스냅샷 메모이즈·writeback 병합·테스트) | low | M | medium | accepted | 2026-07-02 |
-| IMP-82 | ux | AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드(엔드포인트·모델·타임아웃, Dynamo :8000 프리셋, /health·/v1/models 프로브) | high | M | high | grounded | 2026-07-02 |
+| IMP-82 | ux | AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드(엔드포인트·모델·타임아웃, Dynamo :8000 프리셋, /health·/v1/models 프로브) | high | M | high | done | 2026-07-02 |
 | IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | grounded | 2026-07-02 |
 | IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | grounded | 2026-07-02 |
 | IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | grounded | 2026-07-02 |
