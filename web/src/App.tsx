@@ -6,6 +6,7 @@ import { CapabilitiesProvider, useCap } from "./capabilities";
 import { TimeRangeProvider } from "./timeRange";
 import { ThemeProvider } from "./theme";
 import Dashboard from "./pages/Dashboard";
+import Ontology from "./pages/Ontology";
 import Usage from "./pages/Usage";
 import Guard from "./pages/Guard";
 import Traces from "./pages/Traces";
@@ -98,6 +99,7 @@ function pageContent(
   return (
     <>
       {effPage === "dashboard" && <Dashboard onNavigate={navigate} />}
+      {effPage === "ontology" && <Ontology onNavigate={navigate} />}
       {effPage === "usage" && <Usage onNavigate={navigate} />}
       {effPage === "guard" && <Guard />}
       {effPage === "traces" && <Traces onNavigate={navigate} />}

@@ -6,6 +6,7 @@ import { capForPage } from "../router";
 
 export type Page =
   | "dashboard"
+  | "ontology"
   | "usage"
   | "guard"
   | "traces"
@@ -36,6 +37,8 @@ type NavItem = { glyph: string; label: string; page?: Page; soon?: boolean; chil
 // flat nav 폭주를 막는다(IMP-53). 부모는 page 가 없어 클릭 시 확장/접힘만 한다(자식만 이동).
 const NAV: NavItem[] = [
   { glyph: "▦", label: "관제", page: "dashboard" },
+  // 탐색(Explore) — 온톨로지 렌즈 개요(§7). 관제 다음, 상단 배치.
+  { glyph: "⬡", label: "온톨로지", page: "ontology" },
   { glyph: "▤", label: "사용량", page: "usage" },
   { glyph: "▣", label: "가드레일", page: "guard" },
   { glyph: "◆", label: "모델", page: "models", children: [{ label: "모델 임포트", page: "model-import" }] },

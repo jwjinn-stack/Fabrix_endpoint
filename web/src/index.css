@@ -2662,3 +2662,45 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .agent-runbook { margin: 0 0 var(--sp-2); padding-left: var(--sp-4); font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); }
 .agent-runbook li { margin-bottom: 4px; }
 .agent-cop-link { margin-top: var(--sp-3); display: inline-block; }
+
+/* ───────────── Ontology 개요 화면 (IMP-63) ─────────────
+   개념 헤더 + Object Type 카탈로그 + Link Type 스키마 그래프 + Action Type 표.
+   추가형 — 기존 토큰/.card/.tag/.badge/.ov-dot 재사용, 신규 색 없음. */
+.onto-concept { padding: var(--sp-4); margin-bottom: var(--sp-4); }
+.onto-axes { font-size: var(--fs-body); color: var(--text); line-height: var(--lh-body); margin: 0 0 var(--sp-3); }
+.onto-feels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+.onto-feel { display: flex; gap: var(--sp-2); align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.onto-feel-glyph { color: var(--primary-strong); font-size: 16px; line-height: 1.4; flex: none; }
+.onto-feel-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-feel-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+
+.onto-section-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-3); }
+.onto-section-h h2 { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
+.onto-section-h h2 .muted { font-size: var(--fs-sm); font-weight: 500; }
+.onto-section-sub { font-size: var(--fs-sm); }
+
+/* Object Type 카탈로그 */
+.onto-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); }
+.onto-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); }
+.onto-card-empty { opacity: 0.72; }
+.onto-card-head { display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  background: none; border: none; padding: 0; cursor: pointer; text-align: left; font: inherit; }
+.onto-card-head:disabled { cursor: default; }
+.onto-card-glyph { font-size: 20px; color: var(--text-dim); flex: none; }
+.onto-card-titles { display: flex; flex-direction: column; line-height: 1.25; }
+.onto-card-type { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-card-label { font-size: var(--fs-xs); color: var(--text-dim); }
+.onto-card-count { margin-left: auto; font-size: var(--fs-metric); font-weight: 700; color: var(--primary-strong); line-height: 1; }
+.onto-card-head:disabled .onto-card-count { color: var(--border-strong); }
+.onto-card-desc { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); margin: 0; }
+.onto-card-dist { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.onto-card-samples { display: flex; flex-wrap: wrap; gap: var(--sp-1); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.onto-sample { display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 3px 7px; cursor: pointer; font: inherit; font-size: var(--fs-xs); color: var(--text); }
+.onto-sample:hover { border-color: var(--primary); }
+.onto-sample-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+
+.onto-edge-card { margin-top: var(--sp-3); }
+.onto-side { background: var(--surface-2); }
