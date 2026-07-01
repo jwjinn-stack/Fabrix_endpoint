@@ -22,10 +22,10 @@ import type { NavParams } from "../router";
 
 // Object type 별 글리프/라벨 — ObjectView TYPE_META 와 통일(무채색, 네온 금지).
 const TYPE_GLYPH: Record<ObjectType, string> = {
-  Model: "◆", Endpoint: "▣", Service: "◈", GpuDevice: "▤", Node: "▥", Trace: "≣", Incident: "▲",
+  Model: "◆", Endpoint: "▣", Service: "◈", GpuDevice: "▤", Node: "▥", Trace: "≣", Incident: "▲", Task: "☰",
 };
 const TYPE_LABEL: Record<ObjectType, string> = {
-  Model: "모델", Endpoint: "엔드포인트", Service: "서비스", GpuDevice: "GPU", Node: "노드", Trace: "트레이스", Incident: "인시던트",
+  Model: "모델", Endpoint: "엔드포인트", Service: "서비스", GpuDevice: "GPU", Node: "노드", Trace: "트레이스", Incident: "인시던트", Task: "과업",
 };
 
 // tool 이름 → 사람용 라벨.

@@ -22,8 +22,9 @@ import type {
   ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
   ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
   MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
+  TaskProps, TaskPriority, TaskStatus, WorkflowDef,
 } from "./types";
-import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
+import { ACTION_REGISTRY, STATE_TRANSITION, TASK_STEP_TRANSITION, evaluateSubmission } from "../actions/registry";
 import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } from "./mockFactory";
@@ -957,6 +958,36 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
+// ───────────── PROCESS 레이어 — Task / Workflow (IMP-69) ─────────────
+// Palantir operational-process-coordination(§1B·§4): 디지털트윈(subject-matter) 위에 얹는 과업 층.
+// Incident(장애 이벤트)를 assignee·priority·status·workflow 를 가진 1급 Task 로 승격해 Action Inbox 진입점을 만든다.
+//
+// 순차 워크플로 — Task.status/workflowStepIndex 가 이 배열의 위치와 1:1(단일 출처). resolved 가 terminal.
+const INCIDENT_WORKFLOW: WorkflowDef = {
+  id: "wf-incident",
+  name: "인시던트 대응",
+  steps: [
+    { key: "triaged", label: "분류" },
+    { key: "assigned", label: "배정" },
+    { key: "in-progress", label: "조치 중" },
+    { key: "resolved", label: "해소", terminal: true },
+  ],
+};
+// TaskStatus → INCIDENT_WORKFLOW.steps 내 인덱스(status↔step 동기화). 미지 status 는 0(방어).
+function workflowStepIndex(status: TaskStatus): number {
+  const i = INCIDENT_WORKFLOW.steps.findIndex((s) => s.key === status);
+  return i < 0 ? 0 : i;
+}
+// AlarmSeverity → TaskPriority (심각도가 우선순위를 좌우 — critical=urgent).
+function severityToPriority(sev: string): TaskPriority {
+  return sev === "critical" ? "urgent" : sev === "warning" ? "high" : "med";
+}
+// 결정적 담당자 배정 — 운영자 풀에서 seed(incident id)로 고른다(mock; 재현 가능).
+const OPERATORS = ["김운영", "이온콜", "박SRE", "최플랫폼"];
+function assigneeFor(seedKey: string): string {
+  return OPERATORS[hash(`assignee:${seedKey}`) % OPERATORS.length];
+}
+
 // Action(writeback) mock 상태(IMP-59) — buildOntology 는 결정적으로 재구성되므로,
 // 실행된 action 의 결과(status 전이·revision 증가)를 여기 override 로 얹어 다음 조회에 반영한다.
 // (단일 출처: applyAction 만 여길 쓰고, buildOntology 의 add 와 applyAction 응답이 mergeOverride 로 함께 얹는다.)
@@ -1119,6 +1150,38 @@ function buildOntologyFresh(): OntologySnapshot {
       const svc0 = svcNodes[0];
       if (svc0) links.push({ from: `incident:${inc.id}`, to: `service:${svc0.id}`, linkKind: "affects" });
     }
+  }
+
+  // ── PROCESS 층 Task (IMP-69) — 각 Incident 를 assignee·priority·status·workflow 를 가진 1급 과업으로 승격 ──
+  // 디지털트윈(subject-matter) 위에 얹는 과업 층. Incident --spawns--> Task, Task --tracks--> {영향 subject-matter}.
+  // 결정적: assignee/priority/status/linkedObjectIds 는 incident id + severity + affects 링크에서 파생(재현 가능).
+  const existingIds = new Set(objects.map((o) => o.id)); // Task tracks 대상 필터용(실재 객체만).
+  for (const inc of INCIDENTS) {
+    const incId = `incident:${inc.id}`;
+    const taskId = `task:${inc.id}`;
+    // 이 인시던트가 affects 하는 subject-matter 객체(위 Incident 루프가 이미 링크를 만들어 둠) = 과업이 tracks 할 대상.
+    const linkedObjectIds = links
+      .filter((l) => l.from === incId && l.linkKind === "affects")
+      .map((l) => l.to)
+      .filter((id) => existingIds.has(id));
+    // 초기 status — 이미 사람이 개입(acked)한 인시던트는 assigned 로 시작, 아니면 triaged(분류만 됨).
+    const seedStatus: TaskStatus = inc.state === "acked" || inc.state === "resolved" ? "assigned" : "triaged";
+    const props: TaskProps = {
+      title: `[대응] ${inc.title}`,
+      assignee: seedStatus === "assigned" ? assigneeFor(inc.id) : "",
+      createdAt: inc.first_seen,
+      assignedAt: seedStatus === "assigned" ? inc.last_seen : undefined,
+      priority: severityToPriority(inc.severity),
+      status: seedStatus,
+      linkedObjectIds,
+      workflowId: INCIDENT_WORKFLOW.id,
+      workflowStepIndex: workflowStepIndex(seedStatus),
+      spawnedByIncidentId: inc.id,
+    };
+    // Task 는 process 객체라 온톨로지 status 는 항상 중립(unknown) — 상태 렌즈는 subject-matter 전용.
+    add(taskId, "Task", props.title, "unknown", props as unknown as Record<string, unknown>);
+    links.push({ from: incId, to: taskId, linkKind: "spawns" });
+    for (const objId of linkedObjectIds) links.push({ from: taskId, to: objId, linkKind: "tracks" });
   }
 
   // dangling 링크 방지 — 실재 object id 만 남긴다(단일 출처 무결성).
@@ -1608,13 +1671,47 @@ function applyAction(name: string, body: Record<string, unknown>): Response {
     }
   }
 
+  // ── PROCESS 층 Task writeback(IMP-69) — 양 계층 반영 ──
+  // (1) process 층: Task props(status/assignee/workflowStepIndex)를 TASK_STEP_TRANSITION 대로 전이(단일 출처).
+  // (2) subject-matter 층: resolveTask 면 이 과업이 tracks 하는 디지털트윈 객체 + spawns 인시던트도 함께 수렴(status=ok).
+  //     실 외부 시스템 push(webhook)는 IMP-67 spike — 여기서는 온톨로지 override 로만 반영.
+  let taskExtraProps: Record<string, unknown> = {};
+  if (spec.target === "Task") {
+    const prev = (snapshot.props ?? {}) as Partial<TaskProps>;
+    const nextTaskStatus = TASK_STEP_TRANSITION[name] ?? (prev.status as TaskStatus | undefined) ?? "triaged";
+    const assigneeParam = typeof params.assignee === "string" ? params.assignee.trim() : "";
+    taskExtraProps = {
+      status: nextTaskStatus,
+      workflowStepIndex: workflowStepIndex(nextTaskStatus),
+      // assign/reassign 은 담당자 지정, resolveTask 는 담당자 유지. assignedAt 은 배정 시각.
+      ...(assigneeParam ? { assignee: assigneeParam, assignedAt: new Date().toISOString() } : {}),
+    };
+    if (name === "resolveTask") {
+      // (2) 디지털트윈 수렴 — 이 과업이 감시하던 subject-matter 객체(tracks)와 이를 낳은 Incident 를 ok 로.
+      const linked = Array.isArray(prev.linkedObjectIds) ? (prev.linkedObjectIds as string[]) : [];
+      const incId = prev.spawnedByIncidentId ? `incident:${prev.spawnedByIncidentId}` : undefined;
+      for (const objId of [...linked, ...(incId ? [incId] : [])]) {
+        const cur = buildOntology().objects.find((o) => o.id === objId);
+        if (!cur) continue;
+        ONTOLOGY_OVERRIDES[objId] = {
+          status: "ok",
+          revision: cur.revision + 1,
+          props: { ...(ONTOLOGY_OVERRIDES[objId]?.props ?? {}), resolved_by_task: target },
+        };
+      }
+      // 연결 Incident 는 기존 INCIDENTS 모듈 상태도 resolved 로(비회귀 — Incident 인박스와 정합).
+      if (prev.spawnedByIncidentId) actIncidentCore(prev.spawnedByIncidentId, "resolve", {});
+    }
+  }
+
   // 5) 상태 전이 반영 — Rules(STATE_TRANSITION) 대로 status 전이 + revision++.
+  //    Task 는 STATE_TRANSITION 이 undefined(온톨로지 status 불변 = process 객체) → snapshot.status(unknown) 유지.
   const nextStatus = STATE_TRANSITION[name] ?? snapshot.status;
   const nextRev = snapshot.revision + 1;
   const nextOverride: OntologyOverride = {
     status: nextStatus,
     revision: nextRev,
-    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), last_action: name },
+    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), ...taskExtraProps, last_action: name },
   };
   ONTOLOGY_OVERRIDES[target] = nextOverride;
   // 요청단위 스냅샷 무효화(IMP-81) — override 를 갱신했으니 이 요청에서 만든 캐시를 버려
@@ -1877,9 +1974,11 @@ function genDiagnostics(verbose = false): DiagReport {
 // mock 프로파일 — VITE_PROFILE 로 observe/manage 흉내(백엔드 capability.Resolve 와 동일 규칙).
 // 프론트 단독에서 `VITE_PROFILE=observe npm run dev` 로 관제 전용 UI 를 확인할 수 있다.
 function genCapabilities(): Capabilities {
-  const ALL = ["dashboard", "traces", "guard", "guard.write", "models", "models.write", "playground", "eval", "endpoints", "endpoints.write", "keys", "keys.write", "users", "users.write", "credentials"];
-  const observeOn = new Set(["dashboard", "traces", "guard", "models"]);
-  const mutating = new Set(["guard.write", "models.write", "playground", "eval", "endpoints.write", "keys.write", "users.write", "credentials"]);
+  // incident.ack(관제 운영자도 '처리중' 표시 허용 — observe on) / incident.write(resolve/snooze·Task 조치 — manage 전용)
+  // 는 backend capability.go 와 1:1(단일 출처 정합). Task verb(assign/reassign/resolveTask, IMP-69)도 incident.write 게이팅.
+  const ALL = ["dashboard", "traces", "guard", "guard.write", "models", "models.write", "playground", "eval", "endpoints", "endpoints.write", "keys", "keys.write", "users", "users.write", "credentials", "incident.ack", "incident.write"];
+  const observeOn = new Set(["dashboard", "traces", "guard", "models", "incident.ack"]);
+  const mutating = new Set(["guard.write", "models.write", "playground", "eval", "endpoints.write", "keys.write", "users.write", "credentials", "incident.write"]);
   const observe = (import.meta.env.VITE_PROFILE ?? "manage").toLowerCase() === "observe";
   const capabilities: Record<string, boolean> = {};
   for (const c of ALL) capabilities[c] = observe ? observeOn.has(c) : true;

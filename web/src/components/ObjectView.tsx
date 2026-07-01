@@ -47,6 +47,7 @@ const TYPE_METRICS: Record<OntologyObject["type"], string[]> = {
   Node: ["cpu_perc", "mem_perc"],
   Trace: ["total_ms", "ttft_ms"],
   Incident: ["severity", "count"],
+  Task: ["priority", "status"], // PROCESS 층(IMP-69) — 두드러진 metric = 우선순위·상태.
 };
 
 // linkKind → Related 섹션 라벨 + 방향 지시자(IMP-64). dir 는 head 기준 "대표" 방향의 의미 화살표:
@@ -60,6 +61,9 @@ const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> 
   executedOn: { label: "실행 GPU", dir: "⇊", hint: "하류" },
   consumes: { label: "소비 Service", dir: "↑", hint: "상류" },
   affects: { label: "영향 대상", dir: "⇢", hint: "영향" },
+  // PROCESS↔SUBJECT-MATTER 다리(IMP-69): spawns=인시던트가 낳은 과업, tracks=과업이 감시/조치하는 대상.
+  spawns: { label: "생성 과업", dir: "⇢", hint: "프로세스" },
+  tracks: { label: "대상 객체", dir: "⇢", hint: "감시·조치" },
 };
 
 // ObjectStatus → 상태 게이지 밴드 위치(IMP-64). Gauge(warn=0.75/crit=0.9/max=1) 밴드에 안착하도록:
@@ -67,7 +71,7 @@ const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> 
 const STATUS_GAUGE_VALUE: Record<ObjectStatus, number> = { ok: 0.3, warn: 0.8, crit: 1.0, unknown: 0 };
 
 // Related 그룹 표시 순서(Replicas/Endpoint → GPU → Service → Trace → Incident 우선순).
-const KIND_ORDER: LinkKind[] = ["serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
+const KIND_ORDER: LinkKind[] = ["tracks", "spawns", "serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };

@@ -69,6 +69,15 @@ export const investigateSchema = {
   demo: strField(""),
 } as const;
 
+// Action Inbox(IMP-69) deep-link 스키마 — task=선택 Task id, 그리고 큐 필터(assignee/priority/status).
+//  빈 값이면 페이지가 기본(가장 급한 미해소 과업)을 고른다. 필터는 화이트리스트 밖 값이면 "all" 로 폴백.
+export const inboxSchema = {
+  task: strField(""),
+  assignee: strField("all"),
+  priority: enumField(["all", "urgent", "high", "med", "low"] as const, "all"),
+  status: enumField(["all", "open", "triaged", "assigned", "in-progress", "resolved"] as const, "all"),
+} as const;
+
 // AI Agent(IMP-60) deep-link 스키마 — entity=접지 진입 Object id(옵션), intent=자연어 의도(옵션).
 // 둘 다 빈 문자열이면 에이전트가 기본 시나리오(가장 아픈 진입)를 결정한다. intent 는 자유 텍스트라 debounce 되쓰기.
 export const agentSchema = {

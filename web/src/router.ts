@@ -5,6 +5,7 @@ import type { Page } from "./components/Layout";
 // Page ↔ 경로 매핑(단일 출처). 중첩 경로(/models/import 등)는 상위보다 먼저 매칭되도록 exact 비교.
 export const ROUTES: Record<Page, string> = {
   dashboard: "/dashboard",
+  inbox: "/inbox",
   ontology: "/ontology",
   usage: "/usage",
   guard: "/guard",
@@ -33,6 +34,9 @@ export const ROUTES: Record<Page, string> = {
 // undefined = 항상 허용. 값이 있으면 해당 cap 이 켜져야 노출/접근 가능(backend capability 키와 일치).
 export const PAGE_CAP: Partial<Record<Page, string>> = {
   dashboard: "dashboard",
+  // Action Inbox(IMP-69) — 할당된 과업 큐 진입점. 읽기 관제 권한이면 노출(양 프로파일 공통).
+  // mutation(assign/reassign/resolveTask)은 카드의 ActionForm 이 incident.write 로 별도 게이팅(two-tier).
+  inbox: "dashboard",
   // 온톨로지 개요 — 읽기 관제 권한이면 노출(양 프로파일 공통 탐색 화면).
   ontology: "dashboard",
   usage: "dashboard",

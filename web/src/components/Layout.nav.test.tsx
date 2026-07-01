@@ -44,7 +44,7 @@ const GROUPS: { group: string; children: { label: string; page: Page }[] }[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  { group: "추적", children: [{ label: "근본원인 추적(COP)", page: "investigate" }] },
+  { group: "추적", children: [{ label: "과업 인박스", page: "inbox" }, { label: "근본원인 추적(COP)", page: "investigate" }] },
   {
     group: "제어",
     children: [
@@ -183,7 +183,7 @@ describe("Layout nav — 5 흐름 그룹 IA (IMP-62)", () => {
   });
 
   it("T7-빈그룹 숨김 — 그룹의 보이는 자식이 0이면 그룹 헤더 자체가 사라진다", () => {
-    // dashboard cap off → 온톨로지(탐색 유일 자식)·근본원인 추적(추적 유일 자식) 모두 숨음 → 두 그룹 통째로 사라짐.
+    // dashboard cap off → 온톨로지(탐색 유일 자식)·추적 자식(과업 인박스·근본원인 추적, 둘 다 dashboard cap) 모두 숨음 → 두 그룹 통째로 사라짐.
     mockCaps = {
       profile: "observe",
       readonly: true,

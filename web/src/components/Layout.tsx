@@ -6,6 +6,7 @@ import { capForPage } from "../router";
 
 export type Page =
   | "dashboard"
+  | "inbox"
   | "ontology"
   | "usage"
   | "guard"
@@ -62,11 +63,15 @@ const NAV: NavItem[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  // 추적(Investigate) — 원인 추적을 1급 시민으로. Incidents 는 investigate 화면 내부 surface.
+  // 추적(Investigate) — 원인 추적을 1급 시민으로. Action Inbox(IMP-69)가 과업-앵커 진입점(내게 할당된 과업 큐).
+  // Incidents 는 investigate 화면 내부 surface.
   {
     glyph: "◈",
     label: "추적",
-    children: [{ label: "근본원인 추적(COP)", page: "investigate" }],
+    children: [
+      { label: "과업 인박스", page: "inbox" },
+      { label: "근본원인 추적(COP)", page: "investigate" },
+    ],
   },
   // 제어(Operate) — 행위: AI Agent(MCP)·플레이그라운드. Actions 는 ObjectView/Investigate 내부.
   {

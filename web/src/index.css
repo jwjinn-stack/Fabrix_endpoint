@@ -2558,6 +2558,60 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
 .ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
 
+/* ── Action Inbox (IMP-69) — PROCESS 레이어 과업 큐. LEFT(큐) + CENTER(상세). RIGHT 는 ObjectView 슬라이드. ── */
+.inbox-grid { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: var(--sp-4); align-items: start; margin-top: var(--sp-3); }
+@media (max-width: 900px) { .inbox-grid { grid-template-columns: 1fr; } }
+
+/* LEFT — 큐 */
+.inbox-queue { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.inbox-summary { display: flex; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border); }
+.inbox-summary-n { font-size: var(--fs-metric); font-weight: 800; color: var(--primary-strong); line-height: 1; }
+.inbox-summary-l { font-size: var(--fs-sm); color: var(--text-dim); }
+.inbox-summary .badge { margin-left: auto; }
+.inbox-filters { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.inbox-filter { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); color: var(--text-dim); }
+.inbox-filter select { font-size: var(--fs-sm); padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+.inbox-list { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
+.inbox-item { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3); border: none; border-bottom: 1px solid var(--border); background: transparent; cursor: pointer; border-left: 3px solid transparent; }
+.inbox-item:hover { background: var(--surface-2); }
+.inbox-item.active { background: var(--primary-weak); border-left-color: var(--primary); }
+.inbox-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.inbox-item-top { display: flex; gap: 6px; align-items: center; }
+.inbox-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); line-height: 1.35; }
+.inbox-item-meta { display: flex; gap: 6px; align-items: center; font-size: var(--fs-xs); color: var(--text-dim); }
+.inbox-assignee { font-weight: 600; color: var(--text-dim); }
+.inbox-sep { color: var(--text-faint); }
+
+/* CENTER — 상세 */
+.inbox-detail { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: var(--sp-4); min-height: 200px; }
+.inbox-detail-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inbox-detail-title { font-size: var(--fs-h1); font-weight: 700; margin: var(--sp-2) 0 4px; color: var(--text); }
+.inbox-detail-meta { font-size: var(--fs-sm); color: var(--text-dim); }
+.inbox-detail-meta b { color: var(--text); font-weight: 600; }
+
+/* Workflow 스텝퍼 — 순차 단계. done=채움, current=강조 링, 이후=흐림. */
+.inbox-steps { list-style: none; display: flex; gap: 0; margin: var(--sp-4) 0; padding: 0; }
+.inbox-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; font-size: var(--fs-xs); color: var(--text-faint); }
+.inbox-step::before { content: ""; position: absolute; top: 11px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.inbox-step:first-child::before { display: none; }
+.inbox-step.done::before, .inbox-step.current::before { background: var(--primary); }
+.inbox-step-dot { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; background: var(--surface-2); border: 2px solid var(--border); color: var(--text-faint); }
+.inbox-step.done .inbox-step-dot { background: var(--primary); border-color: var(--primary); color: #fff; }
+.inbox-step.current .inbox-step-dot { border-color: var(--primary); color: var(--primary-strong); background: var(--primary-weak); }
+.inbox-step.current .inbox-step-label, .inbox-step.done .inbox-step-label { color: var(--text-dim); font-weight: 600; }
+
+.inbox-h { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; margin: var(--sp-4) 0 var(--sp-2); }
+.inbox-count { color: var(--text-faint); font-weight: 600; }
+.inbox-linked-list, .inbox-actions .ov-actions { list-style: none; margin: 0; padding: 0; }
+.inbox-linked-list { display: flex; flex-direction: column; gap: 4px; }
+.inbox-linked-item { width: 100%; text-align: left; display: flex; align-items: center; gap: 8px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; }
+.inbox-linked-item:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.inbox-linked-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.inbox-linked-glyph { font-size: 13px; }
+.inbox-linked-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); flex: 1; }
+.inbox-linked-type { font-size: var(--fs-xs); color: var(--text-dim); }
+.inbox-linked-go { color: var(--text-faint); }
+
 /* 풀-피델리티 GPU 하드웨어 섹션 (IMP-76) — Gpu.tsx SlidePanel + ObjectView 공용. 그룹 카드 + 단위 병기. */
 .gpu-hw { margin-top: var(--sp-4); }
 .gpu-hw .hw-src { font-size: 10px; font-weight: 500; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-left: 6px; text-transform: none; letter-spacing: 0; }
