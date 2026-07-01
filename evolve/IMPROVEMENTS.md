@@ -121,7 +121,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-74 | ux | 메트릭 소스 / 익스포터 커버리지 매트릭스 — 신호×온톨로지 객체 커버리지·갭·3단 상태(node/ksm/cAdvisor/DCGM/process/blackbox) | medium | M | high | accepted | 2026-07-02 |
 | IMP-75 | ux | Search Around 객체-액션 런처 — ⌘K를 온톨로지 순회·즉시 조치 진입점으로 확장(중첩 팔레트·이웃 집합·capability 게이팅) | medium | L | high | accepted | 2026-07-02 |
 | IMP-76 | compete | 풀-피델리티 GPU 플릿 관측(XID·throttle reason·NVLink·PCIe·ECC·per-process) + 객체그래프 traverse·인라인 remediation | medium | M | high | accepted | 2026-07-02 |
-| IMP-77 | ux | 온톨로지 객체 상태의 실시간 신선도·폴링 정합 — COP/ObjectView/Agent/Kinetic 스트립에 IMP-51 규약 승격 | medium | S | medium | proposed | 2026-07-02 |
+| IMP-77 | ux | 온톨로지 객체 상태의 실시간 신선도·폴링 정합 — COP/ObjectView/Agent/Kinetic 스트립에 IMP-51 규약 승격 | medium | S | medium | accepted | 2026-07-02 |
 | IMP-78 | ux | 온톨로지 로컬-inference 클러스터 인사이트 — Dynamo 실모델이 객체 근거로 군집·패턴 도출(HARD grounding·인용 필수) | medium | L | medium | accepted | 2026-07-02 |
 | IMP-79 | platform | K8s 메트릭·익스포터 백본 채택(kube-prometheus-stack: DCGM+kube-state-metrics+cAdvisor / VictoriaMetrics) | medium | L | medium | spike-needed | 2026-07-02 |
 | IMP-80 | aesthetic | 대량 메트릭 분석 레이아웃 — 평면 key/value 상세를 Object View 360° 3층 위계(요약 스트립→카테고리 카드→전체 테이블) | low | M | medium | proposed | 2026-07-02 |
