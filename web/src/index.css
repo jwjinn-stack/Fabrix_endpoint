@@ -436,6 +436,33 @@ body {
 .refresh-btn:active {
   transform: translateY(0.5px);
 }
+/* 폴링 일시정지/재개 토글(IMP-51) — refresh-btn 과 동일 크기의 보조 버튼(secondary 톤) */
+.pause-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease), border-color var(--ease);
+}
+.pause-toggle:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+/* 정지 중 = 자동 갱신이 멈춰 있음을 명확히(색+아이콘+텍스트 병기, 색-only 아님) */
+.pause-toggle.is-paused {
+  background: var(--amber-weak, var(--surface-2));
+  border-color: var(--amber);
+  color: var(--amber);
+}
+/* 에러 배너의 '마지막 데이터 표시 중' 스테일 안내(IMP-51) — 색 비의존 텍스트 */
+.state-stale { font-weight: 600; }
 /* 새로고침 글리프 — 클릭 시 1회전 (reduced-motion 시 비활성) */
 .refresh-btn .spin,
 .act .spin {

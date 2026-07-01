@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { fetchNetwork } from "../api/client";
-import type { NetworkLink, NetworkPoint, NodeStatus, TimeRange } from "../api/types";
+import type { NetworkLink, NetworkPoint, NetworkReport, NodeStatus, TimeRange } from "../api/types";
 import { statusFromThresholds, worstStatus } from "../api/mockFactory";
 import type { NavFn } from "../router";
 import Sparkline from "../components/Sparkline";
@@ -10,7 +10,8 @@ import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
-import { humanizeError } from "../utils/errors";
+import PauseToggle from "../components/PauseToggle";
+import { usePolling } from "../utils/usePolling";
 
 // IMP-49 — 네트워크 모니터링 화면 (대역폭·지연·연결·에러) — mock-first.
 // '네트워크 그 자체'(링크 rx/tx 대역폭, 지연 p50/p95/p99, 패킷손실, 인터페이스 에러/드롭)의
@@ -115,35 +116,26 @@ function series(l: NetworkLink, sel: (p: NetworkPoint) => number): number[] {
 }
 
 export default function Network({ onNavigate }: { onNavigate: NavFn }) {
-  const [links, setLinks] = useState<NetworkLink[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const [range, setRange] = useState<TimeRange>("1h"); // 단기 인시던트 뷰 기본
   const [linkFilter, setLinkFilter] = useState<string>("all"); // 인터페이스/링크 셀렉터
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const load = useCallback(async (r: TimeRange, signal?: AbortSignal) => {
-    try {
-      const rep = await fetchNetwork(r, signal);
-      if (signal?.aborted) return;
-      setLinks(rep.links);
-      setLastLoaded(Date.now());
-      setError(null);
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    load(range, ctrl.signal);
-    const id = setInterval(() => load(range), REFRESH_MS);
-    return () => { ctrl.abort(); clearInterval(id); };
-  }, [load, range]);
+  // range 를 deps 로 주입 — 범위 변경 시 즉시 재조회(폴링 관례는 usePolling 이 통일).
+  const fetcher = useCallback(
+    (signal: AbortSignal) => fetchNetwork(range, signal),
+    [range],
+  );
+  const {
+    data: report,
+    error,
+    loading,
+    lastLoaded,
+    paused,
+    isStale,
+    reload,
+    setPaused,
+  } = usePolling<NetworkReport>(fetcher, { intervalMs: REFRESH_MS, deps: [range] });
+  const links = report?.links ?? null;
 
   // 인터페이스/링크 필터 적용.
   const filtered = useMemo(() => {
@@ -195,7 +187,8 @@ export default function Network({ onNavigate }: { onNavigate: NavFn }) {
             <option key={r.value} value={r.value}>범위: {r.label}</option>
           ))}
         </select>
-        <button type="button" className="refresh-btn" onClick={() => load(range)} aria-label="네트워크 새로고침">
+        <PauseToggle paused={paused} onToggle={() => setPaused(!paused)} />
+        <button type="button" className="refresh-btn" onClick={() => reload()} aria-label="네트워크 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
         </button>
@@ -215,6 +208,7 @@ export default function Network({ onNavigate }: { onNavigate: NavFn }) {
       {error && (
         <div className="state error" role="alert">
           네트워크 지표를 불러오지 못했습니다. ({error})
+          {isStale && <span className="state-stale"> · 마지막으로 받은 데이터를 표시 중입니다.</span>}
         </div>
       )}
       {!error && loading && !links && <SkeletonCards count={4} />}

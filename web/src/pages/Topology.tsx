@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { fetchTopology } from "../api/client";
 import type { TopologyGraph, TopologyNode } from "../api/types";
 import { TopologyView } from "../components/topology";
 import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import DataFreshness from "../components/DataFreshness";
+import PauseToggle from "../components/PauseToggle";
 import { useCap } from "../capabilities";
-import { humanizeError } from "../utils/errors";
+import { usePolling } from "../utils/usePolling";
 
 const REFRESH_MS = 15_000;
 const KIND_LABEL: Record<TopologyNode["kind"], string> = { server: "서버", service: "서비스", gpu: "GPU" };
@@ -25,36 +26,22 @@ function fmtMetric(key: string, v: number): string {
 // '표로 보기' 토글 + 상단 텍스트 요약으로 complex-image 동등 대안(접근성)을 제공한다.
 export default function Topology() {
   const { caps } = useCap();
-  const [graph, setGraph] = useState<TopologyGraph | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showTable, setShowTable] = useState(false);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const g = await fetchTopology(signal);
-      setGraph(g);
-      setLastLoaded(Date.now());
-      setError(null);
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data: graph,
+    error,
+    loading,
+    lastLoaded,
+    paused,
+    isStale,
+    reload,
+    setPaused,
+  } = usePolling<TopologyGraph>(fetchTopology, { intervalMs: REFRESH_MS });
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    load(ctrl.signal);
-    const id = setInterval(() => load(), REFRESH_MS);
-    return () => { ctrl.abort(); clearInterval(id); };
-  }, [load]);
-
-  const nodes = graph?.nodes ?? [];
-  const edges = graph?.edges ?? [];
+  const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
+  const edges = useMemo(() => graph?.edges ?? [], [graph]);
 
   // 상단 텍스트 요약(complex-image 동등 대안): 위험 노드 N · 병목 엣지 M.
   const riskNodes = useMemo(() => nodes.filter((n) => n.status !== "ok").length, [nodes]);
@@ -88,7 +75,8 @@ export default function Topology() {
         >
           {showTable ? "그래프로 보기" : "표로 보기"}
         </button>
-        <button type="button" className="refresh-btn" onClick={() => load()} aria-label="토폴로지 새로고침">
+        <PauseToggle paused={paused} onToggle={() => setPaused(!paused)} />
+        <button type="button" className="refresh-btn" onClick={() => reload()} aria-label="토폴로지 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
         </button>
@@ -97,6 +85,7 @@ export default function Topology() {
       {error && (
         <div className="state error" role="alert">
           토폴로지를 불러오지 못했습니다. ({error})
+          {isStale && <span className="state-stale"> · 마지막으로 받은 데이터를 표시 중입니다.</span>}
         </div>
       )}
       {!error && loading && !graph && <SkeletonCards count={3} />}

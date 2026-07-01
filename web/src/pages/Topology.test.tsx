@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
 import type { TopologyGraph } from "../api/types";
 
 // jsdom 은 SVG 레이아웃이 없으므로 getBoundingClientRect / setPointerCapture 를 shim.
@@ -79,6 +79,32 @@ describe("Topology 화면 (IMP-45/48)", () => {
     expect(screen.getByText(/링크 \(2\)/)).toBeInTheDocument();
     // 색-only 금지: 상태 텍스트 병기.
     expect(screen.getAllByText("위험").length).toBeGreaterThan(0);
+  });
+
+  it("일시정지 토글 → aria-pressed 반영(폴링 정지 표식)", async () => {
+    render(<Topology />);
+    await waitFor(() => expect(screen.getByText("Server 1")).toBeInTheDocument());
+    const toggle = screen.getByRole("button", { name: /일시정지/ });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    // 정지 후 '재개' 라벨 + aria-pressed=true.
+    const resumed = screen.getByRole("button", { name: /재개/ });
+    expect(resumed.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("성공 후 폴링 에러 → 마지막 데이터 유지 + 스테일 안내", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fetchTopology.mockReset();
+    fetchTopology.mockResolvedValueOnce(graph).mockRejectedValue(new Error("Failed to fetch"));
+    render(<Topology />);
+    await waitFor(() => expect(screen.getByText("Server 1")).toBeInTheDocument());
+    // 폴링 주기(15s) 경과 → 다음 로드 실패.
+    await act(async () => { vi.advanceTimersByTime(15_000); });
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    // 마지막 성공 데이터(노드)는 여전히 표시 + 스테일 안내.
+    expect(screen.getByText("Server 1")).toBeInTheDocument();
+    expect(screen.getByText(/마지막으로 받은 데이터를 표시 중/)).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it("노드 클릭 → SlidePanel 상세(연결수) 노출 + selectedId 전파(비인접 dim)", async () => {

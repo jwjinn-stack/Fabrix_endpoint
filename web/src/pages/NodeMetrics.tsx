@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { fetchNodeMetrics } from "../api/client";
 import type { NodeMetrics, NodePoint, NodeStatus } from "../api/types";
 import { statusFromThresholds, worstStatus } from "../api/mockFactory";
@@ -9,7 +9,8 @@ import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
-import { humanizeError } from "../utils/errors";
+import PauseToggle from "../components/PauseToggle";
+import { usePolling } from "../utils/usePolling";
 
 // IMP-46 — 핵심 운용 메트릭 화면 (USE / 골든시그널 큐레이션, cause 뷰).
 // node_exporter 는 수백 메트릭 — 전량 덤프("Node Exporter Full" id 1860)는 안티패턴.
@@ -87,45 +88,34 @@ function series(m: NodeMetrics, key: keyof NodePoint): number[] {
   return m.points.map((p) => p[key] as number);
 }
 
+// 호스트별 fetchNodeMetrics 병렬 조회(IMP-55). 일부 실패는 무시하고 성공분만 반환.
+// 전부 실패하면 throw → usePolling 이 humanizeError + 마지막 데이터 유지 처리.
+async function fetchAllNodes(signal: AbortSignal): Promise<NodeMetrics[]> {
+  const results = await Promise.allSettled(HOSTS.map((h) => fetchNodeMetrics(h, "1h", signal)));
+  const ok = results
+    .filter((r): r is PromiseFulfilledResult<NodeMetrics> => r.status === "fulfilled")
+    .map((r) => r.value);
+  const rejected = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  if (ok.length === 0 && rejected.length > 0) {
+    const reason = rejected[0].reason as Error;
+    throw new Error(reason?.message ?? "노드 메트릭 조회 실패");
+  }
+  return ok;
+}
+
 export default function NodeMetrics() {
-  const [nodes, setNodes] = useState<NodeMetrics[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      // 호스트별 fetchNodeMetrics 병렬 조회(IMP-55). 일부 실패는 무시하고 성공분만 표시.
-      const results = await Promise.allSettled(HOSTS.map((h) => fetchNodeMetrics(h, "1h", signal)));
-      if (signal?.aborted) return;
-      const ok = results
-        .filter((r): r is PromiseFulfilledResult<NodeMetrics> => r.status === "fulfilled")
-        .map((r) => r.value);
-      const rejected = results.filter((r) => r.status === "rejected");
-      if (ok.length === 0 && rejected.length > 0) {
-        const reason = (rejected[0] as PromiseRejectedResult).reason as Error;
-        if (reason?.name === "AbortError") return;
-        setError(humanizeError(reason?.message ?? "노드 메트릭 조회 실패"));
-      } else {
-        setNodes(ok);
-        setLastLoaded(Date.now());
-        setError(null);
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    load(ctrl.signal);
-    const id = setInterval(() => load(), REFRESH_MS);
-    return () => { ctrl.abort(); clearInterval(id); };
-  }, [load]);
+  const {
+    data: nodes,
+    error,
+    loading,
+    lastLoaded,
+    paused,
+    isStale,
+    reload,
+    setPaused,
+  } = usePolling<NodeMetrics[]>(fetchAllNodes, { intervalMs: REFRESH_MS });
 
   // 최신 point 기준 상태 재파생(단일 출처) — mock 이 준 status 도 동일하지만 정렬 키로 로컬 계산.
   const statusOf = useCallback((m: NodeMetrics): NodeStatus => {
@@ -154,7 +144,8 @@ export default function NodeMetrics() {
         <span className="crumb">인프라 / 운용 메트릭 (USE)</span>
         <div className="spacer" />
         <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
-        <button type="button" className="refresh-btn" onClick={() => load()} aria-label="노드 메트릭 새로고침">
+        <PauseToggle paused={paused} onToggle={() => setPaused(!paused)} />
+        <button type="button" className="refresh-btn" onClick={() => reload()} aria-label="노드 메트릭 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
         </button>
@@ -173,6 +164,7 @@ export default function NodeMetrics() {
       {error && (
         <div className="state error" role="alert">
           노드 메트릭을 불러오지 못했습니다. ({error})
+          {isStale && <span className="state-stale"> · 마지막으로 받은 데이터를 표시 중입니다.</span>}
         </div>
       )}
       {!error && loading && !nodes && <SkeletonCards count={3} />}
