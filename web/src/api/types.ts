@@ -1124,6 +1124,33 @@ export interface ActionType {
   sideEffects: string[]; // 예: ["audit", "알림"]
 }
 
+// §2 Submission Criteria 판정 결과 — ok=false 면 reason(기계판독 사유)으로 "disabled + why" 무료 획득.
+export interface SubmissionCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+// Action(writeback) audit 라인(IMP-59) — IncidentAuditEntry 를 일반화. 어떤 verb 든 동일 계약으로 기록.
+// outcome: ok=반영됨, conflict=stale revision(409), denied=capability 거부(403), error=기타.
+export type ActionOutcome = "ok" | "conflict" | "denied" | "error";
+export interface ActionAuditEntry {
+  actionType: string;      // verb 이름(scaleReplicas 등)
+  target: string;          // 대상 Object id
+  params: Record<string, unknown>;
+  actor: string;           // 실행 주체(mock=operator)
+  ts: string;
+  outcome: ActionOutcome;
+  note?: string;
+}
+
+// 단일 mutation 계약 응답(IMP-59) — mock/실백엔드 동일. object=reconcile 대상 canonical 객체.
+export interface ActionResult {
+  outcome: ActionOutcome;
+  object?: OntologyObject;   // 성공 시 갱신된 canonical 객체(provisional 을 이걸로 수렴)
+  audit: ActionAuditEntry;
+  reason?: string;           // 실패(denied/conflict) 사유 — 기계판독
+}
+
 // 응답 래퍼 — GET /ontology/objects, GET /ontology/objects/:id/links.
 export interface OntologyObjectList {
   generated_at: string;

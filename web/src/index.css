@@ -2420,3 +2420,20 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .u-label-xs { font-size: var(--fs-xs); color: var(--text-dim); }
 .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .stack-sm { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* Action(writeback) 폼 (IMP-59) — 파라미터 폼·게이팅·낙관적 수렴 배지. Backend.AI 라이트+스틸블루 토큰. */
+.action-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.action-form-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.action-target { font-size: var(--fs-xs); color: var(--text-faint); font-family: var(--mono, monospace); }
+.action-field { display: flex; flex-direction: column; gap: 4px; }
+.action-field > label { font-size: var(--fs-sm); color: var(--text-dim); font-weight: 600; }
+.action-field input, .action-field select {
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: var(--fs-body); background: var(--surface, #fff); color: var(--text);
+}
+.action-field input[aria-invalid="true"], .action-field select[aria-invalid="true"] { border-color: var(--danger, #c0392b); }
+.action-sideeffects { font-size: var(--fs-xs); color: var(--text-faint); }
+.action-denied-reason { font-size: var(--fs-sm); color: var(--danger, #c0392b); margin: 0; }
+.action-phase.phase-provisional { color: var(--text-dim); opacity: 0.8; }
+.action-phase.phase-reconciled { color: var(--primary); }
+.action-phase.phase-error { color: var(--danger, #c0392b); }

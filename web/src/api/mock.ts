@@ -18,7 +18,9 @@ import type {
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
   ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
+  ActionAuditEntry, ActionOutcome, ActionResult,
 } from "./types";
+import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
 
@@ -178,12 +180,13 @@ function listIncidents(state?: string, severity?: string): Response {
   return ok({ incidents: rows, counts: incidentCounts() });
 }
 
-function actIncident(id: string, action: string, body: Record<string, unknown>): Response {
+// 인시던트 상태 전이 코어(IMP-59) — Response 대신 결과 객체를 반환해 route 와 applyAction 이 공유.
+function actIncidentCore(id: string, action: string, body: Record<string, unknown>): { error?: string; status?: number; inc?: Incident } {
   incidentTick();
   const inc = INCIDENTS.find((i) => i.id === id);
-  if (!inc) return notFound(`/incidents/${id}`);
+  if (!inc) return { error: `인시던트를 찾을 수 없습니다: ${id}`, status: 404 };
   const now = new Date().toISOString();
-  if (inc.state === "resolved" && action !== "snooze") return ok({ error: "이미 해소된 인시던트입니다" }, 409);
+  if (inc.state === "resolved" && action !== "snooze") return { error: "이미 해소된 인시던트입니다", status: 409 };
   switch (action) {
     case "ack":
       inc.state = "acked"; inc.acked_by = "operator"; inc.silenced_until = undefined; break;
@@ -191,14 +194,21 @@ function actIncident(id: string, action: string, body: Record<string, unknown>):
       inc.state = "resolved"; inc.resolved_by = "operator"; inc.silenced_until = undefined; break;
     case "snooze": {
       const minutes = Number(body.minutes);
-      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return ok({ error: "snooze 시간(minutes)은 1~1440 사이여야 합니다" }, 400);
+      if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return { error: "snooze 시간(minutes)은 1~1440 사이여야 합니다", status: 400 };
       inc.state = "snoozed"; inc.silenced_until = new Date(Date.now() + minutes * 60_000).toISOString(); break;
     }
     default:
-      return notFound(`/incidents/${id}/${action}`);
+      return { error: `알 수 없는 인시던트 action: ${action}`, status: 404 };
   }
   inc.last_seen = now;
-  return ok({ incident: inc });
+  return { inc };
+}
+
+// 기존 라우트 POST /incidents/:id/(ack|resolve|snooze) — 코어에 위임(비회귀, 기존 응답 형태 유지).
+function actIncident(id: string, action: string, body: Record<string, unknown>): Response {
+  const r = actIncidentCore(id, action, body);
+  if (r.error) return ok({ error: r.error }, r.status ?? 400);
+  return ok({ incident: r.inc });
 }
 
 // ───────────────────────── 시계열/요약 생성기 ─────────────────────────
@@ -856,12 +866,29 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
+// Action(writeback) mock 상태(IMP-59) — buildOntology 는 매 호출 결정적으로 재구성되므로,
+// 실행된 action 의 결과(status 전이·revision 증가)를 여기 override 로 얹어 다음 조회에 반영한다.
+// (단일 출처: 아래 applyAction 만 여길 쓰고, buildOntology 의 add 가 얹는다.)
+interface OntologyOverride { status?: ObjectStatus; revision: number; props?: Record<string, unknown>; }
+const ONTOLOGY_OVERRIDES: Record<string, OntologyOverride> = {};
+// idempotencyKey → 이미 반영된 ActionResult. 동일 키 재전송 시 중복 전이 없이 같은 결과 반환.
+const ACTION_IDEMPOTENCY: Record<string, ActionResult> = {};
+// 전체 audit 라인(최근 실행 순). 미래 Notifications/audit 화면 소비용.
+const ACTION_AUDIT: ActionAuditEntry[] = [];
+
 // §5.2 척추 그래프를 결정적으로 구성. seed 는 buildTopology 와 동일 소스라 재현 가능.
 function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
   const objects: OntologyObject[] = [];
   const links: OntologyLink[] = [];
   const add = <T extends Record<string, unknown>>(id: string, type: ObjectType, title: string, status: ObjectStatus, props: T) => {
-    objects.push({ id, type, title, props, status, revision: 1 });
+    // action 으로 반영된 override(status/revision/props)를 canonical 로 얹는다.
+    const ov = ONTOLOGY_OVERRIDES[id];
+    objects.push({
+      id, type, title,
+      props: ov?.props ? { ...props, ...ov.props } : props,
+      status: ov?.status ?? status,
+      revision: ov?.revision ?? 1,
+    });
   };
 
   // ── Model (MODELS) ── id 접두 model: 로 네임스페이스 충돌 회피.
@@ -994,6 +1021,83 @@ function ontologyLinks(id: string, kind?: string): OntologyLinkList | null {
   let rows = links.filter((l) => l.from === id || l.to === id);
   if (kind) rows = rows.filter((l) => l.linkKind === kind); // 알 수 없는 kind → 빈 배열.
   return { generated_at: new Date().toISOString(), object_id: id, links: rows, source: "ontology (mock)" };
+}
+
+// ── Action(writeback) 단일 실행 계약(IMP-59) — POST /ontology/actions/:name ──
+// 모든 verb(restartModel/scaleReplicas/cordonNode/drainGpu/ack/resolve/snooze)를 한 경로로 처리.
+// 1) 레지스트리 조회 → 2) capability+status 게이팅(서버 등가 trust boundary, 403) →
+// 3) revision stale-write 검사(409) → 4) idempotency(재전송 중복 방지) →
+// 5) 상태 전이 반영(ONTOLOGY_OVERRIDES revision++) + audit 기록.
+// Incident verb 는 INCIDENTS 모듈 상태(actIncidentCore)도 함께 갱신(비회귀).
+function actionResult(outcome: ActionOutcome, name: string, target: string, params: Record<string, unknown>, opts: { object?: OntologyObject; reason?: string; note?: string } = {}): ActionResult {
+  const audit: ActionAuditEntry = {
+    actionType: name, target, params, actor: "operator", ts: new Date().toISOString(), outcome, note: opts.note,
+  };
+  ACTION_AUDIT.unshift(audit);
+  return { outcome, object: opts.object, audit, reason: opts.reason };
+}
+
+// mock capability 게이팅 — genCapabilities 와 동일 규칙(단일 출처). 프론트 can() 과 어긋나지 않게.
+function mockCan(cap: string): boolean {
+  return !!genCapabilities().capabilities[cap] || !(cap in genCapabilities().capabilities);
+}
+
+function applyAction(name: string, body: Record<string, unknown>): Response {
+  const spec = ACTION_REGISTRY[name];
+  if (!spec) return ok({ error: `알 수 없는 action: ${name}` }, 404);
+
+  const target = String(body.target ?? "");
+  const params = (body.params as Record<string, unknown>) ?? {};
+  const idem = typeof body.idempotencyKey === "string" ? body.idempotencyKey : "";
+
+  // 4) idempotency — 동일 키 재전송이면 이전 결과를 그대로(중복 전이 없이).
+  if (idem && ACTION_IDEMPOTENCY[idem]) return ok(ACTION_IDEMPOTENCY[idem], 200);
+
+  // 대상 canonical 객체 조회(온톨로지 스냅샷).
+  const snapshot = buildOntology().objects.find((o) => o.id === target);
+  if (!snapshot) return ok(actionResult("error", name, target, params, { reason: `대상 객체를 찾을 수 없습니다: ${target}` }), 404);
+
+  // 2) 게이팅 — capability(서버 등가) + status predicate. UI 숨김만이 아니라 mock 도 거부(trust boundary).
+  const check = evaluateSubmission(spec, { can: mockCan, targetStatus: snapshot.status });
+  if (!check.ok) {
+    const r = actionResult("denied", name, target, params, { reason: check.reason, note: check.reason });
+    if (idem) ACTION_IDEMPOTENCY[idem] = r;
+    return ok(r, 403);
+  }
+
+  // 3) stale-write(409) — 클라가 보낸 revision 이 현재보다 낮으면 충돌(다른 쓰기가 앞섰음).
+  if (typeof body.revision === "number" && body.revision < snapshot.revision) {
+    const r = actionResult("conflict", name, target, params, {
+      reason: `stale revision (보낸 rev=${body.revision}, 현재 rev=${snapshot.revision}) — 새로고침 후 다시 시도하세요`,
+      note: "stale-write",
+    });
+    if (idem) ACTION_IDEMPOTENCY[idem] = r;
+    return ok(r, 409);
+  }
+
+  // Incident verb 는 기존 INCIDENTS 상태도 갱신(비회귀). target 은 incident:<id> 형식.
+  if (spec.target === "Incident") {
+    const incId = target.startsWith("incident:") ? target.slice("incident:".length) : target;
+    const incRes = actIncidentCore(incId, name, params);
+    if (incRes.error) {
+      const r = actionResult("error", name, target, params, { reason: incRes.error, note: incRes.error });
+      if (idem) ACTION_IDEMPOTENCY[idem] = r;
+      return ok(r, incRes.status ?? 400);
+    }
+  }
+
+  // 5) 상태 전이 반영 — Rules(STATE_TRANSITION) 대로 status 전이 + revision++.
+  const nextStatus = STATE_TRANSITION[name] ?? snapshot.status;
+  const nextRev = snapshot.revision + 1;
+  ONTOLOGY_OVERRIDES[target] = {
+    status: nextStatus,
+    revision: nextRev,
+    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), last_action: name },
+  };
+  const updated: OntologyObject = { ...snapshot, status: nextStatus, revision: nextRev, props: { ...snapshot.props, last_action: name } };
+  const result = actionResult("ok", name, target, params, { object: updated, note: spec.rulesNote });
+  if (idem) ACTION_IDEMPOTENCY[idem] = result;
+  return ok(result, 200);
 }
 
 // ───────────────────────── 라우터 ─────────────────────────
@@ -1396,6 +1500,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (!res) return notFound(path);
     return ok(res);
   }
+  // Action(writeback) 단일 계약(IMP-59) — verb 별 실행. 게이팅·revision·idempotency 는 applyAction 내부.
+  if (method === "POST" && (m = path.match(/^\/ontology\/actions\/([^/]+)$/))) { return applyAction(decodeURIComponent(m[1]), (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/incidents\/([^/]+)\/(ack|resolve|snooze)$/))) { return actIncident(m[1], m[2], (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/traces\/([^/]+)\/scores$/))) { return ok(recordScoreMock(m[1], body as Record<string, unknown>)); }
   if (method === "GET" && (m = path.match(/^\/traces\/(.+)$/))) { return ok(genTraceDetail(m[1])); }
