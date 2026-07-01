@@ -10,6 +10,7 @@
 
 import type { LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "./types";
 import { hash, seededSeries, worstStatus } from "./mockFactory";
+import { buildGraph, type OntologyGraph } from "./ontologyGraph";
 
 // hop 카드가 보여줄 골든시그널 한 종. Grafana RCA Workbench 의 signal-per-hop 관례.
 export interface GoldenSignal {
@@ -129,10 +130,12 @@ function signalsFor(obj: OntologyObject, seedBias: number): GoldenSignal[] {
 }
 
 // out-link 우선 매칭 — head 를 from 으로 갖는 첫 링크(kind 우선순). 없으면 in-link 로.
-function nextLink(head: string, links: OntologyLink[], visited: Set<string>, prefer: LinkKind[]): OntologyLink | null {
-  const cands = links.filter(
-    (l) => (l.from === head && !visited.has(l.to)) || (l.to === head && !visited.has(l.from)),
-  );
+// 후보 = head 의 미방문 이웃으로 가는 링크(양방향). 그래프(IMP-66) out/in 링크로 수집.
+function nextLink(head: string, graph: OntologyGraph, visited: Set<string>, prefer: LinkKind[]): OntologyLink | null {
+  const cands = [
+    ...graph.outLinks(head).filter((l) => !visited.has(l.to)),
+    ...graph.inLinks(head).filter((l) => !visited.has(l.from)),
+  ];
   if (!cands.length) return null;
   // prefer 순으로 결정적 선택 → 없으면 첫 후보(id 정렬로 안정).
   for (const k of prefer) {
@@ -153,8 +156,9 @@ const SPINE: LinkKind[] = ["serves", "runsOn", "hostedBy", "consumes", "routedTo
 //   objects/links: IMP-56 온톨로지(client 로 fetch). entryId: 진입 Object id.
 //   Incident 진입이면 affects 대상(Endpoint 등)으로 한 hop 접합해 척추에 올린다.
 export function buildRootCausePath(objects: OntologyObject[], links: OntologyLink[], entryId: string): RootCausePath {
-  const byId = new Map(objects.map((o) => [o.id, o]));
-  const entry = entryId ? byId.get(entryId) : undefined;
+  // 온톨로지 그래프(IMP-66) — id 조회·이웃/링크 traverse 를 단일 primitive 로.
+  const graph = buildGraph(objects, links);
+  const entry = entryId ? graph.object(entryId) : undefined;
   if (!entry) return { entryId, hops: [], criticalId: null, found: false };
 
   const chain: { obj: OntologyObject; fromKind: LinkKind | null }[] = [{ obj: entry, fromKind: null }];
@@ -163,10 +167,10 @@ export function buildRootCausePath(objects: OntologyObject[], links: OntologyLin
 
   // 척추를 최대 5 hop 확장(Node 까지). 각 스텝은 결정적(nextLink).
   for (let step = 0; step < 5; step++) {
-    const link = nextLink(head, links, visited, SPINE);
+    const link = nextLink(head, graph, visited, SPINE);
     if (!link) break;
     const nextId = link.from === head ? link.to : link.from;
-    const nextObj = byId.get(nextId);
+    const nextObj = graph.object(nextId);
     if (!nextObj) break;
     chain.push({ obj: nextObj, fromKind: link.linkKind });
     visited.add(nextId);
@@ -209,7 +213,7 @@ export function buildRootCausePath(objects: OntologyObject[], links: OntologyLin
   // [c] 조기 종결 방지 — 첫 임계 hop 이후 한 hop 더 확장(blast-radius).
   //   우선: 척추 종점(Node)의 다른 영향 Service(같은 Node 에 hostedBy 된 GPU 를 runsOn 하는 Model 의 Service).
   //   대안: 임계 hop 의 아직 안 밟은 상류/이웃(affects 등).
-  const extra = pickBlastRadius(chain[chain.length - 1].obj, criticalId, byId, links, visited);
+  const extra = pickBlastRadius(chain[chain.length - 1].obj, criticalId, graph, visited);
   if (extra) {
     const signals = signalsFor(extra.obj, 0);
     const idxs = signals.map((s) => firstAnomaly(s.series, s.crit)).filter((x) => x >= 0);
@@ -235,19 +239,20 @@ export function buildRootCausePath(objects: OntologyObject[], links: OntologyLin
 function pickBlastRadius(
   tail: OntologyObject,
   criticalId: string | null,
-  byId: Map<string, OntologyObject>,
-  links: OntologyLink[],
+  graph: OntologyGraph,
   visited: Set<string>,
 ): { obj: OntologyObject; fromKind: LinkKind } | null {
   const tryFrom = (nodeId: string, wantTypes: OntologyObject["type"][]): { obj: OntologyObject; fromKind: LinkKind } | null => {
-    const neigh = links
-      .filter((l) => l.from === nodeId || l.to === nodeId)
-      .map((l) => ({ id: l.from === nodeId ? l.to : l.from, kind: l.linkKind }))
-      .filter((n) => !visited.has(n.id) && byId.has(n.id))
-      .filter((n) => wantTypes.includes(byId.get(n.id)!.type))
+    // nodeId 의 양방향 이웃(out=to, in=from) + 그 링크 kind. 그래프(IMP-66)로 수집.
+    const neigh = [
+      ...graph.outLinks(nodeId).map((l) => ({ id: l.to, kind: l.linkKind })),
+      ...graph.inLinks(nodeId).map((l) => ({ id: l.from, kind: l.linkKind })),
+    ]
+      .filter((n) => !visited.has(n.id) && graph.has(n.id))
+      .filter((n) => wantTypes.includes(graph.object(n.id)!.type))
       .sort((a, b) => (a.id < b.id ? -1 : 1));
     const pick = neigh[0];
-    return pick ? { obj: byId.get(pick.id)!, fromKind: pick.kind } : null;
+    return pick ? { obj: graph.object(pick.id)!, fromKind: pick.kind } : null;
   };
   // 1) tail(Node/GPU 등)의 다른 영향 Service/Endpoint.
   const same = tryFrom(tail.id, ["Service", "Endpoint"]);
