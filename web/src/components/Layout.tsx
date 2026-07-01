@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import NotificationsDrawer from "./Notifications";
 import CommandPalette, { type Command } from "./CommandPalette";
+import { useSearchAround } from "./useSearchAround";
+import { useObjectView } from "./ObjectView";
 import { useCap } from "../capabilities";
 import { capForPage } from "../router";
 
@@ -157,8 +159,14 @@ export default function Layout({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 명령 = 네비게이션(보이는 화면) + 전역 작업(가능한 것만). observe 에선 쓰기 작업이 빠진다.
-  const commands = useMemo<Command[]>(() => {
+  // IMP-57 — ObjectView 는 urlState(obj) 를 단일 출처로 페이지 무관하게 열린다. 팔레트의 Search Around
+  //  런처가 객체를 열 때 이 open(id) 을 쓴다(팔레트는 mutate 하지 않고 ObjectView 로 유도 — trust boundary).
+  const { open: openObjectView } = useObjectView();
+
+  // root 모드 명령 = 네비게이션(보이는 화면) + 전역 작업(가능한 것만). observe 에선 쓰기 작업이 빠진다.
+  //  IMP-75 — 이 flat Command[] 가 중첩 팔레트의 root 모드가 된다(회귀 없음). object-search/context/around 는
+  //  useSearchAround 가 이 root 위에 얹는다.
+  const rootCommands = useMemo<Command[]>(() => {
     const navCmds: Command[] = visibleNav.flatMap((n) => {
       const items: Command[] = n.page
         ? [{ id: `nav-${n.page}`, label: n.label, hint: "이동", group: "이동", glyph: n.glyph, keywords: `${n.label} ${n.page}`, run: () => onNavigate(n.page!) }]
@@ -179,6 +187,15 @@ export default function Layout({
     return [...navCmds, ...actions];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onNavigate, dark, visibleNav]);
+
+  // IMP-75 — 중첩 팔레트 모드 머신. root=위 flat rootCommands, 그 위에 object-search/context/around 를 얹는다.
+  //  openObjectView(id) 로 ObjectView 진입(안전 primary). 팔레트가 닫힌 뒤 객체를 열도록 close 를 먼저.
+  const sa = useSearchAround({
+    open: cmdOpen,
+    rootCommands,
+    openObject: (id) => { setCmdOpen(false); openObjectView(id); },
+  });
+
   return (
     <div className="app">
       <header className="topbar">
@@ -270,7 +287,17 @@ export default function Layout({
 
       <main className="content">{children}</main>
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
-      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} commands={commands} />
+      <CommandPalette
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        commands={sa.commands}
+        breadcrumb={sa.breadcrumb}
+        onBack={sa.onBack}
+        liveMessage={sa.liveMessage}
+        placeholder={sa.placeholder}
+        onQueryChange={sa.onQueryChange}
+        modeKey={sa.modeKey}
+      />
     </div>
   );
 }

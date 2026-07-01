@@ -85,6 +85,15 @@ export const agentSchema = {
   intent: strField(""),
 } as const;
 
+// Search Around 팔레트(IMP-75) deep-link 스키마 — ⌘K 중첩 팔레트의 **컨텍스트만** 공유(팔레트 열림 자체는 휘발).
+//  sactx  = object-context 대상 object id(그 객체의 Action Panel).
+//  saround = search-around 컨텍스트 "<objectId>|<linkKind>"(그 이웃 집합 서브페이지).
+//  빈 문자열이면 root. crafted URL 은 parse 가 throw 하지 않고 그대로/기본으로 소비(strField 규약).
+export const searchAroundSchema = {
+  sactx: strField(""),
+  saround: strField(""),
+} as const;
+
 // ───────────────────────── 순수 인코더/디코더 ─────────────────────────
 // (테스트 용이성 — DOM/History 없이 schema + search string 만으로 동작.)
 // 스키마 제약 — 필드 값 타입은 필드마다 다르므로 `any` 로 둔다(매핑 타입이 정확한 T 를 복원).

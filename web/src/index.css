@@ -2140,6 +2140,15 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 .cmdk-overlay { position: fixed; inset: 0; background: rgba(16,24,40,0.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; z-index: 60; }
 .cmdk { width: min(620px, 92vw); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-card-hover); overflow: hidden; display: flex; flex-direction: column; max-height: 70vh; }
+/* IMP-75 — 중첩 팔레트 breadcrumb row(Search Around 모드 경로). root 에서는 렌더되지 않음. */
+.cmdk-crumbs { display: flex; align-items: center; gap: var(--sp-2); padding: 8px var(--sp-4); border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: var(--fs-xs); }
+.cmdk-crumbs ol { display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; min-width: 0; }
+.cmdk-crumbs li { display: inline-flex; align-items: center; gap: 4px; }
+.cmdk-crumb-back { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-faint); font-size: 12px; line-height: 1; cursor: pointer; flex: none; }
+.cmdk-crumb-back:hover { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.cmdk-crumb { color: var(--text-faint); }
+.cmdk-crumb-cur { color: var(--text); font-weight: 600; }
+.cmdk-crumb-sep { color: var(--text-faint); }
 .cmdk-input-wrap { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .cmdk-search { color: var(--text-faint); font-size: 18px; }
 .cmdk-input { flex: 1; border: none; outline: none; font: inherit; font-size: 15px; background: transparent; color: var(--text); }
