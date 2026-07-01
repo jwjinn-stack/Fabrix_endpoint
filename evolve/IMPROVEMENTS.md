@@ -111,7 +111,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-64 | aesthetic | Object View / 관계 그래프 시각 언어 — 타입 위계·관계 엣지·상태 인코딩을 Linear/Palantir 수준으로 | low | M | medium | accepted | 2026-07-01 |
 | IMP-65 | aesthetic | Action 폼 & 실행 피드백 시각 완성도 — 파라미터 폼·확인·optimistic 전이·audit 타임라인 | low | M | medium | accepted | 2026-07-01 |
 | IMP-66 | oss | 온톨로지 관계 그래프 상태 traverse — 클라이언트 그래프 라이브러리(graphology) 채택 저울질 | medium | M | medium | accepted | 2026-07-01 |
-| IMP-67 | platform | 온톨로지 Action 의 side-effect/워크플로 백본을 검증된 워크플로 엔진(Temporal)으로 백킹 | low | L | medium | proposed | 2026-07-01 |
+| IMP-67 | platform | 온톨로지 Action 의 side-effect/워크플로 백본을 검증된 워크플로 엔진(Temporal)으로 백킹 | low | L | medium | spike-needed | 2026-07-01 |
 
 ## Details
 
