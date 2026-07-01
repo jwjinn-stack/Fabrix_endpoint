@@ -112,6 +112,9 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-65 | aesthetic | Action 폼 & 실행 피드백 시각 완성도 — 파라미터 폼·확인·optimistic 전이·audit 타임라인 | low | M | medium | done | 2026-07-01 |
 | IMP-66 | oss | 온톨로지 관계 그래프 상태 traverse — 클라이언트 그래프 라이브러리(graphology) 채택 저울질 | medium | M | medium | done | 2026-07-01 |
 | IMP-67 | platform | 온톨로지 Action 의 side-effect/워크플로 백본을 검증된 워크플로 엔진(Temporal)으로 백킹 | low | L | medium | spike-needed | 2026-07-01 |
+| IMP-68 | ux | /ontology 재설계 — 추상 타입 카탈로그 → 운영 준비도 스코어카드(무엇이 지금 주의를 요하나) | high | M | high | grounded | 2026-07-01 |
+| IMP-69 | ux | PROCESS 레이어 + Action Inbox — Incident/Task 1급 process object(assignee·priority·status·workflow) 과업 큐 진입점 | high | L | high | grounded | 2026-07-01 |
+| IMP-70 | ux | 온톨로지 진입점 재배치 — 과업/COP/객체 랜딩, 스키마 그래프는 참조 보조 탭으로 강등(박물관 정문 제거) | medium | M | high | grounded | 2026-07-01 |
 
 ## Details
 
@@ -779,3 +782,30 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: (미연구 — low ambiguity) IMP-59 Action의 실 mutating 실행 백본. Temporal MIT·성숙, IMP-41/52 인프라 spike 계열. 다일짜리 인프라 채택 — spike-needed 전환 예상.
 - **Sources**: (미연구 — Temporal 공식 문서·NATS JetStream, IMP-59 참조)
 - **Deep-dive suggestion**: spike-needed로 전환 예상 (evolve/plans/IMP-67-workflow-engine-spike.md). IMP-59 실 mutating 전제.
+
+### IMP-68 — /ontology 재설계 — 추상 타입 카탈로그 → 운영 준비도 스코어카드
+- **Type**: ux (sev=high, effort=M)
+- **Area**: `web/src/pages/Ontology.tsx`, `web/src/api/ontologySchema.ts`(스코어링 파생), `web/src/api/mock.ts`(온톨로지 인스턴스), `web/src/components/topology`(스키마 그래프는 참조 탭으로 이동)
+- **Problem**: 사용자 지적("ontology 화면이 애매하다")의 정체. 현 `/ontology`(IMP-63)는 개념헤더 + **타입 카탈로그 + 스키마 그래프 + Action 목록** — 즉 "무슨 타입이 존재하나"를 나열하는 browsable 카탈로그다. deep-research(docs/ontology-usecase-comparison.md) 결과, 조사한 모든 실사례(Netflix·Datadog·ServiceNow·Palantir)가 만장일치로 **이 안티패턴을 피하고** 과업/알림/객체에서 진입한다. 카탈로그는 "반복 운영 과업을 구동"할 때만 가치가 생긴다(Datadog Scorecards).
+- **Fix**: `/ontology`를 **운영 준비도 스코어카드**로 전환(Datadog Software Catalog Scorecards 패턴). 타입 나열 대신 각 인스턴스(Endpoint/Model/GpuDevice/Node…)를 pass/fail 규칙으로 채점 — 예: "SLO/임계 정의됨·알림 규칙 있음·오너 지정·최근 활동/배포·상태 정상". Production Readiness/Observability/Ownership 유사 그룹으로 묶고, 화면 상단은 **"지금 무엇이 주의를 요하나"**(실패 규칙 수·위험 인스턴스)를 요약. 각 실패 항목 클릭 → 해당 ObjectView(IMP-57) 또는 `/investigate`(IMP-58)로 딥링크(과업으로 연결). 개념헤더·스키마 그래프는 제거하지 말고 **"스키마 참조" 보조 탭**으로 접어 둠(IMP-70과 정합). mock-first — 스코어는 온톨로지 인스턴스 속성에서 결정적 파생.
+- **Evidence**: yes (high) — deep-research 검증(패턴 7, 3-0): Datadog Scorecards가 "SLO 있나·모니터 있나·on-call·최근 3개월 내 배포"를 **매일 1회 자동 pass/fail** 평가해 카탈로그를 운영 준비도로 전환. 패턴 1(과업-앵커)·5(객체별 drill-in) 위반이 현 화면의 애매함 원인. Thoughtworks: 전체 도메인 나열(boil-the-ocean)은 대표 실패모드.
+- **Sources**: docs/ontology-usecase-comparison.md (§3·§4), https://docs.datadoghq.com/software_catalog/scorecards/scorecard_configuration/ , https://www.datadoghq.com/blog/scorecards/
+- **Deep-dive suggestion**: plan-design-review (스코어카드 레이아웃 + "주의 요약" 진입). IMP-56 온톨로지·IMP-57/58 딥링크에 종속(둘 다 done).
+
+### IMP-69 — PROCESS 레이어 + Action Inbox — Incident/Task 1급 process object 과업 큐
+- **Type**: ux (sev=high, effort=L)
+- **Area**: `web/src/api/types.ts`(Task/Workflow process object), `web/src/api/mock.ts`(process 층 + writeback), `web/src/pages/Inbox.tsx`(신규, 과업 큐), `web/src/actions/registry.ts`(assign/reassign/resolve), `web/src/components/ObjectView`(과업에서 subject-matter 탐색)
+- **Problem**: 실사례가 온톨로지를 **2계층**으로 운영한다(패턴 6): PROCESS 층(Task: assignee·시각·priority·status, Workflow=순차 단계) over SUBJECT-MATTER 층(디지털트윈=우리 Endpoint/Model/GPU/Node 그래프). 우리는 subject-matter 층만 있고 Incident는 있으나 **assignee/priority/status/workflow를 가진 1급 Task와 "할당된 과업" 진입 큐(Action Inbox)가 없다**. 그래서 "오퍼레이터가 오늘 무엇을 해야 하나"라는 과업-앵커 진입점이 비어 있다(패턴 1).
+- **Fix**: Task/Workflow를 1급 process object로 신설(assignee·created/assigned time·priority·status·workflow step). `/inbox` 화면 = 할당된 과업 큐(Palantir Action Inbox 미러) — 과업 선택 → 컨텍스트에서 연결된 subject-matter 객체(Endpoint/Model/GPU/Node) 탐색(ObjectView 재사용) → Action 실행 → **process 층 + subject-matter(디지털트윈) 양쪽에 writeback**(IMP-59 계약 재사용, 실 외부 push는 IMP-67 spike). Incident를 Task 워크플로에 연결(triaged→assigned→resolved). mock-first, capability 게이팅.
+- **Evidence**: yes (high) — deep-research(패턴 1·6, 3-0): Palantir operational-process-coordination이 정확히 이 2계층 + Action Inbox("할당된 과업 → 온톨로지 탐색 → 조치 → writeback")를 규정. ServiceNow triage도 알림→인시던트 생성 과업-앵커. 단 2계층 분리는 단일소스(Palantir 1페이지)라 confidence는 patterns 강함/케이스 약함.
+- **Sources**: docs/ontology-usecase-comparison.md (§1B·§4), https://www.palantir.com/docs/foundry/use-case-patterns/operational-process-coordination
+- **Deep-dive suggestion**: plan-eng-review (process/subject-matter 2계층 데이터모델 + writeback 정합). IMP-56/57/59에 종속(done).
+
+### IMP-70 — 온톨로지 진입점 재배치 — 과업/COP/객체 랜딩, 스키마 그래프 강등
+- **Type**: ux (sev=medium, effort=M)
+- **Area**: `web/src/components/Layout.tsx`(nav 랜딩·그룹), `web/src/App.tsx`(기본 라우트), `web/src/pages/Ontology.tsx`(스키마 그래프 → 보조 탭)
+- **Problem**: 실사례는 오퍼레이터를 **과업/상황/객체**에 랜딩시키고 글로벌 스키마 그래프는 **분리된 참조 아티팩트**로 둔다(패턴 1·5). 우리는 IMP-62로 nav를 5그룹화했으나 `/ontology`(추상 개요)가 여전히 "탐색" 그룹 최상단의 정문처럼 노출돼 박물관 인상을 준다. 글로벌 스키마 그래프를 전면에 두는 것도 패턴 5(객체별 drill-in 우선)와 어긋난다.
+- **Fix**: 기본 랜딩/추천 진입을 **과업(IMP-69 Inbox)·상황(IMP-58 COP)·객체(ObjectView)**로 재배치. 온톨로지 개요는 "스키마 참조" 성격의 보조 위치로(정문 아님). 글로벌 스키마 그래프는 참조 탭으로 접고, 일상 진입은 객체 이웃 drill-in. capability 게이팅·기존 라우트 유지(orphan 0). IMP-68(스코어카드)·IMP-69(Inbox)와 함께 정합.
+- **Evidence**: (미연구 — low ambiguity, deep-research 패턴 1·5 파생) docs/ontology-usecase-comparison.md §4. IMP-62 nav 관례 위 재배치. IMP-68/69 신규 화면 나온 뒤 정합.
+- **Sources**: docs/ontology-usecase-comparison.md (§2 패턴1·5, §4), https://docs.datadoghq.com/tracing/services/service_page/
+- **Deep-dive suggestion**: 없음 (구현 직행, IMP-68/69에 종속)
