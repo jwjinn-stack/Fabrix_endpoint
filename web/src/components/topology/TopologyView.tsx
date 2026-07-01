@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { NodeStatus, TopologyGraph, TopologyNode } from "../../api/types";
+import type { NodeStatus, TopologyEdge, TopologyGraph, TopologyNode } from "../../api/types";
 import { ChartTooltip } from "../chart";
 import { layoutTopology } from "./layout";
 import type { NodePosition } from "./layout";
@@ -64,12 +64,29 @@ export interface TopologyViewProps {
   selectedId?: string | null;
   /** IMP-48: 노드 body 안 micro-metric 임베드 on/off(기본 true). */
   showMetrics?: boolean;
+  /** IMP-64(가법적): 엣지 상태색 인코딩. from/to 노드 status 로 색을 실어보낸다(스키마 그래프처럼
+   *  error_rate 가 없는 그래프에서도 관계의 상태 위계를 보이게). 반환 null → 기본 edgeColor 로 폴백.
+   *  geometry(layout.ts)는 건드리지 않는다 — stroke 색만 추가 인코딩. */
+  edgeStatusColor?: (edge: TopologyEdge, fromStatus: NodeStatus, toStatus: NodeStatus) => string | null;
+}
+
+// 두 노드 상태의 worst(crit>warn>ok). 엣지 상태색 파생용(가법적).
+const STATUS_RANK: Record<NodeStatus, number> = { ok: 0, warn: 1, crit: 2 };
+export function worseStatus(a: NodeStatus, b: NodeStatus): NodeStatus {
+  return STATUS_RANK[a] >= STATUS_RANK[b] ? a : b;
 }
 
 interface ViewBox { x: number; y: number; w: number; h: number }
 
-export default function TopologyView({ graph, interactive = true, onSelect, height = 420, selectedId = null, showMetrics = true }: TopologyViewProps) {
+export default function TopologyView({ graph, interactive = true, onSelect, height = 420, selectedId = null, showMetrics = true, edgeStatusColor }: TopologyViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // IMP-64: 엣지 상태색 파생 시 노드 status 조회(id→status). 가법적 — geometry 무관.
+  const statusById = useMemo(() => {
+    const m = new Map<string, NodeStatus>();
+    for (const n of graph.nodes) m.set(n.id, n.status);
+    return m;
+  }, [graph.nodes]);
 
   // IMP-48 subgraph isolate: 선택 노드의 1-hop 인접 집합(자신 포함). 비인접은 dim.
   const adjacency = useMemo(() => {
@@ -257,7 +274,12 @@ export default function TopologyView({ graph, interactive = true, onSelect, heig
             // 논리 방향(from→to)으로 원본 엣지 지표를 찾아 두께/색을 인코딩.
             const meta = graph.edges.find((e) => e.from === ep.from && e.to === ep.to);
             const sw = edgeStrokeWidth(meta?.qps);
-            const col = edgeColor(meta?.error_rate);
+            // IMP-64: edgeStatusColor 제공 시 끝점 status 로 상태색(스키마 그래프 등 error_rate 부재 그래프).
+            //  반환 null 이거나 미제공 → 기존 edgeColor(error_rate) 폴백. 색만 바뀜(두께/경로 불변).
+            const statusCol = edgeStatusColor && meta
+              ? edgeStatusColor(meta, statusById.get(ep.from) ?? "ok", statusById.get(ep.to) ?? "ok")
+              : null;
+            const col = statusCol ?? edgeColor(meta?.error_rate);
             const inSubgraph = !adjacency || (adjacency.has(ep.from) && adjacency.has(ep.to));
             const hoverDim = activeId && ep.from !== activeId && ep.to !== activeId;
             const dim = adjacency ? !inSubgraph : !!hoverDim;

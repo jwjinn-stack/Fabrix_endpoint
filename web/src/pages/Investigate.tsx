@@ -11,6 +11,7 @@ import {
   type RootCausePath,
 } from "../api/investigate";
 import { buildDemoScenario, type DemoStep } from "../api/demoScenario";
+import { typeVisual } from "../api/objectTypeVisual";
 import Gauge from "../components/Gauge";
 import Sparkline from "../components/Sparkline";
 import Badge, { type BadgeTone } from "../components/Badge";
@@ -32,13 +33,7 @@ const REFRESH_MS = 15_000;
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };
 
-// Object type 별 글리프(무채색, ObjectView TYPE_META 와 통일).
-const TYPE_GLYPH: Record<OntologyObject["type"], string> = {
-  Model: "◆", Endpoint: "▣", Service: "◈", GpuDevice: "▤", Node: "▥", Trace: "≣", Incident: "▲",
-};
-const TYPE_LABEL: Record<OntologyObject["type"], string> = {
-  Model: "모델", Endpoint: "엔드포인트", Service: "서비스", GpuDevice: "GPU", Node: "노드", Trace: "트레이스", Incident: "인시던트",
-};
+// Object type 별 글리프/라벨/색 — objectTypeVisual(단일 출처, IMP-64) 에 위임(색으로 noun-type 위계).
 
 // 골든시그널 색(값 궤적) — util/latency=primary, error=amber(임계선은 컴포넌트가 담당).
 function signalColor(key: string): string {
@@ -210,7 +205,7 @@ export default function Investigate() {
                         onClick={() => selectEntry(c.id)}
                         title={c.reason}
                       >
-                        <span className="cop-cand-glyph" aria-hidden="true">{TYPE_GLYPH[c.type]}</span>
+                        <span className={`cop-cand-glyph ${typeVisual(c.type).className}`} style={{ color: typeVisual(c.type).color }} aria-hidden="true">{typeVisual(c.type).glyph}</span>
                         <span className="cop-cand-body">
                           <span className="cop-cand-title">{c.title}</span>
                           <span className="cop-cand-reason">{c.reason}</span>
@@ -281,7 +276,7 @@ function HopCard({
   demoActive?: boolean;
   demoStep?: DemoStep | null;
 }) {
-  const meta = { glyph: TYPE_GLYPH[hop.object.type], label: TYPE_LABEL[hop.object.type] };
+  const meta = typeVisual(hop.object.type);
   return (
     <li className="cop-hop-wrap">
       {/* 진입이 아니면 위쪽에 edge-type badge(관계 종류) — 어떤 링크로 왔는지. */}
@@ -299,7 +294,7 @@ function HopCard({
         title={`${meta.label} · ${hop.id} — 상세/조치 열기`}
       >
         <div className="cop-hop-top">
-          <span className="cop-hop-glyph" aria-hidden="true">{meta.glyph}</span>
+          <span className={`cop-hop-glyph ${meta.className}`} style={{ color: meta.color }} aria-hidden="true">{meta.glyph}</span>
           <span className="cop-hop-title">{hop.object.title}</span>
           <span className="cop-hop-type">{meta.label}</span>
           <Badge tone={STATUS_TONE[hop.status]} dot>{STATUS_LABEL[hop.status]}</Badge>

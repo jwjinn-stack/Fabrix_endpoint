@@ -2440,8 +2440,23 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 /* Object View(IMP-57) — Palantir Workshop 스타일 단일 엔티티 패널 */
 .ov-title { display: inline-flex; align-items: center; gap: var(--sp-2); }
+/* IMP-64: 타이틀 글리프 색은 objectTypeVisual(인라인 --otype color)로 주입 — 없으면 무채(fallback). */
 .ov-glyph { color: var(--text-dim); font-size: 15px; }
 .ov-foot { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* ── Object Type 시각 언어(IMP-64) — 단일 출처 objectTypeVisual 소비. 색으로 noun-type 위계.
+   .otype-chip: 헤더 타입 칩(글리프+색+약한 tint 배경). .otype-mark: 표/인라인 글리프 색만.
+   색은 인라인 --otype-color/--otype-tint 로 주입(기존 토큰만; 신규 색·네온 없음). ── */
+.otype-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 999px;
+  font-size: var(--fs-sm); font-weight: 600; line-height: 1.5;
+  color: var(--otype-color, var(--text-dim));
+  background: var(--otype-tint, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--otype-color, var(--border-strong)) 35%, transparent);
+}
+.otype-chip-glyph { font-size: 13px; line-height: 1; }
+.otype-mark { color: var(--otype-color, var(--text-dim)); }
 
 /* breadcrumb — traverse 경로 */
 .ov-crumbs { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
@@ -2451,13 +2466,18 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-crumb { color: var(--text-dim); font-size: var(--fs-sm); }
 .ov-crumb-cur { color: var(--text); font-size: var(--fs-sm); font-weight: 600; }
 
-/* (1) Header — elevated 카드 */
+/* (1) Header — elevated 카드. IMP-64: 타입 칩+상태 게이지 밴드(row) 위에 metric. */
 .ov-header-card {
-  display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
   background: var(--surface-2); border: 1px solid var(--border);
   border-radius: var(--radius); box-shadow: var(--shadow-card);
 }
+/* 타입 칩 + 상태 밴드 한 줄(좁으면 wrap) */
+.ov-type-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+/* 상태 밴드 — Badge(텍스트) + Gauge(강도). 게이지는 남는 폭을 채운다(최소폭 확보). */
+.ov-status-band { display: flex; align-items: center; gap: var(--sp-2); flex: 1; min-width: 120px; }
+.ov-status-band .gauge { flex: 1; min-width: 60px; max-width: 180px; }
 .ov-metrics { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
 .ov-metric { display: flex; flex-direction: column; }
 .ov-metric-v { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.1; }
@@ -2469,16 +2489,23 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 /* (3) Related — linkKind 그룹 + 클릭 가능한 이웃 */
 .ov-group { margin-bottom: var(--sp-3); }
-.ov-group-h { font-size: var(--fs-sm); font-weight: 600; color: var(--text); margin-bottom: 4px; }
+/* IMP-64: 그룹 헤더 = 방향 지시자(의미 화살표+관계 라벨) + count. */
+.ov-group-h { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.ov-link-dir { display: inline-flex; align-items: center; gap: 5px; }
+/* 방향 화살표 — 관계의 위계 방향(상류↑/하류⇊/영향⇢). 스틸블루 액센트로 관계를 "선"으로 읽히게. */
+.ov-link-arrow { color: var(--primary); font-weight: 700; font-size: 13px; line-height: 1; width: 14px; text-align: center; }
 .ov-count { color: var(--text-faint); font-weight: 400; font-size: var(--fs-xs); }
 .ov-neighbors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ov-neighbor {
   display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left;
   padding: 6px var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
   background: var(--surface, #fff); color: var(--text); cursor: pointer; font-size: var(--fs-body);
+  transition: box-shadow var(--ease), border-color var(--ease), transform var(--ease);
 }
-.ov-neighbor:hover { background: var(--surface-2); border-color: var(--border-strong); }
-.ov-neighbor-glyph { color: var(--text-dim); }
+/* IMP-64: hover elevation(--shadow-card-hover) — Palantir/Linear 식 카드 lift. reduced-motion 은 전역 규칙이 정지. */
+.ov-neighbor:hover { background: var(--surface-2); border-color: var(--border-strong); box-shadow: var(--shadow-card-hover); transform: translateY(-1px); }
+/* glyph 색은 objectTypeVisual(인라인 --otype)로 주입 — fallback 무채. */
+.ov-neighbor-glyph { color: var(--text-dim); flex: none; }
 .ov-neighbor-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-neighbor-type { font-size: var(--fs-xs); color: var(--text-faint); }
 .ov-neighbor-dir { color: var(--text-faint); }
@@ -2728,10 +2755,21 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .onto-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-3); }
 .onto-card { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); }
 .onto-card-empty { opacity: 0.72; }
+/* IMP-64: 카드 좌측에 타입 색 액센트 바(noun-type 위계). 색은 인라인 --otype-color 로 주입. */
+.onto-card { border-left: 3px solid var(--otype-color, var(--border)); }
+.onto-card-empty { border-left-color: var(--border); }
 .onto-card-head { display: flex; align-items: center; gap: var(--sp-2); width: 100%;
   background: none; border: none; padding: 0; cursor: pointer; text-align: left; font: inherit; }
 .onto-card-head:disabled { cursor: default; }
-.onto-card-glyph { font-size: 20px; color: var(--text-dim); flex: none; }
+/* 글리프 — 타입 색 + 약한 tint 배경의 정사각 칩(위계 강조). */
+.onto-card-glyph {
+  display: grid; place-items: center; flex: none;
+  width: 30px; height: 30px; border-radius: var(--radius-sm);
+  font-size: 17px; line-height: 1;
+  color: var(--otype-color, var(--text-dim));
+  background: var(--otype-tint, var(--surface-2));
+}
+.onto-card-empty .onto-card-glyph { color: var(--text-faint); background: var(--surface-2); }
 .onto-card-titles { display: flex; flex-direction: column; line-height: 1.25; }
 .onto-card-type { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
 .onto-card-label { font-size: var(--fs-xs); color: var(--text-dim); }

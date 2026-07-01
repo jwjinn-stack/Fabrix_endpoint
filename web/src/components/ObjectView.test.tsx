@@ -125,6 +125,57 @@ describe("ObjectView — Action 게이팅(observe/manage)", () => {
   });
 });
 
+describe("ObjectView — 시각 언어(IMP-64: 타입 칩·상태 밴드·방향 지시자)", () => {
+  it("header 에 타입 칩(글리프+색 className)을 대상 타입으로 렌더한다", async () => {
+    renderView(); // model:foo → Model
+    await waitFor(() => expect(screen.getByText("Foo 7B")).toBeInTheDocument());
+    const chip = document.querySelector(".otype-chip");
+    expect(chip).not.toBeNull();
+    expect(chip?.classList.contains("otype-model")).toBe(true);
+    // 타입 색 CSS 변수가 인라인으로 주입됐다(무채색 아님).
+    expect((chip as HTMLElement).style.getPropertyValue("--otype-color")).toContain("--primary");
+  });
+
+  it("상태 밴드: crit 객체 → header Gauge fill = var(--red)(위험)", async () => {
+    renderView("incident:i1"); // status crit
+    await waitFor(() => expect(screen.getByText("지연 급증")).toBeInTheDocument());
+    const gauge = document.querySelector(".ov-header-card .gauge-fill");
+    expect(gauge?.getAttribute("fill")).toBe("var(--red)");
+  });
+
+  it("상태 밴드: warn 객체 → header Gauge fill = var(--amber)(주의)", async () => {
+    renderView("gpu:g1"); // status warn
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    const gauge = document.querySelector(".ov-header-card .gauge-fill");
+    expect(gauge?.getAttribute("fill")).toBe("var(--amber)");
+  });
+
+  it("상태 밴드: ok 객체 → header Gauge fill = var(--primary)(정상)", async () => {
+    renderView(); // model:foo ok
+    await waitFor(() => expect(screen.getByText("Foo 7B")).toBeInTheDocument());
+    const gauge = document.querySelector(".ov-header-card .gauge-fill");
+    expect(gauge?.getAttribute("fill")).toBe("var(--primary)");
+  });
+
+  it("관계 그룹마다 방향 지시자(의미 화살표)를 렌더한다", async () => {
+    renderView(); // serves(↑)/runsOn(⇊)/affects(⇢)
+    await waitFor(() => expect(screen.getByText("실행 GPU")).toBeInTheDocument());
+    const dirs = Array.from(document.querySelectorAll(".ov-link-arrow")).map((n) => n.textContent);
+    expect(dirs.length).toBeGreaterThanOrEqual(3);
+    expect(dirs).toContain("⇊"); // runsOn(하류)
+    expect(dirs).toContain("↑"); // serves(상류)
+    expect(dirs).toContain("⇢"); // affects(영향)
+  });
+
+  it("이웃 글리프 색이 이웃 타입 색으로 주입된다(무채색 아님)", async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    // GPU 이웃 글리프 → otype-gpu className
+    const gpuGlyph = document.querySelector(".ov-neighbor-glyph.otype-gpu");
+    expect(gpuGlyph).not.toBeNull();
+  });
+});
+
 describe("ObjectView — deep-link / 미존재 id", () => {
   it("deep-link: objectId 로 마운트 시 해당 객체 복원", async () => {
     renderView("gpu:g1");

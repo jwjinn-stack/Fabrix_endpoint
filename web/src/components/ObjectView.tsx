@@ -8,11 +8,13 @@
 //    fetchOntologyLinks(id)(관계). 전부 mock/실백엔드 동일 계약. 미존재 id → 빈 상태(throw 소비).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOntologyLinks, fetchOntologyObject, fetchOntologyObjects } from "../api/client";
-import type { LinkKind, ObjectStatus, ObjectType, OntologyLink, OntologyObject } from "../api/types";
+import type { LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
+import { typeVisual } from "../api/objectTypeVisual";
 import { ACTION_REGISTRY } from "../actions/registry";
 import { objectViewSchema, useUrlState } from "../urlState";
 import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
+import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
 
 // 어느 페이지든 붙이는 ObjectView URL 배선 훅(IMP-57) — obj/objstack 를 단일 출처로.
@@ -30,27 +32,33 @@ export function useObjectView() {
   };
 }
 
-// 타입별 표시 — 글리프(무채색 이모지, 네온 금지)·라벨·두드러진 metric prop 키(있으면 header 카드에).
-const TYPE_META: Record<ObjectType, { glyph: string; label: string; metrics: string[] }> = {
-  Model: { glyph: "◆", label: "모델", metrics: ["replicas", "context_window"] },
-  Endpoint: { glyph: "▣", label: "엔드포인트", metrics: ["replicas", "namespace"] },
-  Service: { glyph: "◈", label: "서비스", metrics: ["qps", "error_rate"] },
-  GpuDevice: { glyph: "▤", label: "GPU", metrics: ["gpu_util", "mem_perc"] },
-  Node: { glyph: "▥", label: "노드", metrics: ["cpu_perc", "mem_perc"] },
-  Trace: { glyph: "≣", label: "트레이스", metrics: ["total_ms", "ttft_ms"] },
-  Incident: { glyph: "▲", label: "인시던트", metrics: ["severity", "count"] },
+// 타입별 두드러진 metric prop 키(있으면 header 카드에). 글리프/라벨/색은 objectTypeVisual(단일 출처, IMP-64).
+const TYPE_METRICS: Record<OntologyObject["type"], string[]> = {
+  Model: ["replicas", "context_window"],
+  Endpoint: ["replicas", "namespace"],
+  Service: ["qps", "error_rate"],
+  GpuDevice: ["gpu_util", "mem_perc"],
+  Node: ["cpu_perc", "mem_perc"],
+  Trace: ["total_ms", "ttft_ms"],
+  Incident: ["severity", "count"],
 };
 
-// linkKind → Related 섹션 라벨. 방향은 mock 기준(가장 흔한 인접) — 표시는 관계 이름만.
-const LINK_LABEL: Record<LinkKind, string> = {
-  serves: "서빙 모델",
-  runsOn: "실행 GPU",
-  hostedBy: "호스트 노드",
-  routedTo: "라우팅 엔드포인트",
-  executedOn: "실행 GPU",
-  consumes: "소비 Service",
-  affects: "영향 대상",
+// linkKind → Related 섹션 라벨 + 방향 지시자(IMP-64). dir 는 head 기준 "대표" 방향의 의미 화살표:
+//  serves(↑ 상류 소비)·routedTo(↑)·consumes(↑) / runsOn(⇊ 하류 자원)·executedOn(⇊)·hostedBy(⇊) / affects(⇢ 영향).
+//  실제 엣지 방향(out/in)은 이웃 행별로 계산해 함께 표시(→/←) — 여기 dir 은 관계 의미의 위계 방향.
+const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> = {
+  serves: { label: "서빙 모델", dir: "↑", hint: "상류" },
+  runsOn: { label: "실행 GPU", dir: "⇊", hint: "하류" },
+  hostedBy: { label: "호스트 노드", dir: "⇊", hint: "하류" },
+  routedTo: { label: "라우팅 엔드포인트", dir: "↑", hint: "상류" },
+  executedOn: { label: "실행 GPU", dir: "⇊", hint: "하류" },
+  consumes: { label: "소비 Service", dir: "↑", hint: "상류" },
+  affects: { label: "영향 대상", dir: "⇢", hint: "영향" },
 };
+
+// ObjectStatus → 상태 게이지 밴드 위치(IMP-64). Gauge(warn=0.75/crit=0.9/max=1) 밴드에 안착하도록:
+//  ok=0.3(primary 채움) · warn=0.8(amber) · crit=1.0(red) · unknown=0(빈 트랙).
+const STATUS_GAUGE_VALUE: Record<ObjectStatus, number> = { ok: 0.3, warn: 0.8, crit: 1.0, unknown: 0 };
 
 // Related 그룹 표시 순서(Replicas/Endpoint → GPU → Service → Trace → Incident 우선순).
 const KIND_ORDER: LinkKind[] = ["serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
@@ -183,7 +191,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
 
   if (!objectId) return null;
 
-  const meta = obj ? TYPE_META[obj.type] : null;
+  const vis = obj ? typeVisual(obj.type) : null;
+  const metricKeys = obj ? TYPE_METRICS[obj.type] : null;
   const crumbs = stack.map((id) => index[id]?.title ?? id);
 
   return (
@@ -192,11 +201,19 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
       width={560}
       title={
         <span className="ov-title">
-          {meta && <span className="ov-glyph" aria-hidden="true">{meta.glyph}</span>}
+          {vis && (
+            <span
+              className={`ov-glyph ${vis.className}`}
+              style={{ color: vis.color }}
+              aria-hidden="true"
+            >
+              {vis.glyph}
+            </span>
+          )}
           <span>{obj ? obj.title : head}</span>
         </span>
       }
-      subtitle={obj ? `${TYPE_META[obj.type].label} · rev ${obj.revision}` : undefined}
+      subtitle={obj ? `${vis!.label} · rev ${obj.revision}` : undefined}
       onClose={onClose}
       footer={
         <div className="ov-foot">
@@ -228,13 +245,37 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
         <div className="empty" role="alert">객체를 찾을 수 없습니다: <code>{head}</code></div>
       )}
 
-      {obj && meta && (
+      {obj && vis && metricKeys && (
         <>
-          {/* (1) Header — elevated 카드: 상태 Badge + 두드러진 metric(있는 것만). */}
+          {/* (1) Header — elevated 카드(IMP-64): 타입 칩(글리프+색 위계) + 상태 게이지 밴드 + 두드러진 metric. */}
           <div className="ov-header-card">
-            <Badge tone={STATUS_TONE[obj.status]} dot>{STATUS_LABEL[obj.status]}</Badge>
+            <div className="ov-type-row">
+              {/* 타입 칩 — 색으로 noun-type 위계(objectTypeVisual 단일 출처). */}
+              <span
+                className={`otype-chip ${vis.className}`}
+                style={{ ["--otype-color" as string]: vis.color, ["--otype-tint" as string]: vis.tint }}
+              >
+                <span className="otype-chip-glyph" aria-hidden="true">{vis.glyph}</span>
+                {vis.label}
+              </span>
+              {/* 상태 밴드 — 게이지(IMP-54)로 강도 인코딩 + 텍스트 Badge 병기(색-only 금지, WCAG 1.4.1). */}
+              <div className="ov-status-band">
+                <Badge tone={STATUS_TONE[obj.status]} dot>{STATUS_LABEL[obj.status]}</Badge>
+                {obj.status !== "unknown" && (
+                  <Gauge
+                    value={STATUS_GAUGE_VALUE[obj.status]}
+                    warn={0.75}
+                    crit={0.9}
+                    max={1}
+                    valueText={STATUS_LABEL[obj.status]}
+                    label="상태"
+                    height={6}
+                  />
+                )}
+              </div>
+            </div>
             <div className="ov-metrics">
-              {meta.metrics
+              {metricKeys
                 .filter((k) => obj.props[k] != null && obj.props[k] !== "")
                 .map((k) => (
                   <div className="ov-metric" key={k}>
@@ -249,7 +290,7 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
           <section className="ov-section" aria-label="속성">
             <h4 className="ov-h">속성</h4>
             <DetailRow label="id">{obj.id}</DetailRow>
-            <DetailRow label="종류">{meta.label}</DetailRow>
+            <DetailRow label="종류">{vis.label}</DetailRow>
             {Object.entries(obj.props).map(([k, v]) => (
               <DetailRow key={k} label={k}>{fmtVal(v)}</DetailRow>
             ))}
@@ -261,34 +302,44 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
             {groups.length === 0 ? (
               <div className="empty">인접 객체가 없습니다.</div>
             ) : (
-              groups.map((g) => (
-                <div className="ov-group" key={g.kind}>
-                  <div className="ov-group-h">{LINK_LABEL[g.kind]} <span className="ov-count">{g.neighbors.length}</span></div>
-                  <ul className="ov-neighbors">
-                    {g.neighbors.map(({ obj: n, direction }) => {
-                      const nm = TYPE_META[n.type];
-                      return (
-                        <li key={n.id}>
-                          <button
-                            type="button"
-                            className="ov-neighbor"
-                            onClick={() => traverse(n.id)}
-                            title={`${nm.label} · ${n.id}`}
-                          >
-                            <span className="ov-neighbor-glyph" aria-hidden="true">{nm.glyph}</span>
-                            <span className="ov-neighbor-title">{n.title}</span>
-                            <span className={`ov-dot ov-dot-${n.status}`} aria-hidden="true" />
-                            <span className="ov-neighbor-type">{nm.label}</span>
-                            {/* auto/manual 구분 — 현 mock 은 전부 파생(auto). */}
-                            <span className="ov-rel-src" title="파생 관계(auto)">auto</span>
-                            <span className="ov-neighbor-dir" aria-hidden="true">{direction === "out" ? "→" : "←"}</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))
+              groups.map((g) => {
+                const lm = LINK_META[g.kind];
+                return (
+                  <div className="ov-group" key={g.kind}>
+                    {/* 그룹 헤더 — linkKind 방향 지시자(의미 화살표 + 관계 라벨). IMP-64. */}
+                    <div className="ov-group-h">
+                      <span className="ov-link-dir" title={`${g.kind} · ${lm.hint}`}>
+                        <span className="ov-link-arrow" aria-hidden="true">{lm.dir}</span>
+                        {lm.label}
+                      </span>
+                      <span className="ov-count">{g.neighbors.length}</span>
+                    </div>
+                    <ul className="ov-neighbors">
+                      {g.neighbors.map(({ obj: n, direction }) => {
+                        const nv = typeVisual(n.type);
+                        return (
+                          <li key={n.id}>
+                            <button
+                              type="button"
+                              className="ov-neighbor"
+                              onClick={() => traverse(n.id)}
+                              title={`${nv.label} · ${n.id}`}
+                            >
+                              <span className={`ov-neighbor-glyph ${nv.className}`} style={{ color: nv.color }} aria-hidden="true">{nv.glyph}</span>
+                              <span className="ov-neighbor-title">{n.title}</span>
+                              <span className={`ov-dot ov-dot-${n.status}`} aria-hidden="true" />
+                              <span className="ov-neighbor-type">{nv.label}</span>
+                              {/* auto/manual 구분 — 현 mock 은 전부 파생(auto). */}
+                              <span className="ov-rel-src" title="파생 관계(auto)">auto</span>
+                              <span className="ov-neighbor-dir" aria-hidden="true">{direction === "out" ? "→" : "←"}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })
             )}
           </section>
 
