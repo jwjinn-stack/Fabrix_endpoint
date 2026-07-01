@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOntologyObjects, fetchOntologyLinks } from "../api/client";
-import type { ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
+import type { ObjectStatus, OntologyLink } from "../api/types";
 import {
   buildRootCausePath,
   pickEntryCandidates,
@@ -17,11 +17,12 @@ import Sparkline from "../components/Sparkline";
 import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
+import PauseToggle from "../components/PauseToggle";
 import InfoTip from "../components/InfoTip";
 import ObjectView, { useObjectView } from "../components/ObjectView";
 import KineticStrip from "../components/KineticStrip";
 import { investigateSchema, useUrlState } from "../urlState";
-import { humanizeError } from "../utils/errors";
+import { usePolling } from "../utils/usePolling";
 import type { NavFn } from "../router";
 
 // IMP-58 — Troubleshooting Flow(COP) 화면.
@@ -43,12 +44,6 @@ function signalColor(key: string): string {
 }
 
 export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
-  const [objects, setObjects] = useState<OntologyObject[]>([]);
-  const [links, setLinks] = useState<OntologyLink[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
-
   // 진입 Object — URL(entity) 단일 출처. 빈 값이면 기본 진입(가장 아픈 후보).
   const [urlSt, patchUrl] = useUrlState(investigateSchema);
   const view = useObjectView(); // RIGHT: hop 클릭 → ObjectView(IMP-57) + inline Action(IMP-59)
@@ -61,9 +56,11 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
   // 데모를 켜거나 끌 때 step 을 처음으로 되감는다(결정적 시작).
   useEffect(() => { setStepIdx(0); }, [demoOn]);
 
-  // 온톨로지 그래프 로드(IMP-56 client). 링크는 전 객체의 links 를 모아 dedup(경로 traverse 용).
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
+  // 온톨로지 그래프 로드(IMP-56 client)를 IMP-51 폴링 규약으로 승격(IMP-77): 자동 새로고침 + 정지/재개 +
+  // stale 시 마지막 데이터 유지. 링크는 전 객체의 links 를 모아 dedup(경로 traverse 용).
+  // 데모 모드는 seeded fixture 라 폴링/신선도 대상이 아니다 → enabled:!demoOn.
+  const poll = usePolling(
+    async (signal) => {
       const list = await fetchOntologyObjects(undefined, undefined, signal);
       const objs = list.objects;
       // 각 객체의 links 를 모아 방향 엣지 집합을 만든다(중복 제거).
@@ -77,24 +74,15 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
           if (!seen.has(k)) { seen.add(k); all.push(l); }
         }
       }
-      setObjects(objs);
-      setLinks(all);
-      setLastLoaded(Date.now());
-      setError(null);
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") setError(humanizeError((e as Error).message));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return { objects: objs, links: all };
+    },
+    { intervalMs: REFRESH_MS, enabled: !demoOn },
+  );
 
-  useEffect(() => {
-    const ctrl = new AbortController();
-    setLoading(true);
-    load(ctrl.signal);
-    const id = setInterval(() => load(), REFRESH_MS);
-    return () => { ctrl.abort(); clearInterval(id); };
-  }, [load]);
+  const objects = useMemo(() => poll.data?.objects ?? [], [poll.data]);
+  const links = useMemo(() => poll.data?.links ?? [], [poll.data]);
+  const loading = poll.loading;
+  const error = poll.error;
 
   const candidates = useMemo<EntryCandidate[]>(() => pickEntryCandidates(objects), [objects]);
 
@@ -140,8 +128,10 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
           <span aria-hidden="true">▶</span>
           {demoOn ? "데모 종료" : "데모 시나리오 재생"}
         </button>
-        <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
-        <button type="button" className="refresh-btn" onClick={() => load()} disabled={demoOn} aria-label="근본원인 경로 새로고침">
+        {/* IMP-77 — IMP-51 신선도 규약 승격: 최종 갱신 + 자동 갱신 표기 + 정지/재개(데모 모드 제외). */}
+        <DataFreshness updatedAt={poll.lastLoaded} intervalMs={demoOn ? 0 : REFRESH_MS} />
+        {!demoOn && <PauseToggle paused={poll.paused} onToggle={() => poll.setPaused(!poll.paused)} />}
+        <button type="button" className="refresh-btn" onClick={() => poll.reload()} disabled={demoOn} aria-label="근본원인 경로 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
         </button>
@@ -164,11 +154,17 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
         />
       )}
 
-      {error && !demoOn && <div className="state error" role="alert">온톨로지 그래프를 불러오지 못했습니다. ({error})</div>}
+      {error && !demoOn && (
+        <div className="state error" role="alert">
+          온톨로지 그래프를 불러오지 못했습니다. ({error})
+          {poll.isStale && <span className="state-stale"> · 마지막으로 받은 데이터를 표시 중입니다.</span>}
+        </div>
+      )}
       {!error && !demoOn && loading && !objects.length && <SkeletonCards count={4} />}
 
-      {/* 데모 모드는 seeded fixture 라 로딩/에러 게이트를 통과하지 않고 즉시 렌더한다. */}
-      {(demoOn || (!error && !loading)) && (
+      {/* 데모 모드는 seeded fixture 라 로딩/에러 게이트를 통과하지 않고 즉시 렌더한다.
+          IMP-77 — stale(에러지만 마지막 데이터 보유) 시에도 경로를 계속 보여준다(에러 라인엔 stale 배지). */}
+      {(demoOn || (!loading && (!error || objects.length > 0))) && (
         <div className="cop-grid">
           {/* LEFT — 데모: 순서 있는 step 목록 / 일반: 진입 Object 후보 */}
           {demoOn ? (

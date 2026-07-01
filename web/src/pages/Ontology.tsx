@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { fetchOntologyLinks, fetchOntologyObjects } from "../api/client";
 import type { LinkKind, ObjectStatus, ObjectType, OntologyLink, OntologyObject } from "../api/types";
 import {
@@ -20,11 +20,16 @@ import { ACTION_REGISTRY } from "../actions/registry";
 import { TopologyView, worseStatus } from "../components/topology";
 import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
+import PauseToggle from "../components/PauseToggle";
 import InfoTip from "../components/InfoTip";
 import Badge, { type BadgeTone } from "../components/Badge";
 import ObjectView, { useObjectView } from "../components/ObjectView";
 import KineticStrip from "../components/KineticStrip";
+import { usePolling } from "../utils/usePolling";
 import type { NavFn } from "../router";
+
+// IMP-77 — 스코어카드 자동 갱신 주기(감지 신선도 vs 비용 균형, IMP-51 규약과 동일 15s).
+const REFRESH_MS = 15_000;
 
 // IMP-68 — /ontology 재설계: 추상 타입 카탈로그 → **운영 준비도 스코어카드**.
 //   docs/ontology-usecase-comparison.md §3·§4 + Datadog Software Catalog Scorecards 패턴.
@@ -81,20 +86,15 @@ type OntoTab = "scorecard" | "schema";
 // onNavigate 는 배선 일관성을 위해 받되(App.tsx 가 navigate 전달). 스코어카드는 ObjectView 드로어로
 // 상세 진입하고, 실패 항목의 '조사' 딥링크는 onNavigate 로 /investigate COP(IMP-58)로 넘긴다.
 export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
-  const [model, setModel] = useState<OntologyModel | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastLoaded, setLastLoaded] = useState<number | null>(null);
   // 기본 탭 = 운영 준비도 스코어카드(정문). 스키마 참조는 보조(IMP-70 정합). URL 동기화는 IMP-70 범위.
   const [tab, setTab] = useState<OntoTab>("scorecard");
   const view = useObjectView(); // 인스턴스/카드 클릭 → ObjectView(IMP-57) 속성·관계·inline Action.
 
   // 라이브 로드 — (a) 전체 Object, (b) 각 Object 의 링크를 병렬 수집해 union+dedup → 타입쌍 스키마 엣지.
   // 링크 fetch 일부 실패(env-missing)는 allSettled 로 흡수해 얻은 것만으로 그래프를 그린다.
-  const load = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
+  // IMP-77 — IMP-51 폴링 규약으로 승격: 자동 새로고침 + 정지/재개 + stale 시 마지막 데이터 유지.
+  const poll = usePolling<OntologyModel>(
+    async (signal) => {
       const list = await fetchOntologyObjects(undefined, undefined, signal);
       const objects = list.objects;
       // 각 객체의 링크를 병렬로. link 는 양 끝점에서 각각 나오므로 (from|to|kind) 로 dedup.
@@ -112,25 +112,17 @@ export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
           links.push(l);
         }
       }
-      if (signal?.aborted) return;
       const catalog = buildObjectTypeCatalog(objects);
       const { graph, edges } = buildSchemaGraph(objects, links);
       const scorecard = buildScorecard(objects); // 순수·결정적(props/status 파생).
-      setModel({ catalog, objects, schemaGraph: graph, schemaEdges: edges, scorecard });
-      setLastLoaded(Date.now());
-    } catch (e) {
-      if ((e as Error).name === "AbortError" || signal?.aborted) return;
-      setError((e as Error).message || "온톨로지를 불러오지 못했습니다");
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+      return { catalog, objects, schemaGraph: graph, schemaEdges: edges, scorecard };
+    },
+    { intervalMs: REFRESH_MS },
+  );
 
-  useEffect(() => {
-    const ac = new AbortController();
-    load(ac.signal);
-    return () => ac.abort();
-  }, [load]);
+  const model = poll.data;
+  const loading = poll.loading;
+  const error = poll.error;
 
   // 타입별 첫 객체 id(카탈로그 카드 클릭 진입점) — 인스턴스가 있으면 그 첫 인스턴스를 ObjectView 로.
   const firstIdByType = useMemo(() => {
@@ -158,8 +150,10 @@ export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
           운영 준비도 pass/fail 로 채점합니다(Datadog Scorecards 패턴). 스키마 정의는 <b>스키마 참조</b> 탭에.
         </InfoTip>
         <div className="spacer" />
-        <DataFreshness updatedAt={lastLoaded} intervalMs={0} />
-        <button type="button" className="refresh-btn" onClick={() => load()} aria-label="온톨로지 새로고침">
+        {/* IMP-77 — IMP-51 신선도 규약 승격: 자동 갱신 표기 + 정지/재개. */}
+        <DataFreshness updatedAt={poll.lastLoaded} intervalMs={REFRESH_MS} />
+        <PauseToggle paused={poll.paused} onToggle={() => poll.setPaused(!poll.paused)} />
+        <button type="button" className="refresh-btn" onClick={() => poll.reload()} aria-label="온톨로지 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
         </button>
@@ -188,6 +182,7 @@ export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
       {error && (
         <div className="state error" role="alert">
           온톨로지를 불러오지 못했습니다. ({error})
+          {poll.isStale && <span className="state-stale"> · 마지막으로 받은 데이터를 표시 중입니다.</span>}
         </div>
       )}
       {!error && loading && !model && <SkeletonCards count={3} />}

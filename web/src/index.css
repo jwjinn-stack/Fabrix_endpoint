@@ -386,6 +386,15 @@ body {
 }
 /* 데이터 신선도 stale 배지(IMP-21) — 색 비의존(아이콘+텍스트) */
 .freshness-stale { color: var(--amber); font-weight: 600; }
+/* ObjectView 드로어 신선도 줄(IMP-77) — 최종 갱신 + 정지/재개를 컴팩트하게(패널 폭 절약). */
+.ov-freshness {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+.ov-freshness .pause-toggle { margin-left: auto; }
 /* 내보내기 메뉴(IMP-23) — 네이티브 <details> 디스클로저 */
 .export-menu { position: relative; display: inline-block; }
 .export-menu > summary { list-style: none; cursor: pointer; }

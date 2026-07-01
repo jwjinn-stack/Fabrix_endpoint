@@ -12,13 +12,16 @@
 //
 // **안전(two-tier 게이팅)**: 실행은 오직 <ActionForm>(IMP-59) + evaluateSubmission(capability+status)
 //   confirm 게이팅으로만. 이 컴포넌트에 자동 mutation 경로 없음(추천은 "제안"일 뿐). 고정 카피 "상관≠인과, 근거로 확인".
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { fetchKineticAlerts } from "../api/client";
 import type { KineticAlert, DetectionSignal, ObjectStatus } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
 import { getActionSpec } from "../actions/registry";
 import { useCap } from "../capabilities";
+import { usePolling } from "../utils/usePolling";
 import Badge, { type BadgeTone } from "./Badge";
+import DataFreshness from "./DataFreshness";
+import PauseToggle from "./PauseToggle";
 import ActionForm from "./ActionForm";
 import type { NavFn } from "../router";
 
@@ -44,33 +47,18 @@ export interface KineticStripProps {
 
 // Kinetic 알림 스트립 — 페이지 상단에 얹는다. 알림이 0건이면 렌더하지 않는다(관제 노이즈 억제).
 export default function KineticStrip({ onNavigate, onOpenObject, intervalMs = 15_000 }: KineticStripProps) {
-  const [alerts, setAlerts] = useState<KineticAlert[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const timer = useRef<number | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const r = await fetchKineticAlerts(signal);
-      setAlerts(r.alerts);
-      setLoaded(true);
-    } catch {
-      // 감지 파생은 관제 보조 표면 — 실패해도 페이지를 죽이지 않는다(조용히 빈 스트립).
-      setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    load(ctrl.signal);
-    if (intervalMs > 0) {
-      timer.current = window.setInterval(() => load(), intervalMs);
-    }
-    return () => {
-      ctrl.abort();
-      if (timer.current != null) window.clearInterval(timer.current);
-    };
-  }, [load, intervalMs]);
+  // IMP-77 — 감지 파생 조회를 IMP-51 폴링 규약으로 승격: 자동 새로고침 + 정지/재개 + stale 시 마지막 데이터 유지.
+  //  intervalMs=0(정적 사용)이면 enabled:false → 폴링 없이 초기 1회 로드만(기존 계약 보존).
+  //  감지 파생은 관제 보조 표면 — fetch 실패해도 usePolling 이 마지막 데이터를 유지하고 isStale 로 표시(페이지 안 죽음).
+  const polling = intervalMs > 0;
+  const poll = usePolling<KineticAlert[]>(
+    async (signal) => (await fetchKineticAlerts(signal)).alerts,
+    { intervalMs: intervalMs > 0 ? intervalMs : 15_000, enabled: polling },
+  );
+  const alerts = poll.data ?? [];
+  const loaded = !poll.loading || poll.data != null;
 
   // 알림 0건 → 미렌더(스트립 자체가 사라짐 — 관제 화면 잡음 최소화). 로드 전에도 미렌더.
   if (!loaded || alerts.length === 0) return null;
@@ -85,7 +73,11 @@ export default function KineticStrip({ onNavigate, onOpenObject, intervalMs = 15
         </span>
         {/* 고정 마이크로카피 — 상관을 인과로 과장하지 않음(IBM Probable Root Cause). */}
         <span className="kinetic-strip-caveat" role="note">추정 원인(Probable Cause) · 상관≠인과, 근거로 확인</span>
+        {/* IMP-77 — 신선도/정지 규약(폴링 켜졌을 때만). stale 시 마지막 데이터 유지 배지. */}
+        {poll.isStale && <span className="state-stale kinetic-strip-stale" role="status"> · 마지막으로 받은 데이터를 표시 중입니다.</span>}
         <div className="spacer" />
+        {polling && <DataFreshness updatedAt={poll.lastLoaded} intervalMs={intervalMs} />}
+        {polling && <PauseToggle paused={poll.paused} onToggle={() => poll.setPaused(!poll.paused)} />}
         <button
           type="button"
           className="btn-ghost btn-sm"

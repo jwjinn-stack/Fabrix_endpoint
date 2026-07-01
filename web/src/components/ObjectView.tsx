@@ -8,6 +8,9 @@
 //    fetchOntologyLinks(id)(관계). 전부 mock/실백엔드 동일 계약. 미존재 id → 빈 상태(throw 소비).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOntologyLinks, fetchOntologyObject, fetchOntologyObjects } from "../api/client";
+import { usePolling } from "../utils/usePolling";
+import DataFreshness from "./DataFreshness";
+import PauseToggle from "./PauseToggle";
 import type { ActionAuditEntry, ActionOutcome, LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
 import { ACTION_REGISTRY, getActionSpec } from "../actions/registry";
@@ -22,6 +25,16 @@ import type { GpuHardware } from "../api/types";
 
 // Metric Explorer(IMP-71)를 탭으로 제공하는 엔티티 앵커 타입 — GpuDevice/Node 만 전량 메트릭을 emit.
 const METRIC_ENTITY_TYPES: OntologyObject["type"][] = ["GpuDevice", "Node"];
+
+// IMP-77 — 드로어가 '열려 있을 때만' 폴링(감지 신선도 vs 비용 균형, IMP-51 규약과 동일 15s). 닫히면 폴링 정지.
+const REFRESH_MS = 15_000;
+
+// head 로드 결과(canonical + 관계 + 이웃 해석 인덱스). 미존재 id(404)는 throw 대신 obj=null 로 소비(빈 상태).
+interface HeadData {
+  obj: OntologyObject | null;
+  links: OntologyLink[];
+  index: Record<string, OntologyObject>;
+}
 
 // 어느 페이지든 붙이는 ObjectView URL 배선 훅(IMP-57) — obj/objstack 를 단일 출처로.
 //  open(id): 진입점에서 특정 객체를 연다. close(): 닫는다. <ObjectView {...props}/> 로 스프레드.
@@ -129,11 +142,6 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
 
   const head = stack[stack.length - 1] ?? null;
 
-  const [obj, setObj] = useState<OntologyObject | null>(null);
-  const [index, setIndex] = useState<Record<string, OntologyObject>>({});
-  const [links, setLinks] = useState<OntologyLink[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [missing, setMissing] = useState(false);
   // IMP-65 — 이 객체에서 실행한 Action 감사 로그(세션-로컬). ActionForm.onDone 이 돌려준 res.audit 을
   // 최근 순으로 누적. head 가 바뀌면 리셋(객체별 컨텍스트). 신규 fetch endpoint 없이 기존 계약만 소비.
   const [auditLog, setAuditLog] = useState<ActionAuditEntry[]>([]);
@@ -141,40 +149,43 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   // 요약이 DEFAULT — '전체 메트릭'은 명시적 탈출구(IMP-46 회귀 없음). head 바뀌면 요약으로 리셋.
   const [tab, setTab] = useState<"summary" | "metrics">("summary");
 
-  // head 변경 시 canonical + 관계 + 이웃 해석 인덱스 로드.
+  // head 변경 시 객체별 로컬 컨텍스트 리셋(감사 로그·탭) — 데이터 폴링과 독립.
   useEffect(() => {
-    if (!head) return;
-    const ac = new AbortController();
-    setLoading(true);
-    setMissing(false);
     setAuditLog([]); // 새 객체(traverse/재진입) — 감사 로그는 객체별 컨텍스트.
     setTab("summary"); // 새 객체는 큐레이션 요약이 기본(IMP-71 — explorer 는 명시적 탈출구).
-    Promise.all([
-      fetchOntologyObject(head, ac.signal),
-      fetchOntologyLinks(head, undefined, ac.signal),
-      fetchOntologyObjects(undefined, undefined, ac.signal),
-    ])
-      .then(([o, lr, list]) => {
-        if (ac.signal.aborted) return;
-        setObj(o);
-        setLinks(lr.links);
+  }, [head]);
+
+  // head 의 canonical + 관계 + 이웃 해석 인덱스 로드를 IMP-51 폴링 규약으로 승격(IMP-77).
+  //  - deps:[head] → traverse/재진입 시 즉시 재로드. enabled:!!head → 드로어 닫히면 폴링 정지(hammering 방지).
+  //  - 미존재 id(404)는 throw 대신 obj=null 로 소비(빈 상태) — usePolling 의 error 로 올리지 않는다.
+  const poll = usePolling<HeadData>(
+    async (signal) => {
+      if (!head) return { obj: null, links: [], index: {} };
+      try {
+        const [o, lr, list] = await Promise.all([
+          fetchOntologyObject(head, signal),
+          fetchOntologyLinks(head, undefined, signal),
+          fetchOntologyObjects(undefined, undefined, signal),
+        ]);
         const idx: Record<string, OntologyObject> = {};
         for (const it of list.objects) idx[it.id] = it;
-        setIndex(idx);
-      })
-      .catch((e) => {
-        if (ac.signal.aborted) return;
-        // 미존재 id(404) 등 — 빈 상태로 소비(throw 안 함).
-        setObj(null);
-        setLinks([]);
-        setMissing(true);
+        return { obj: o, links: lr.links, index: idx };
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError" || signal.aborted) throw e;
+        // 미존재 id(404) 등 — 빈 상태로 소비(throw 안 함 → error 배지 대신 '찾을 수 없음').
         if (!(e instanceof Error) || !/404/.test(e.message)) console.warn("[ObjectView] 로드 실패", e);
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
-      });
-    return () => ac.abort();
-  }, [head]);
+        return { obj: null, links: [], index: {} };
+      }
+    },
+    { intervalMs: REFRESH_MS, deps: [head], enabled: !!head },
+  );
+
+  const obj = poll.data?.obj ?? null;
+  const links = useMemo(() => poll.data?.links ?? [], [poll.data]);
+  const index = useMemo(() => poll.data?.index ?? {}, [poll.data]);
+  const loading = poll.loading;
+  // 미존재 — 로드가 끝났는데(데이터 도착) obj 가 null. head 없거나 로딩 중엔 미표시.
+  const missing = !!head && poll.data != null && poll.data.obj == null;
 
   // 이웃을 linkKind 로 그룹화(head 기준 방향 유지). 인덱스에 있는 실재 객체만.
   const groups = useMemo<GroupedNeighbor[]>(() => {
@@ -220,11 +231,11 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
     });
   }, [onStackChange]);
 
-  // Action 반영 후 canonical 갱신 → 현재 head 재로딩(리렌더).
+  // Action 반영 후 canonical 갱신 → 현재 head 재로딩(리렌더). 폴링 규약의 reload 재사용(IMP-77).
   const reloadHead = useCallback(() => {
     if (!head) return;
-    fetchOntologyObject(head).then(setObj).catch(() => { /* keep */ });
-  }, [head]);
+    poll.reload();
+  }, [head, poll]);
 
   if (!objectId) return null;
 
@@ -278,6 +289,16 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
             ))}
           </ol>
         </nav>
+      )}
+
+      {/* IMP-77 — 드로어도 IMP-51 신선도 규약: 최종 갱신 + 자동 갱신 표기 + 정지/재개(열려 있을 때만 폴링).
+          객체가 로드됐을 때만 표기(빈/로딩 상태에서는 잡음 억제). stale 시 마지막 데이터 유지. */}
+      {obj && (
+        <div className="ov-freshness">
+          <DataFreshness updatedAt={poll.lastLoaded} intervalMs={REFRESH_MS} />
+          <PauseToggle paused={poll.paused} onToggle={() => poll.setPaused(!poll.paused)} />
+          {poll.isStale && <span className="state-stale" role="status"> · 마지막 데이터 표시 중</span>}
+        </div>
       )}
 
       {loading && !obj && <div className="empty" role="status">불러오는 중…</div>}

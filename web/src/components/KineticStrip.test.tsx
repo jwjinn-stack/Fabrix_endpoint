@@ -3,7 +3,7 @@
 // 케이스: 4 슬롯 존재 / confidence 배지 / 조사→/agent prefill / observe 실행 rung 만 비활성(조사·ack 활성)
 //         / 실행 rung 은 ActionForm confirm(type-to-confirm) 경유 / 알림 0건 → 미렌더.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import KineticStrip from "./KineticStrip";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
@@ -168,5 +168,50 @@ describe("KineticStrip — 빈 상태 / 실패", () => {
     vi.spyOn(client, "fetchKineticAlerts").mockRejectedValue(new Error("API 503"));
     renderStrip({ onNavigate: vi.fn() });
     await waitFor(() => expect(screen.queryByRole("region", { name: "Kinetic 알림" })).toBeNull());
+  });
+});
+
+// IMP-77 — 신선도/폴링 규약 승격(IMP-51 재사용): intervalMs>0 이면 신선도 라벨+정지/재개, tick 재조회.
+//  intervalMs=0(정적 사용, 기존 테스트 기본)이면 컨트롤 미렌더 + 폴링 없음(회귀 없음).
+describe("KineticStrip — IMP-77 신선도·폴링 정합", () => {
+  it("intervalMs=0 → 신선도/정지 컨트롤 미렌더 + 폴링 없음(초기 1회만)", async () => {
+    const spy = vi.spyOn(client, "fetchKineticAlerts").mockResolvedValue(list(ALERTS));
+    renderStrip({ onNavigate: vi.fn(), intervalMs: 0 });
+    await waitFor(() => expect(screen.getByText("GPU 1")).toBeInTheDocument());
+    expect(screen.queryByText(/자동/)).toBeNull(); // DataFreshness "자동 Ns" 없음
+    expect(screen.queryByRole("button", { name: /일시정지|재개/ })).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("intervalMs>0 → 신선도 라벨 + 정지/재개 렌더 + interval tick 마다 재조회", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.spyOn(client, "fetchKineticAlerts").mockResolvedValue(list(ALERTS));
+    renderStrip({ onNavigate: vi.fn(), intervalMs: 1000 });
+    await waitFor(() => expect(screen.getByText("GPU 1")).toBeInTheDocument());
+    // 신선도 라벨("자동 1s") + 정지 토글.
+    expect(screen.getByText(/자동/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /일시정지/ })).toBeInTheDocument();
+    // interval tick → 재조회.
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await act(async () => { vi.advanceTimersByTime(1000); });
+    await waitFor(() => expect(spy.mock.calls.length).toBeGreaterThanOrEqual(2));
+    vi.useRealTimers();
+  });
+
+  it("정지 → interval tick 이 추가 호출하지 않음 / 재개 → 즉시 1회", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.spyOn(client, "fetchKineticAlerts").mockResolvedValue(list(ALERTS));
+    renderStrip({ onNavigate: vi.fn(), intervalMs: 1000 });
+    await waitFor(() => expect(screen.getByText("GPU 1")).toBeInTheDocument());
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /일시정지/ })); // pause
+    const atPause = spy.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(spy).toHaveBeenCalledTimes(atPause); // 정지 중 tick 무시
+
+    fireEvent.click(screen.getByRole("button", { name: /재개/ })); // resume → 즉시 1회
+    await waitFor(() => expect(spy.mock.calls.length).toBe(atPause + 1));
+    vi.useRealTimers();
   });
 });

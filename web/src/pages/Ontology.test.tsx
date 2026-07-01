@@ -3,7 +3,7 @@
 //   primary=스코어카드(주의 요약·인스턴스 pass/fail·그룹) / 실패 항목 딥링크(ObjectView·COP) /
 //   스키마 그래프는 "스키마 참조" 보조 탭(still reachable) / route·nav / failure / all-pass·empty.
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, act } from "@testing-library/react";
 import type { OntologyLink, OntologyObject } from "../api/types";
 
 // jsdom SVG/dialog shim(TopologyView · SlidePanel/ObjectView).
@@ -53,6 +53,8 @@ vi.mock("../api/client", () => ({
   fetchOntologyObjects: (...a: unknown[]) => fetchOntologyObjects(...a),
   fetchOntologyLinks: (id: string, ...a: unknown[]) => fetchOntologyLinks(id, ...a),
   fetchOntologyObject: (id: string, ...a: unknown[]) => fetchOntologyObject(id, ...a),
+  // KineticStrip(내부)이 호출 — IMP-77 폴링 승격 후에도 빈 알림으로 조용히(스트립 미렌더).
+  fetchKineticAlerts: () => Promise.resolve({ generated_at: "t", alerts: [], source: "mock" }),
 }));
 
 vi.mock("../capabilities", () => ({
@@ -225,5 +227,24 @@ describe("Ontology — all-pass / empty / env-missing", () => {
     // 스키마 참조 탭 — 링크 없으니 그래프 빈 상태 graceful.
     fireEvent.click(screen.getByRole("tab", { name: "스키마 참조" }));
     await waitFor(() => expect(screen.getByText(/관측된 관계가 없습니다/)).toBeInTheDocument());
+  });
+});
+
+// IMP-77 — 스코어카드 신선도·폴링 정합(IMP-51 규약 승격): 자동 갱신 표기 + 정지/재개 + tick 재조회.
+describe("Ontology — IMP-77 신선도·폴링 정합", () => {
+  it("신선도 라벨('자동 15s')과 정지/재개 토글을 렌더한다", async () => {
+    render(<Ontology />);
+    await waitFor(() => expect(screen.getAllByText(/자동 15s/).length).toBeGreaterThan(0));
+    expect(screen.getByRole("button", { name: /일시정지/ })).toBeInTheDocument();
+  });
+
+  it("interval tick 마다 스코어카드를 재조회한다(자동 갱신)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { container } = render(<Ontology />);
+    await waitFor(() => expect(container.querySelectorAll(".onto-scorerow").length).toBe(5));
+    const before = fetchOntologyObjects.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(15_000); });
+    await waitFor(() => expect(fetchOntologyObjects.mock.calls.length).toBeGreaterThan(before));
+    vi.useRealTimers();
   });
 });
