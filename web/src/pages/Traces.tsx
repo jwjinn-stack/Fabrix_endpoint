@@ -7,6 +7,7 @@ import type { Score, SpanKind, TimeRange, TraceDetail, TraceListReport, TraceSpa
 import Badge, { type BadgeTone } from "../components/Badge";
 import { ScoreBadges, ScorePanel } from "../components/ScoreBadge";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import ObjectView, { useObjectView } from "../components/ObjectView";
 import { SkeletonRows } from "../components/Skeleton";
 import { useTableDensity, DensityToggle } from "../components/DensityToggle";
 import ExportButton from "../components/ExportButton";
@@ -93,6 +94,7 @@ export default function Traces({ onNavigate }: { onNavigate?: NavFn }) {
   // 들어온 model 을 옵션 모집단에 시드(필터≠all 이면 옵션 갱신이 막히므로 빈 select 방지).
   const [opts, setOpts] = useState<{ models: string[]; apps: string[] }>({ models: model !== "all" ? [model] : [], apps: [] });
 
+  const ov = useObjectView(); // ObjectView(IMP-57) — 트레이스를 온톨로지 객체로 열어 관계·Action.
   const [selId, setSelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -297,10 +299,21 @@ export default function Traces({ onNavigate }: { onNavigate?: NavFn }) {
         title={detail ? `chat ${detail.summary.model}` : "트레이스 상세"}
         subtitle={selId ? <code className="trace-id">{selId}</code> : undefined}
         onClose={() => setSelId(null)}
+        footer={
+          selId ? (
+            // IMP-57: 트레이스를 온톨로지 객체로 열어 라우팅 엔드포인트·실행 GPU·연결 인시던트를 traverse.
+            <button type="button" className="btn-ghost btn-sm" onClick={() => ov.open(`trace:${selId}`)}>
+              Object View 열기 →
+            </button>
+          ) : undefined
+        }
       >
         {detailLoading && <div className="state" role="status">트레이스 스팬을 불러오는 중…</div>}
         {detail && <TraceDetailView detail={detail} openSpan={openSpan} onToggleSpan={(id) => setOpenSpan((s) => (s === id ? null : id))} canEval={canEval} onScoreAdded={(sc) => setDetail((d) => (d ? { ...d, summary: { ...d.summary, scores: [...(d.summary.scores ?? []), sc] } } : d))} canReplay={canReplay} onNavigate={onNavigate} />}
       </SlidePanel>
+
+      {/* IMP-57: 온톨로지 Object View 패널(관계 in-place traverse·인라인 Action). deep-link obj= 로도 열림. */}
+      <ObjectView {...ov.props} />
     </>
   );
 }

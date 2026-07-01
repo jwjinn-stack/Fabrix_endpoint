@@ -1013,6 +1013,12 @@ function ontologyObjects(type?: string, filter?: string): OntologyObjectList {
   return { generated_at: new Date().toISOString(), objects: rows, source: "ontology (mock)" };
 }
 
+// GET /ontology/objects/:id — 단일 canonical 객체(IMP-57 Object View deep-link·이웃 해석).
+// 미존재 id → null(라우터에서 404).
+function ontologyObject(id: string): OntologyObject | null {
+  return buildOntology().objects.find((o) => o.id === id) ?? null;
+}
+
 // GET /ontology/objects/:id/links?kind= — 해당 object 를 from/to 로 갖는 링크. kind(LinkKind) 필터.
 // 미존재 object id → null(라우터에서 404).
 function ontologyLinks(id: string, kind?: string): OntologyLinkList | null {
@@ -1499,6 +1505,12 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     const res = ontologyLinks(id, q.get("kind") ?? undefined);
     if (!res) return notFound(path);
     return ok(res);
+  }
+  // 온톨로지 단일 객체(IMP-57) — /links 정규식 뒤에 둬 구체 경로가 먼저 매칭되게 한다.
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)$/))) {
+    const one = ontologyObject(decodeURIComponent(m[1]));
+    if (!one) return notFound(path);
+    return ok(one);
   }
   // Action(writeback) 단일 계약(IMP-59) — verb 별 실행. 게이팅·revision·idempotency 는 applyAction 내부.
   if (method === "POST" && (m = path.match(/^\/ontology\/actions\/([^/]+)$/))) { return applyAction(decodeURIComponent(m[1]), (body as Record<string, unknown>) ?? {}); }

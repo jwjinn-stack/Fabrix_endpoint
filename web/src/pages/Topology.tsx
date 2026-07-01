@@ -3,13 +3,21 @@ import { fetchTopology } from "../api/client";
 import type { TopologyGraph, TopologyNode } from "../api/types";
 import { TopologyView } from "../components/topology";
 import { SkeletonCards } from "../components/Skeleton";
-import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import ObjectView, { useObjectView } from "../components/ObjectView";
+// (기존 SlidePanel 드릴다운은 ObjectView 로 대체 — IMP-57)
 import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
 import { useCap } from "../capabilities";
 import { usePolling } from "../utils/usePolling";
 import type { NavFn } from "../router";
 import { nodeNavTarget } from "../api/correlation";
+
+// 토폴로지 노드 id → 온톨로지 object id(mock buildOntology 접두 규약과 일치).
+function nodeToObjectId(n: TopologyNode): string {
+  if (n.kind === "server") return `node:${n.id}`;
+  if (n.kind === "gpu") return `gpu:${n.id}`;
+  return `service:${n.id}`;
+}
 
 const REFRESH_MS = 15_000;
 const KIND_LABEL: Record<TopologyNode["kind"], string> = { server: "서버", service: "서비스", gpu: "GPU" };
@@ -30,6 +38,7 @@ export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
   const { caps } = useCap();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showTable, setShowTable] = useState(false);
+  const ov = useObjectView(); // ObjectView(IMP-57) — 노드 클릭 → 온톨로지 상세/관계/Action.
 
   const {
     data: graph,
@@ -45,6 +54,13 @@ export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
   const nodes = useMemo(() => graph?.nodes ?? [], [graph]);
   const edges = useMemo(() => graph?.edges ?? [], [graph]);
 
+  // 노드 선택 → 그래프 하이라이트 + ObjectView 오픈(온톨로지 object id 로 변환).
+  const selectNode = (id: string) => {
+    setSelectedId(id);
+    const n = nodes.find((x) => x.id === id);
+    if (n) ov.open(nodeToObjectId(n));
+  };
+
   // 상단 텍스트 요약(complex-image 동등 대안): 위험 노드 N · 병목 엣지 M.
   const riskNodes = useMemo(() => nodes.filter((n) => n.status !== "ok").length, [nodes]);
   const bottleneckEdges = useMemo(
@@ -52,10 +68,8 @@ export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
     [edges],
   );
 
-  // 선택 노드 상세(드릴다운) — 연결수 in/out 산출.
+  // 선택 노드(요약 표시용).
   const selectedNode = selectedId ? nodes.find((n) => n.id === selectedId) : undefined;
-  const inCount = selectedId ? edges.filter((e) => e.to === selectedId).length : 0;
-  const outCount = selectedId ? edges.filter((e) => e.from === selectedId).length : 0;
 
   // observe(readonly) 프로파일은 읽기 전용 → 노드 drag 비활성(pan/zoom/hover 유지).
   const interactive = !caps.readonly;
@@ -106,18 +120,18 @@ export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
             노드 <b>{nodes.length}</b>개 · 링크 <b>{edges.length}</b>개 —
             {" "}위험 노드 <b className={riskNodes > 0 ? "topo-summary-risk" : ""}>{riskNodes}</b>개 ·
             {" "}병목 엣지 <b className={bottleneckEdges > 0 ? "topo-summary-risk" : ""}>{bottleneckEdges}</b>개
-            {selectedNode && <> · 선택: <b>{selectedNode.label}</b> (연결 in {inCount} / out {outCount})</>}
+            {selectedNode && <> · 선택: <b>{selectedNode.label}</b> ({KIND_LABEL[selectedNode.kind]})</>}
           </p>
 
           {isEmpty ? (
             <div className="card"><div className="empty">관측된 토폴로지 노드가 없습니다.</div></div>
           ) : showTable ? (
-            <TopologyTables nodes={nodes} edges={edges} onSelect={setSelectedId} />
+            <TopologyTables nodes={nodes} edges={edges} onSelect={selectNode} />
           ) : (
             <TopologyView
               graph={graph}
               interactive={interactive}
-              onSelect={setSelectedId}
+              onSelect={selectNode}
               selectedId={selectedId}
               height={480}
             />
@@ -125,45 +139,17 @@ export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
         </>
       )}
 
-      <SlidePanel
-        open={!!selectedNode}
-        title={selectedNode ? selectedNode.label : ""}
-        subtitle={selectedNode ? `${KIND_LABEL[selectedNode.kind]} · ${STATUS_LABEL[selectedNode.status]}` : ""}
-        onClose={() => setSelectedId(null)}
-      >
-        {selectedNode && (
-          <>
-            <DetailRow label="종류">{KIND_LABEL[selectedNode.kind]}</DetailRow>
-            <DetailRow label="상태">
-              <span className={`tag tag-${selectedNode.status === "ok" ? "green" : selectedNode.status === "warn" ? "amber" : "red"}`}>
-                {STATUS_LABEL[selectedNode.status]}
-              </span>
-            </DetailRow>
-            <DetailRow label="연결 (수신 / 발신)">{inCount} / {outCount}</DetailRow>
-            {Object.entries(selectedNode.metrics ?? {}).map(([k, v]) => (
-              <DetailRow key={k} label={k}>{fmtMetric(k, v)}</DetailRow>
-            ))}
-            {/* IMP-50: 노드 kind별 기존 화면 드릴다운(correlation moat). 필터 컨텍스트를 onNavigate 로 운반. */}
-            {(() => {
-              const target = nodeNavTarget(selectedNode);
-              if (!target || !onNavigate) return null;
-              return (
-                <button
-                  type="button"
-                  className="btn-primary topo-drill-btn"
-                  onClick={() => onNavigate(target.page, target.params)}
-                >
-                  {target.label} →
-                </button>
-              );
-            })()}
-            <p className="topo-dd-hint">
-              그래프에서 이 노드를 선택하면 upstream/downstream 인접 노드가 강조되고 나머지는 흐려집니다.
-              {onNavigate && " 위 버튼으로 이 엔티티의 트레이스·GPU·노드 메트릭 화면으로 이동해 추론 ↔ 인프라 상관을 추적하세요."}
-            </p>
-          </>
-        )}
-      </SlidePanel>
+      {/* IMP-57: 노드 클릭 → Object View(속성·관계 in-place traverse·인라인 Action).
+          escape hatch: 노드 kind별 기존 화면(트레이스·GPU·노드 메트릭)으로 드릴다운(correlation moat). */}
+      <ObjectView
+        {...ov.props}
+        onNavigateFull={(() => {
+          if (!selectedNode || !onNavigate) return undefined;
+          const target = nodeNavTarget(selectedNode);
+          if (!target) return undefined;
+          return () => { ov.props.onClose(); onNavigate(target.page, target.params); };
+        })()}
+      />
     </>
   );
 }

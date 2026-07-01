@@ -2437,3 +2437,58 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .action-phase.phase-provisional { color: var(--text-dim); opacity: 0.8; }
 .action-phase.phase-reconciled { color: var(--primary); }
 .action-phase.phase-error { color: var(--danger, #c0392b); }
+
+/* Object View(IMP-57) — Palantir Workshop 스타일 단일 엔티티 패널 */
+.ov-title { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.ov-glyph { color: var(--text-dim); font-size: 15px; }
+.ov-foot { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* breadcrumb — traverse 경로 */
+.ov-crumbs { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.ov-crumbs ol { list-style: none; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; }
+.ov-crumbs li { display: inline-flex; align-items: center; gap: 4px; }
+.ov-crumb-sep { color: var(--text-faint); }
+.ov-crumb { color: var(--text-dim); font-size: var(--fs-sm); }
+.ov-crumb-cur { color: var(--text); font-size: var(--fs-sm); font-weight: 600; }
+
+/* (1) Header — elevated 카드 */
+.ov-header-card {
+  display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.ov-metrics { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.ov-metric { display: flex; flex-direction: column; }
+.ov-metric-v { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.ov-metric-k { font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* 섹션 */
+.ov-section { margin-top: var(--sp-4); }
+.ov-h { font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); margin: 0 0 var(--sp-2); text-transform: uppercase; letter-spacing: .03em; }
+
+/* (3) Related — linkKind 그룹 + 클릭 가능한 이웃 */
+.ov-group { margin-bottom: var(--sp-3); }
+.ov-group-h { font-size: var(--fs-sm); font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.ov-count { color: var(--text-faint); font-weight: 400; font-size: var(--fs-xs); }
+.ov-neighbors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ov-neighbor {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left;
+  padding: 6px var(--sp-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface, #fff); color: var(--text); cursor: pointer; font-size: var(--fs-body);
+}
+.ov-neighbor:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.ov-neighbor-glyph { color: var(--text-dim); }
+.ov-neighbor-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-neighbor-type { font-size: var(--fs-xs); color: var(--text-faint); }
+.ov-neighbor-dir { color: var(--text-faint); }
+.ov-rel-src { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
+.ov-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ov-dot-ok { background: var(--green); }
+.ov-dot-warn { background: var(--amber); }
+.ov-dot-crit { background: var(--red); }
+.ov-dot-unknown { background: var(--border-strong); }
+
+/* (4) Actions — verb 별 ActionForm 구분 */
+.ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
+.ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }

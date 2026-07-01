@@ -45,6 +45,7 @@ import type {
   NodeMetrics,
   ObjectType,
   LinkKind,
+  OntologyObject,
   OntologyObjectList,
   OntologyLinkList,
   ActionResult,
@@ -533,6 +534,11 @@ export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSi
   if (kind) q.set("kind", kind);
   const suffix = q.toString() ? `?${q.toString()}` : "";
   return getJSON<OntologyLinkList>(`/ontology/objects/${encodeURIComponent(id)}/links${suffix}`, signal);
+}
+
+// 단일 canonical 객체(IMP-57 Object View) — deep-link 복원·traverse 대상 해석. 미존재 → 404 throw.
+export function fetchOntologyObject(id: string, signal?: AbortSignal): Promise<OntologyObject> {
+  return getJSON<OntologyObject>(`/ontology/objects/${encodeURIComponent(id)}`, signal);
 }
 
 // Action(writeback) 단일 mutation 계약(IMP-59) — POST /ontology/actions/:name.

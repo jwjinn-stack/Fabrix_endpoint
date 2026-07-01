@@ -54,6 +54,13 @@ export function csvField(def: string[] = []): UrlField<string[]> {
 export const RANGE_VALUES: readonly TimeRange[] = ["1h", "6h", "24h", "7d"] as const;
 export const rangeField: UrlField<TimeRange> = enumField(RANGE_VALUES, "24h");
 
+// Object View(IMP-57) deep-link 스키마 — obj=현재 head, objstack=이전 traverse 스택(CSV).
+// 어느 페이지든 obj 가 있으면 ObjectView 를 연다(페이지 무관 deep-link). back-button 재현용.
+export const objectViewSchema = {
+  obj: strField(""),      // 현재 head object id(빈 문자열 = 닫힘)
+  objstack: csvField([]), // 이전 스택(breadcrumb 복원)
+} as const;
+
 // ───────────────────────── 순수 인코더/디코더 ─────────────────────────
 // (테스트 용이성 — DOM/History 없이 schema + search string 만으로 동작.)
 // 스키마 제약 — 필드 값 타입은 필드마다 다르므로 `any` 로 둔다(매핑 타입이 정확한 T 를 복원).

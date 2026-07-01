@@ -3,7 +3,7 @@
 // client.ts 를 통해 실제 라우터 경로를 검증한다(프로젝트 ethos: 백엔드 0개로 동작).
 import { describe, it, expect, beforeAll } from "vitest";
 import { installMockFetch } from "./mock";
-import { fetchOntologyObjects, fetchOntologyLinks } from "./client";
+import { fetchOntologyObjects, fetchOntologyLinks, fetchOntologyObject } from "./client";
 import type { LinkKind, ObjectType } from "./types";
 
 const OBJECT_TYPES: ObjectType[] = ["Model", "Endpoint", "Service", "GpuDevice", "Node", "Trace", "Incident"];
@@ -97,5 +97,29 @@ describe("ontology graph — edges (via links endpoint)", () => {
 
   it("failure: unknown object id → 404 (throws)", async () => {
     await expect(fetchOntologyLinks("model:does-not-exist")).rejects.toThrow(/404/);
+  });
+});
+
+describe("GET /ontology/objects/:id — 단일 객체(IMP-57)", () => {
+  it("normal: 실재 id → canonical object(id/type/status/revision)", async () => {
+    const list = await fetchOntologyObjects("Model");
+    const sample = list.objects[0];
+    const one = await fetchOntologyObject(sample.id);
+    expect(one.id).toBe(sample.id);
+    expect(one.type).toBe("Model");
+    expect(one.revision).toBeGreaterThanOrEqual(1);
+    expect(["ok", "warn", "crit", "unknown"]).toContain(one.status);
+  });
+
+  it("failure: 미존재 id → 404 (throws)", async () => {
+    await expect(fetchOntologyObject("model:does-not-exist")).rejects.toThrow(/404/);
+  });
+
+  it("라우팅: /:id 가 /:id/links 를 삼키지 않는다(구체 경로 우선)", async () => {
+    const list = await fetchOntologyObjects("Endpoint");
+    const id = list.objects[0].id;
+    const links = await fetchOntologyLinks(id); // 여전히 링크 목록 반환(단일객체 아님)
+    expect(links.object_id).toBe(id);
+    expect(Array.isArray(links.links)).toBe(true);
   });
 });
