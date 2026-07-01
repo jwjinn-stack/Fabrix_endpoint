@@ -16,6 +16,7 @@ import Playground from "./pages/Playground";
 import Eval from "./pages/Eval";
 import Endpoints from "./pages/Endpoints";
 import Gpu from "./pages/Gpu";
+import Topology from "./pages/Topology";
 import Traffic from "./pages/Traffic";
 import Settings from "./pages/Settings";
 import Credentials from "./pages/Credentials";
@@ -103,6 +104,7 @@ function pageContent(
       {effPage === "eval" && <Eval />}
       {effPage === "endpoints" && <Endpoints onNavigate={navigate} />}
       {effPage === "gpu" && <Gpu />}
+      {effPage === "topology" && <Topology />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}
       {effPage === "credentials" && <Credentials />}

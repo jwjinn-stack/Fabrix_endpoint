@@ -19,6 +19,38 @@ const STATUS_COLOR: Record<NodeStatus, string> = {
   crit: "var(--red)",
 };
 
+// IMP-48: status 를 색-only 로 두지 않는다(WCAG 1.4.1). 노드 중앙에 글리프 병기.
+const STATUS_GLYPH: Record<NodeStatus, string> = { ok: "✓", warn: "!", crit: "✕" };
+
+// IMP-48: 노드 body 안에 임베드할 micro-metric 1-2개(정보밀도). kind 별 우선 지표.
+function microMetrics(node: TopologyNode): string[] {
+  const m = node.metrics ?? {};
+  const out: string[] = [];
+  if (node.kind === "service") {
+    if (typeof m.qps === "number") out.push(`${m.qps} q/s`);
+    if (typeof m.error_rate === "number") out.push(`${(m.error_rate * 100).toFixed(1)}% err`);
+  } else if (node.kind === "gpu") {
+    if (typeof m.util_perc === "number") out.push(`${Math.round(m.util_perc * 100)}%`);
+    if (typeof m.temp_c === "number") out.push(`${m.temp_c}°C`);
+  } else {
+    if (typeof m.cpu_util === "number") out.push(`${Math.round(m.cpu_util * 100)}%`);
+  }
+  return out.slice(0, 2);
+}
+
+// IMP-48 directional 엣지: 트래픽(qps) 비례 stroke-width(clamp) + 에러율 색.
+function edgeStrokeWidth(qps?: number): number {
+  if (typeof qps !== "number" || qps <= 0) return 1.4;
+  // qps 0..40 → 1.4..5 로 clamp(로그 대신 선형 근사; 과대 대비 방지).
+  return Math.min(5, Math.max(1.4, 1.4 + (qps / 40) * 3.6));
+}
+function edgeColor(errorRate?: number): string {
+  if (typeof errorRate !== "number") return "var(--border-strong)";
+  if (errorRate >= 0.05) return "var(--red)";
+  if (errorRate >= 0.02) return "var(--amber)";
+  return "var(--border-strong)";
+}
+
 const NODE_R: Record<TopologyNode["kind"], number> = { server: 16, service: 14, gpu: 10 };
 
 export interface TopologyViewProps {
@@ -28,12 +60,27 @@ export interface TopologyViewProps {
   /** 노드 클릭(IMP-45 드릴다운). */
   onSelect?: (nodeId: string) => void;
   height?: number;
+  /** IMP-48: 선택(controlled) 노드 — subgraph isolate 앵커. 1-hop 인접 강조, 비인접 dim. */
+  selectedId?: string | null;
+  /** IMP-48: 노드 body 안 micro-metric 임베드 on/off(기본 true). */
+  showMetrics?: boolean;
 }
 
 interface ViewBox { x: number; y: number; w: number; h: number }
 
-export default function TopologyView({ graph, interactive = true, onSelect, height = 420 }: TopologyViewProps) {
+export default function TopologyView({ graph, interactive = true, onSelect, height = 420, selectedId = null, showMetrics = true }: TopologyViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+
+  // IMP-48 subgraph isolate: 선택 노드의 1-hop 인접 집합(자신 포함). 비인접은 dim.
+  const adjacency = useMemo(() => {
+    if (!selectedId) return null;
+    const near = new Set<string>([selectedId]);
+    for (const e of graph.edges) {
+      if (e.from === selectedId) near.add(e.to);
+      if (e.to === selectedId) near.add(e.from);
+    }
+    return near;
+  }, [selectedId, graph.edges]);
 
   // 순수 레이아웃(그래프 변경 시에만 재계산).
   const layout = useMemo(() => layoutTopology(graph.nodes, graph.edges), [graph.nodes, graph.edges]);
@@ -203,53 +250,81 @@ export default function TopologyView({ graph, interactive = true, onSelect, heig
           </marker>
         </defs>
 
-        {/* 엣지 — Bézier path + 공유 화살촉 마커 */}
+        {/* 엣지 — Bézier path + 공유 화살촉 마커. IMP-48: 트래픽 비례 두께·에러 색·isolate dim·흐름 애니. */}
         <g className="topo-edges">
-          {layout.edgePaths.map((ep, i) =>
-            ep.d ? (
+          {layout.edgePaths.map((ep, i) => {
+            if (!ep.d) return null;
+            // 논리 방향(from→to)으로 원본 엣지 지표를 찾아 두께/색을 인코딩.
+            const meta = graph.edges.find((e) => e.from === ep.from && e.to === ep.to);
+            const sw = edgeStrokeWidth(meta?.qps);
+            const col = edgeColor(meta?.error_rate);
+            const inSubgraph = !adjacency || (adjacency.has(ep.from) && adjacency.has(ep.to));
+            const hoverDim = activeId && ep.from !== activeId && ep.to !== activeId;
+            const dim = adjacency ? !inSubgraph : !!hoverDim;
+            // 흐름 애니: 선택(isolate)된 subgraph 엣지에만. prefers-reduced-motion 은 CSS 로 정지.
+            const flow = !!selectedId && inSubgraph;
+            return (
               <path
                 key={`${ep.from}->${ep.to}-${i}`}
-                className="topo-edge"
+                className={`topo-edge${flow ? " flow" : ""}`}
                 d={ep.d}
                 fill="none"
-                stroke="var(--border-strong)"
-                strokeWidth={1.4}
+                stroke={col}
+                strokeWidth={sw}
                 markerEnd="url(#topo-arrow)"
-                opacity={activeId && ep.from !== activeId && ep.to !== activeId ? 0.35 : 0.85}
+                opacity={dim ? 0.2 : 0.85}
               />
-            ) : null,
-          )}
+            );
+          })}
         </g>
 
-        {/* 노드 — status 링 + 라벨(이스케이프) */}
+        {/* 노드 — status 링 + arc + micro-metric + 라벨(이스케이프). IMP-48. */}
         <g className="topo-nodes">
           {graph.nodes.map((n) => {
             const p = posOf(n.id);
             if (!p) return null;
             const r = NODE_R[n.kind];
             const isActive = n.id === activeId;
+            const isSelected = n.id === selectedId;
             const isFocus = focusIdx != null && graph.nodes[focusIdx]?.id === n.id;
+            const dim = adjacency ? !adjacency.has(n.id) : false;
+            const metrics = showMetrics ? microMetrics(n) : [];
+            const arc = healthArc(n, r);
             return (
               <g
                 key={n.id}
-                className={`topo-node ${n.kind} ${n.status}`}
+                className={`topo-node ${n.kind} ${n.status}${dim ? " dim" : ""}${isSelected ? " selected" : ""}`}
                 transform={`translate(${p.x},${p.y})`}
                 role="button"
                 tabIndex={-1}
-                aria-label={`${n.label}, 종류 ${n.kind}, 상태 ${n.status}`}
+                aria-label={`${n.label}, 종류 ${n.kind}, 상태 ${n.status}${metrics.length ? `, ${metrics.join(", ")}` : ""}`}
                 onClick={() => onSelect?.(n.id)}
-                style={{ cursor: "pointer" }}
+                style={{ cursor: "pointer", opacity: dim ? 0.28 : 1 }}
               >
                 <circle
                   className="topo-node-ring"
                   r={r}
                   fill="var(--surface)"
                   stroke={STATUS_COLOR[n.status]}
-                  strokeWidth={isActive || isFocus ? 3.5 : 2.2}
+                  strokeWidth={isActive || isSelected || isFocus ? 3.5 : 2.2}
                 />
+                {/* proportional multi-arc: error 비율만큼 상태색 arc 를 링 위에 덧그린다(합=1 근사). */}
+                {arc && (
+                  <path className="topo-node-arc" d={arc.d} fill="none" stroke={arc.color} strokeWidth={3.2} strokeLinecap="round" />
+                )}
                 {isFocus && (
                   <circle r={r + 4} fill="none" stroke="var(--primary)" strokeWidth={1.5} strokeDasharray="3 2" />
                 )}
+                {/* status 글리프(색-only 금지, WCAG 1.4.1). 중앙 상단에 작게. */}
+                <text className={`topo-node-glyph ${n.status}`} x={0} y={metrics.length ? -1 : 4} textAnchor="middle">
+                  {STATUS_GLYPH[n.status]}
+                </text>
+                {/* micro-metric 임베드(1-2줄) — 정보밀도. 값은 이스케이프 텍스트. */}
+                {metrics.map((mt, mi) => (
+                  <text key={mi} className="topo-node-metric" x={0} y={9 + mi * 8} textAnchor="middle">
+                    {mt}
+                  </text>
+                ))}
                 <text className="topo-node-label chart-axis-text" x={0} y={r + 14} textAnchor="middle">
                   {n.label}
                 </text>
@@ -271,6 +346,25 @@ export default function TopologyView({ graph, interactive = true, onSelect, heig
       </svg>
     </div>
   );
+}
+
+// IMP-48 proportional health arc(Grafana arc): error_rate 만큼의 원호를 상태색으로 링 위에 그린다.
+// success 부분은 base 링(green stroke)이 이미 표현하므로, error/throttle 비율만 덧그려 "대부분 green이면 healthy".
+// error_rate 가 없거나 0이면 arc 없음(순수 green 링).
+function healthArc(node: TopologyNode, r: number): { d: string; color: string } | null {
+  const err = node.metrics?.error_rate;
+  if (typeof err !== "number" || err <= 0) return null;
+  const frac = Math.min(1, err / 0.1); // 0..10% err → 0..전체 링(과대 표시 방지 클램프)
+  if (frac <= 0.001) return null;
+  const start = -Math.PI / 2; // 12시 방향에서 시계방향
+  const end = start + frac * Math.PI * 2;
+  const x0 = (r * Math.cos(start)).toFixed(2);
+  const y0 = (r * Math.sin(start)).toFixed(2);
+  const x1 = (r * Math.cos(end)).toFixed(2);
+  const y1 = (r * Math.sin(end)).toFixed(2);
+  const large = frac > 0.5 ? 1 : 0;
+  const color = err >= 0.05 ? "var(--red)" : "var(--amber)";
+  return { d: `M${x0},${y0} A${r},${r} 0 ${large} 1 ${x1},${y1}`, color };
 }
 
 // 노드 metrics 를 읽기 좋은 행으로. 값은 문자열(이스케이프 렌더). dangerouslySetInnerHTML 미사용.

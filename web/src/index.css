@@ -761,11 +761,63 @@ body {
   pointer-events: none;
 }
 .topo-edge {
-  transition: opacity 0.15s ease;
+  transition: opacity 0.15s ease, stroke-width 0.15s ease;
 }
-/* reduce-motion: 엣지 트랜지션 정적화 */
+/* IMP-48: select(isolate) 된 subgraph 엣지에 흐름 애니(stroke-dashoffset). */
+.topo-edge.flow {
+  stroke-dasharray: 6 5;
+  animation: topo-flow 0.9s linear infinite;
+}
+@keyframes topo-flow {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+/* IMP-48: 노드 내부 임베드 요소 — 색-only 금지 위해 status 글리프 병기. */
+.topo-node-glyph {
+  font-size: 9px;
+  font-weight: 700;
+  pointer-events: none;
+  fill: var(--text-dim);
+}
+.topo-node-glyph.ok { fill: var(--green); }
+.topo-node-glyph.warn { fill: var(--amber); }
+.topo-node-glyph.crit { fill: var(--red); }
+.topo-node-metric {
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+  fill: var(--text-dim);
+  pointer-events: none;
+}
+.topo-node-arc { pointer-events: none; }
+.topo-node.dim { transition: opacity 0.15s ease; }
+/* IMP-45: 텍스트 요약(complex-image 동등 대안) + 표-보기 래퍼. */
+.topo-summary {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+.topo-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+.topo-summary-risk { color: var(--red) !important; }
+.topo-tables {
+  display: grid;
+  gap: var(--sp-4);
+}
+.topo-dd-hint {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+}
+/* reduce-motion: 엣지 트랜지션·흐름 애니 정적화 */
 @media (prefers-reduced-motion: reduce) {
   .topo-edge {
+    transition: none;
+  }
+  .topo-edge.flow {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  .topo-node.dim {
     transition: none;
   }
 }

@@ -109,4 +109,50 @@ describe("TopologyView — hand-rolled SVG 렌더러 (IMP-47)", () => {
     fireEvent.keyDown(svg, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith("srv");
   });
+
+  // ── IMP-48 시각 완성도 ──
+  it("micro-metric: service 노드에 qps·error% 가 body 안에 임베드된다", () => {
+    const { container } = render(<TopologyView graph={graph} />);
+    expect(container.querySelectorAll(".topo-node-metric").length).toBeGreaterThan(0);
+    // status 글리프도 색-only 금지 위해 병기.
+    expect(container.querySelectorAll(".topo-node-glyph").length).toBe(3);
+  });
+
+  it("directional 엣지: 트래픽(qps) 비례로 stroke-width 가 달라진다", () => {
+    const wide: TopologyGraph = {
+      generated_at: "t", source: "test",
+      nodes: [
+        { id: "a", kind: "service", status: "ok", label: "A" },
+        { id: "b", kind: "service", status: "ok", label: "B" },
+        { id: "c", kind: "service", status: "ok", label: "C" },
+      ],
+      edges: [
+        { from: "a", to: "b", qps: 40 }, // 굵게
+        { from: "b", to: "c", qps: 1 }, // 얇게
+      ],
+    };
+    const { container } = render(<TopologyView graph={wide} />);
+    const paths = Array.from(container.querySelectorAll<SVGPathElement>(".topo-edge"));
+    const widths = paths.map((p) => parseFloat(p.getAttribute("stroke-width") || "0"));
+    expect(Math.max(...widths)).toBeGreaterThan(Math.min(...widths));
+  });
+
+  it("click-isolate: selectedId 의 비인접 노드는 dim 클래스가 붙는다", () => {
+    const iso: TopologyGraph = {
+      generated_at: "t", source: "test",
+      nodes: [
+        { id: "a", kind: "service", status: "ok", label: "A" },
+        { id: "b", kind: "service", status: "ok", label: "B" },
+        { id: "z", kind: "service", status: "ok", label: "Z" }, // a 와 비인접
+      ],
+      edges: [{ from: "a", to: "b" }],
+    };
+    const { container } = render(<TopologyView graph={iso} selectedId="a" />);
+    // a 선택 → a·b 는 인접, z 는 dim.
+    const zNode = Array.from(container.querySelectorAll(".topo-node")).find((g) =>
+      g.getAttribute("aria-label")?.startsWith("Z"),
+    );
+    expect(zNode?.classList.contains("dim")).toBe(true);
+    expect(container.querySelector(".topo-node.selected")).toBeTruthy();
+  });
 });

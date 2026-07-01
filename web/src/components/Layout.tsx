@@ -16,6 +16,7 @@ export type Page =
   | "eval"
   | "endpoints"
   | "gpu"
+  | "topology"
   | "keys"
   | "traffic"
   | "settings"
@@ -36,6 +37,7 @@ const NAV: NavItem[] = [
   { glyph: "◎", label: "평가", page: "eval" },
   { glyph: "⬡", label: "엔드포인트", page: "endpoints" },
   { glyph: "▥", label: "GPU/MIG", page: "gpu" },
+  { glyph: "⧉", label: "토폴로지", page: "topology" },
   { glyph: "▢", label: "키·앱", page: "keys" },
   { glyph: "↯", label: "트래픽", page: "traffic" },
   { glyph: "≣", label: "트레이스", page: "traces" },
