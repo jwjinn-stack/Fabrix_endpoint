@@ -988,7 +988,9 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 /* 데스크톱 우선 관제 콘솔. 좁은 폭에서 사이드바가 콘텐츠를 찌그러뜨리지 않게 한다. */
 @media (max-width: 820px) {
   .app {
-    grid-template-columns: 1fr;
+    /* minmax(0,1fr): 콘텐츠 트랙의 암묵적 min-width:auto(=min-content) 를 0 으로 눌러
+       초협폭(≤~490px)에서 grid 트랙이 콘텐츠 최소폭에 붙어 본문이 가로로 넘치는 것을 막는다. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "topbar"
       "content";
