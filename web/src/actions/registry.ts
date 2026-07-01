@@ -4,7 +4,7 @@
 //
 // 중요: 이 파일은 프론트/mock 공용 계약이다. capability·상태 게이팅은 UI 숨김이 아니라
 // evaluateSubmission()로 판정하고, mock 도 동일 규칙으로 서버 등가 거부(403)를 낸다(trust boundary).
-import type { ActionParam, ObjectStatus, ObjectType, SubmissionCheck } from "../api/types";
+import type { ActionParam, ObjectStatus, ObjectType, SubmissionCheck, TaskStatus } from "../api/types";
 
 // Action 위험 위계(IMP-65) — 시각 레이어 전용(마찰 강도 결정). 계약/게이팅과 무관한 가산 필드.
 //  destructive: 실제 blast radius(상태 전이·워크로드 이전) → 명시적 확인 + type-to-confirm.
@@ -33,6 +33,19 @@ export const STATE_TRANSITION: Record<string, ObjectStatus | undefined> = {
   ack: undefined,
   resolve: "ok",
   snooze: undefined,
+  // PROCESS 층 Task verb(IMP-69) — Task 는 온톨로지 status 를 직접 바꾸지 않는다(process 전이는 props).
+  // status/step 전이는 TASK_STEP_TRANSITION 이 단일 출처(applyAction 이 소비). 온톨로지 status 는 불변.
+  assign: undefined,
+  reassign: undefined,
+  resolveTask: undefined,
+};
+
+// PROCESS 층 Task 상태 전이(IMP-69) — verb → 다음 TaskStatus. Workflow 단계(순차)와 1:1.
+// undefined = 상태 불변(assignee 만 바뀌는 reassign). applyAction 이 Task props(status/workflowStepIndex)를 이걸로 전이.
+export const TASK_STEP_TRANSITION: Record<string, TaskStatus | undefined> = {
+  assign: "assigned",       // open/triaged → assigned (담당자 지정 + 단계 전진)
+  reassign: "in-progress",  // 담당자 교체 → 진행 중으로 전진(재할당은 착수의 신호)
+  resolveTask: "resolved",  // 해소 → terminal 단계
 };
 
 export const ACTION_REGISTRY: Record<string, ActionSpec> = {
@@ -87,6 +100,32 @@ export const ACTION_REGISTRY: Record<string, ActionSpec> = {
     requiredCap: "incident.write",
     sideEffects: ["audit"],
     rulesNote: "silenced_until 설정(온톨로지 status 불변)",
+  },
+  // ── PROCESS 층 Task verb(IMP-69) — Action Inbox 의 과업 전진. capability 게이팅은 나머지와 동일(단일 출처). ──
+  // 실행 = 양 계층 writeback: process 층(Task status/step) 전이 + (resolveTask) subject-matter 디지털트윈 수렴.
+  assign: {
+    name: "assign", target: "Task", label: "담당자 지정",
+    params: [{ name: "assignee", kind: "text", required: true }],
+    requiredCap: "incident.write", // observe(읽기전용)에는 incident.write 없음 → disabled + 사유(two-tier)
+    sideEffects: ["audit", "과업 단계 전진(→ assigned)"],
+    rulesNote: "담당자 지정 → status=assigned(워크플로 단계 전진). 온톨로지 status 불변(process 층 전이).",
+    severity: "low", // 과업 배정 = blast radius 없음 → 확인 없이 즉시.
+  },
+  reassign: {
+    name: "reassign", target: "Task", label: "담당자 변경",
+    params: [{ name: "assignee", kind: "text", required: true }],
+    requiredCap: "incident.write",
+    sideEffects: ["audit", "과업 단계 전진(→ in-progress)"],
+    rulesNote: "담당자 교체 → status=in-progress(착수). 온톨로지 status 불변.",
+    severity: "low",
+  },
+  resolveTask: {
+    name: "resolveTask", target: "Task", label: "과업 해소",
+    params: [{ name: "note", kind: "text", required: false }],
+    requiredCap: "incident.write",
+    sideEffects: ["audit", "알림", "연결 subject-matter 객체 수렴(디지털트윈)"],
+    rulesNote: "해소 → status=resolved(terminal). tracks 대상 객체·spawns 인시던트도 함께 수렴(양 계층 writeback).",
+    severity: "low", // 상태 해소(완화 방향) → 확인 없이 즉시(ack/resolve 관례와 정합).
   },
 };
 

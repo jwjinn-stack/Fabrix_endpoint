@@ -3,7 +3,7 @@
 // 케이스: normal(진입+자동확장 경로+골든시그널) / 임계 hop 라벨 / blast-radius / hop 클릭→드로어(ObjectView)
 //         / ?entity= deep-link 복원 / 미지 entity graceful / env-missing(fetch reject).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from "@testing-library/react";
 import Investigate from "./Investigate";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
@@ -219,5 +219,55 @@ describe("Investigate — 데모 시나리오 재생(IMP-61)", () => {
     // 일반 모드 — 진입 대상 aside 복귀, 데모 컨트롤 바 사라짐.
     await waitFor(() => expect(screen.getByRole("complementary", { name: "진입 대상" })).toBeInTheDocument());
     expect(screen.queryByRole("region", { name: "데모 시나리오 컨트롤" })).toBeNull();
+  });
+});
+
+// IMP-77 — COP 신선도·폴링 정합(IMP-51 규약 승격): 신선도 라벨 + 정지/재개 + stale 유지, 데모는 제외.
+describe("Investigate — IMP-77 신선도·폴링 정합", () => {
+  beforeEach(() => {
+    // KineticStrip(내부)도 폴링하므로 fetchOntologyObjects 카운트 오염 방지 — 빈 알림으로 스텁.
+    vi.spyOn(client, "fetchKineticAlerts").mockResolvedValue({ generated_at: "t", alerts: [], source: "mock" });
+  });
+
+  it("신선도 라벨('자동 15s')과 정지/재개 토글을 렌더한다", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText("모델 M")).toBeInTheDocument());
+    expect(screen.getByText(/자동 15s/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /일시정지/ })).toBeInTheDocument();
+  });
+
+  it("정지 → interval tick 이 fetchOntologyObjects 를 추가 호출하지 않음 / 재개 → 즉시 1회", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.spyOn(client, "fetchOntologyObjects").mockResolvedValue(objList());
+    renderPage();
+    await waitFor(() => expect(screen.getByText("모델 M")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /일시정지/ })); // pause
+    await waitFor(() => expect(screen.getByRole("button", { name: /재개/ })).toBeInTheDocument());
+    const atPause = spy.mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(spy.mock.calls.length).toBe(atPause); // 정지 중 tick 무시
+    fireEvent.click(screen.getByRole("button", { name: /재개/ })); // resume → 즉시 1회
+    await waitFor(() => expect(spy.mock.calls.length).toBe(atPause + 1));
+    vi.useRealTimers();
+  });
+
+  it("fetch 실패(성공 후) → 마지막 경로 유지 + stale 배지", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = vi.spyOn(client, "fetchOntologyObjects");
+    spy.mockResolvedValueOnce(objList()).mockRejectedValue(new Error("Failed to fetch"));
+    renderPage();
+    await waitFor(() => expect(screen.getByText("모델 M")).toBeInTheDocument());
+    await act(async () => { vi.advanceTimersByTime(15_000); });
+    // 에러 배너 + stale 배지 노출. 마지막 성공 경로(모델 M)는 그대로 유지.
+    await waitFor(() => expect(screen.getByText(/마지막으로 받은 데이터를 표시 중입니다/)).toBeInTheDocument());
+    expect(screen.getByText("모델 M")).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("데모 모드에서는 정지/재개 토글이 뜨지 않는다(seeded fixture)", async () => {
+    window.history.replaceState(null, "", "/investigate?demo=1");
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("complementary", { name: "데모 단계" })).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /일시정지|재개/ })).toBeNull();
   });
 });

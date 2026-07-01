@@ -2,7 +2,7 @@
 // back pop, Action 게이팅(observe disabled+사유 / manage enabled), deep-link 복원, 미존재 id 빈 상태.
 // client 온톨로지 fetch 와 capabilities 를 모킹해 결정적으로 구동한다(백엔드 0개).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, cleanup, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from "@testing-library/react";
 import ObjectView from "./ObjectView";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
@@ -235,5 +235,37 @@ describe("ObjectView — 실행 이력 타임라인(IMP-65)", () => {
     expect(verbs[1]).toMatch(/모델 재기동/);
     // outcome 배지(반영됨) 존재.
     expect(document.querySelectorAll(".audit-timeline .badge").length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// IMP-77 — 드로어 신선도·폴링 정합(IMP-51 재사용): 열려 있을 때만 폴링, 신선도 라벨, 닫히면 정지.
+describe("ObjectView — IMP-77 신선도·폴링(열릴 때만)", () => {
+  it("드로어 열림 → 신선도 라벨('자동 15s') + 정지/재개 렌더", async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText("Foo 7B")).toBeInTheDocument());
+    expect(screen.getByText(/자동 15s/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /일시정지/ })).toBeInTheDocument();
+  });
+
+  it("드로어 열림 → interval tick 마다 canonical 재조회(자동 갱신)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    renderView();
+    await waitFor(() => expect(screen.getByText("Foo 7B")).toBeInTheDocument());
+    const before = (client.fetchOntologyObject as unknown as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(15_000); });
+    await waitFor(() =>
+      expect((client.fetchOntologyObject as unknown as ReturnType<typeof vi.fn>).mock.calls.length)
+        .toBeGreaterThan(before),
+    );
+    vi.useRealTimers();
+  });
+
+  it("드로어 닫힘(objectId=null) → interval tick 이 재조회하지 않음(hammering 방지)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const spy = client.fetchOntologyObject as unknown as ReturnType<typeof vi.fn>;
+    renderView(null); // 닫힌 상태로 마운트 — 컴포넌트는 null 렌더, 폴링 비활성.
+    await act(async () => { vi.advanceTimersByTime(30_000); });
+    expect(spy).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

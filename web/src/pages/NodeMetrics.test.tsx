@@ -24,7 +24,14 @@ function makeNode(host: string, overrides: Partial<NodePoint>): NodeMetrics {
 }
 
 const fetchNodeMetrics = vi.fn();
-vi.mock("../api/client", () => ({ fetchNodeMetrics: (...a: unknown[]) => fetchNodeMetrics(...a) }));
+// IMP-71 — HostDetail 하단에 Metric Explorer(<details>)가 있어 fetchObjectMetricTree 를 호출한다. 빈 트리로 스텁.
+vi.mock("../api/client", () => ({
+  fetchNodeMetrics: (...a: unknown[]) => fetchNodeMetrics(...a),
+  fetchObjectMetricTree: (id: string) => Promise.resolve({
+    generated_at: "t", object_id: id, object_type: "Node", range: "1h",
+    categories: [], facet_keys: [], source: "metric-explorer (mock)",
+  }),
+}));
 
 // 페이지가 요청한 host 로 결정적 응답을 준다. 01=정상, 02=위험(swap crit), 03=주의(cpu warn).
 function respond(host: string): NodeMetrics {
@@ -81,6 +88,64 @@ describe("NodeMetrics 화면 (IMP-46 · USE/골든시그널)", () => {
     expect(within(dialog).getByText(/포화 \(Saturation\)/)).toBeInTheDocument();
     expect(within(dialog).getByText(/트래픽 \(Traffic\)/)).toBeInTheDocument();
     expect(within(dialog).getByText("Net RX")).toBeInTheDocument();
+  });
+
+  // ── IMP-80 — 3층 위계 레이아웃(요약 스트립 → 카테고리 카드 그리드 → 전체 메트릭) ──
+  it("IMP-80 Tier1: 상세 상단 요약 스트립에 KPI 게이지(상태 텍스트 병기 aria) 렌더", async () => {
+    render(<NodeMetricsPage />);
+    await waitFor(() => expect(screen.getByText("gpu-node-02")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /gpu-node-02 상세/ }));
+    await waitFor(() => expect(screen.getByText(/노드 상세 — gpu-node-02/)).toBeInTheDocument());
+    const dialog = screen.getByRole("dialog");
+    const strip = within(dialog).getByRole("group", { name: "핵심 지표 요약" });
+    // 게이지(role=img) ≥1, aria-label 에 상태 텍스트(정상/주의/위험) 병기(색-only 아님).
+    const gauges = within(strip).getAllByRole("img");
+    expect(gauges.length).toBeGreaterThan(0);
+    expect(gauges.every((g) => /정상|주의|위험/.test(g.getAttribute("aria-label") ?? ""))).toBe(true);
+  });
+
+  it("IMP-80 Tier2: USE 카테고리 카드 4장 그리드 + 헤더 접기/펼치기", async () => {
+    render(<NodeMetricsPage />);
+    await waitFor(() => expect(screen.getByText("gpu-node-02")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /gpu-node-02 상세/ }));
+    await waitFor(() => expect(screen.getByText(/노드 상세 — gpu-node-02/)).toBeInTheDocument());
+    const dialog = screen.getByRole("dialog");
+    const cards = dialog.querySelectorAll(".metric-cat-card");
+    expect(cards.length).toBe(4); // Utilization / Saturation / Errors / Traffic
+    // 접기/펼치기 — Utilization 카드 헤더 클릭 시 aria-expanded 토글.
+    const utilHead = within(dialog).getByRole("button", { name: /사용량 \(Utilization\)/ });
+    expect(utilHead).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(utilHead);
+    expect(utilHead).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("IMP-80 Tier2: 각 카테고리 카드 헤더에 mini 스파크라인(svg)", async () => {
+    render(<NodeMetricsPage />);
+    await waitFor(() => expect(screen.getByText("gpu-node-02")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /gpu-node-02 상세/ }));
+    await waitFor(() => expect(screen.getByText(/노드 상세 — gpu-node-02/)).toBeInTheDocument());
+    const dialog = screen.getByRole("dialog");
+    const sparks = dialog.querySelectorAll(".metric-cat-spark svg.sparkline");
+    expect(sparks.length).toBe(4); // 카테고리 카드마다 대표 신호 스파크라인.
+  });
+
+  it("IMP-80: 색-only 금지 — 위험 노드 상세에 '위험' 상태 텍스트 병기", async () => {
+    render(<NodeMetricsPage />);
+    await waitFor(() => expect(screen.getByText("gpu-node-02")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /gpu-node-02 상세/ }));
+    await waitFor(() => expect(screen.getByText(/노드 상세 — gpu-node-02/)).toBeInTheDocument());
+    const dialog = screen.getByRole("dialog");
+    // node-02 는 swap crit → 상세 어딘가에 '위험' 텍스트(요약 스트립 + Saturation 카드 행).
+    expect(within(dialog).getAllByText(/위험/).length).toBeGreaterThan(0);
+  });
+
+  it("IMP-80 Tier3: '전체 메트릭' disclosure(IMP-71 explorer) 유지 — 회귀 없음", async () => {
+    render(<NodeMetricsPage />);
+    await waitFor(() => expect(screen.getByText("gpu-node-02")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /gpu-node-02 상세/ }));
+    await waitFor(() => expect(screen.getByText(/노드 상세 — gpu-node-02/)).toBeInTheDocument());
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/전체 메트릭/)).toBeInTheDocument();
   });
 
   it("에러(모든 호스트 실패) → humanizeError 메시지(role=alert)", async () => {

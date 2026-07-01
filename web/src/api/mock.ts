@@ -10,7 +10,7 @@
 
 import type {
   APIKeyView, Capabilities, ConfigStatus, ConfigView, DiagReport, DiagStatus, ChatResponse, DashboardOverview, Endpoint, EndpointPreview,
-  EnginePipeline, EvalResult, EvalDataset, EvalDatasetItem, Experiment, ExperimentCaseResult, ExperimentConfig, GPUDevice, GPUReport, GPUTimeseries, GuardAuditReport,
+  EnginePipeline, EvalResult, EvalDataset, EvalDatasetItem, Experiment, ExperimentCaseResult, ExperimentConfig, GPUDevice, GPUReport, GPUTimeseries, GpuHardware, GuardAuditReport,
   GuardAuditRow, GuardDecision, GuardPolicy, GuardVerdict, HarborModel, HarborStatus,
   ImportResult, Incident, IssuedKey, MaskingPolicy, MetricDimension, MetricMeta, MetricsBreakdown, MetricsBreakdownRow, ModelCatalog, ModelInfo, ModelMetric, ModelMetricsReport,
   OrgTree, ProxyStats, Score, SessionDetail, SessionListReport, SessionSummary, SessionTurn,
@@ -18,13 +18,23 @@ import type {
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
   ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
-  ActionAuditEntry, ActionOutcome, ActionResult,
+  ObjectMetricsReport, ObjectMetricSeries,
+  ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
+  ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
+  MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
+  TaskProps, TaskPriority, TaskStatus, WorkflowDef,
 } from "./types";
-import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
+import { ACTION_REGISTRY, STATE_TRANSITION, TASK_STEP_TRANSITION, evaluateSubmission } from "../actions/registry";
+import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
-import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
+import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } from "./mockFactory";
+// GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
+import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
-import { runAgentLoop } from "./agent";
+// IMP-78 — 클러스터 인사이트(생성적) 순수 조립. HARD grounding(인용 강제)은 buildAgentInsights 내부에서.
+import { runAgentLoop, buildAgentInsights } from "./agent";
+// Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
+import { attributeDetections } from "./detection";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -381,6 +391,85 @@ function genUsageTrend(range: TimeRange): UsageTrend {
   return { range, generated_at: new Date().toISOString(), bucket_sec: stepSec, points };
 }
 
+// ── 풀-피델리티 GPU 하드웨어 (IMP-76 track A) ─────────────────────────────
+// DCGM 확정 필드셋을 결정적으로 생성. 실 수집은 IMP-79 spike(일부 opt-in) — 여기선 mock.
+// XID 라벨·throttle 비트마스크 디코더는 도메인 모듈(gpuHardware.ts)에서 재사용(단일 출처).
+// (호환: 테스트가 ./mock 에서 참조하던 것도 아래 re-export 로 유지.)
+export { XID_LABELS, xidLabel, decodeClocksEventReasons };
+
+// GpuHardware 를 seedKey 로 결정적 생성(hash+rng, mockFactory 관례). idle/온도 힌트로 시나리오 정합:
+//  - hot=true(온도 높음) → thermal 비트 + throttle · XID 확률↑ · NVLink replay↑
+//  - 15s 버킷 seed 로 "살아있는" 변동(같은 버킷/키 → 동일 값 = 결정적).
+function genGpuHardware(seedKey: string, opts: { util?: number; hot?: boolean } = {}): GpuHardware {
+  const r = rng(hash(`hw:${seedKey}:${Math.floor(Date.now() / 15000)}`));
+  const util = opts.util ?? r();
+  const hot = opts.hot ?? false;
+
+  // clock: 부하·throttle 에 따라 base clock 대비 하락. H100 SM ~1980MHz, HBM3 ~2619MHz 근사.
+  const throttled = hot || r() > 0.82;
+  const smClock = Math.round((throttled ? 1400 : 1830) + util * 150 - (throttled ? r() * 200 : 0));
+  const memClock = throttled ? Math.round(2200 + r() * 200) : 2619;
+
+  // throttle 비트마스크 — hot 이면 thermal(0x8|0x40), 가끔 power(0x4). 아니면 대개 0(제약 없음).
+  let reasons = 0;
+  if (hot) reasons |= 0x0000000000000008 | 0x0000000000000040; // HW+SW thermal
+  if (throttled && r() > 0.5) reasons |= 0x0000000000000004; // SW power cap
+  if (util < 0.05) reasons |= 0x0000000000000200; // low utilization
+
+  // 최근 XID — 대부분 0(정상). hot 이거나 낮은 확률로 대표 결함 코드 하나.
+  const xidPool = [48, 63, 74, 79, 94, 31, 13, 43];
+  const xidRecent = (hot && r() > 0.55) || r() > 0.94 ? xidPool[Math.floor(r() * xidPool.length)] : 0;
+
+  // NVLink — H100 은 18 링크지만 표시는 대표 6링크(L0–L5). throughput KiB/s, 오류는 hot 에서 급증.
+  const nvBase = util * 22_000_000; // ~22 GiB/s 근사(KiB/s 스케일)
+  const throughput = Array.from({ length: 6 }, (_, i) =>
+    Math.round(nvBase * (0.6 + r() * 0.8) * (i === 2 && hot ? 1.4 : 1)));
+  const nvErrScale = hot ? 40 : 1;
+  const nvlink = {
+    throughput_kibs: throughput,
+    total_kibs: throughput.reduce((s, v) => s + v, 0),
+    crc_errors: Math.round(r() * 3 * nvErrScale),
+    replay_errors: Math.round(r() * 5 * nvErrScale),
+    recovery_errors: Math.round(r() * 2 * (hot ? 8 : 1)),
+  };
+
+  // PCIe — Gen5 x16 ~ 63 GB/s. 누적 bytes(단조 증가 근사).
+  const pcie = {
+    tx_bytes: Math.round((5 + util * 55) * 1e9 + r() * 4e9),
+    rx_bytes: Math.round((6 + util * 50) * 1e9 + r() * 4e9),
+    replay_counter: Math.round(r() * (hot ? 30 : 4)),
+  };
+
+  // ECC — aggregate 는 영구 누적(작지만 0 아닐 수 있음), volatile 은 대개 0. DBE 는 hot/XID 와 상관.
+  const dbe = xidRecent === 48 || xidRecent === 94 ? 1 + Math.floor(r() * 2) : 0;
+  const ecc = {
+    sbe_volatile: Math.floor(r() * (hot ? 6 : 2)),
+    dbe_volatile: dbe,
+    sbe_aggregate: Math.floor(20 + r() * 400),
+    dbe_aggregate: dbe + Math.floor(r() * 2),
+  };
+
+  // per-process — 대표 프로세스 1–2개(DCGM accounting 제약 note). 이름은 서빙 스택 관례.
+  const procNames = ["python (vllm)", "tritonserver", "python (sglang)", "dynamo-worker"];
+  const nProc = 1 + Math.floor(r() * 2);
+  const processes = Array.from({ length: nProc }, (_, i) => ({
+    pid: 1000 + Math.floor(r() * 60000),
+    name: procNames[Math.floor(r() * procNames.length)] || procNames[i % procNames.length],
+    mem_used_mb: Math.round((8000 + r() * 50000) / nProc),
+  }));
+
+  return {
+    sm_clock_mhz: smClock,
+    mem_clock_mhz: memClock,
+    xid_recent: xidRecent,
+    clocks_event_reasons: reasons,
+    nvlink,
+    pcie,
+    ecc,
+    processes,
+  };
+}
+
 function genGPU(): GPUReport {
   const hosts = ["gpu-node-01", "gpu-node-02", "gpu-node-03"];
   const devices: GPUDevice[] = [];
@@ -399,6 +488,8 @@ function genGPU(): GPUReport {
         sm_active: +(util / 100 * (0.7 + r() * 0.3)).toFixed(2),
         tensor_active: +(util / 100 * (0.5 + r() * 0.4)).toFixed(2),
         mig_efficiency: +(0.6 + r() * 0.35).toFixed(2),
+        // 풀-피델리티 하드웨어(IMP-76) — uuid seed 로 결정적. 온도 높으면 thermal throttle 시나리오.
+        hw: genGpuHardware(`GPU-${host}-${g}`, { util: util / 100, hot: temp >= 87 }),
       });
     }
   });
@@ -868,29 +959,82 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
-// Action(writeback) mock 상태(IMP-59) — buildOntology 는 매 호출 결정적으로 재구성되므로,
+// ───────────── PROCESS 레이어 — Task / Workflow (IMP-69) ─────────────
+// Palantir operational-process-coordination(§1B·§4): 디지털트윈(subject-matter) 위에 얹는 과업 층.
+// Incident(장애 이벤트)를 assignee·priority·status·workflow 를 가진 1급 Task 로 승격해 Action Inbox 진입점을 만든다.
+//
+// 순차 워크플로 — Task.status/workflowStepIndex 가 이 배열의 위치와 1:1(단일 출처). resolved 가 terminal.
+const INCIDENT_WORKFLOW: WorkflowDef = {
+  id: "wf-incident",
+  name: "인시던트 대응",
+  steps: [
+    { key: "triaged", label: "분류" },
+    { key: "assigned", label: "배정" },
+    { key: "in-progress", label: "조치 중" },
+    { key: "resolved", label: "해소", terminal: true },
+  ],
+};
+// TaskStatus → INCIDENT_WORKFLOW.steps 내 인덱스(status↔step 동기화). 미지 status 는 0(방어).
+function workflowStepIndex(status: TaskStatus): number {
+  const i = INCIDENT_WORKFLOW.steps.findIndex((s) => s.key === status);
+  return i < 0 ? 0 : i;
+}
+// AlarmSeverity → TaskPriority (심각도가 우선순위를 좌우 — critical=urgent).
+function severityToPriority(sev: string): TaskPriority {
+  return sev === "critical" ? "urgent" : sev === "warning" ? "high" : "med";
+}
+// 결정적 담당자 배정 — 운영자 풀에서 seed(incident id)로 고른다(mock; 재현 가능).
+const OPERATORS = ["김운영", "이온콜", "박SRE", "최플랫폼"];
+function assigneeFor(seedKey: string): string {
+  return OPERATORS[hash(`assignee:${seedKey}`) % OPERATORS.length];
+}
+
+// Action(writeback) mock 상태(IMP-59) — buildOntology 는 결정적으로 재구성되므로,
 // 실행된 action 의 결과(status 전이·revision 증가)를 여기 override 로 얹어 다음 조회에 반영한다.
-// (단일 출처: 아래 applyAction 만 여길 쓰고, buildOntology 의 add 가 얹는다.)
+// (단일 출처: applyAction 만 여길 쓰고, buildOntology 의 add 와 applyAction 응답이 mergeOverride 로 함께 얹는다.)
 interface OntologyOverride { status?: ObjectStatus; revision: number; props?: Record<string, unknown>; }
 const ONTOLOGY_OVERRIDES: Record<string, OntologyOverride> = {};
+
+// writeback ↔ 재구성 정합(IMP-81) — override 를 canonical base 에 얹는 **단일 순수 merge**.
+// 재구성 경로(buildOntology 의 add)와 writeback 응답 경로(applyAction 의 object)가 이 함수 하나만
+// 쓰므로, 같은 객체가 "직접 조회" 든 "그래프 재구성" 이든 절대 어긋나지 않는다(revision 기준 병합).
+function mergeOverride(base: OntologyObject, ov?: OntologyOverride): OntologyObject {
+  if (!ov) return base;
+  return {
+    ...base,
+    status: ov.status ?? base.status,
+    revision: ov.revision ?? base.revision,
+    props: ov.props ? { ...base.props, ...ov.props } : base.props,
+  };
+}
 // idempotencyKey → 이미 반영된 ActionResult. 동일 키 재전송 시 중복 전이 없이 같은 결과 반환.
 const ACTION_IDEMPOTENCY: Record<string, ActionResult> = {};
 // 전체 audit 라인(최근 실행 순). 미래 Notifications/audit 화면 소비용.
 const ACTION_AUDIT: ActionAuditEntry[] = [];
 
+// 온톨로지 스냅샷 요청단위 메모이즈(IMP-81) — buildOntology 는 파생(objects/links/metrics/agent/action)이
+// 각자 부르면 buildTopology·genGpuHardware·genTraceList 를 매번 재계산해 O(N) 중복이 된다.
+// 한 요청에서 스냅샷을 **한 번만** 만들어 모든 파생이 공유하도록 캐시한다. route() 가 요청 경계에서
+// resetOntologySnapshot() 으로 무효화하므로, 요청 사이의 "살아있는" 변동은 그대로 유지된다.
+type OntologySnapshot = { objects: OntologyObject[]; links: OntologyLink[] };
+let SNAPSHOT_CACHE: OntologySnapshot | null = null;
+// 캐시 무효화 — 요청 경계(route 진입) + writeback 반영(applyAction override 갱신) 직후에 호출.
+function resetOntologySnapshot(): void { SNAPSHOT_CACHE = null; }
+
+// §5.2 척추 그래프 조회 — 요청단위 캐시. 없으면 buildOntologyFresh 로 결정적 재구성 후 저장.
+function buildOntology(): OntologySnapshot {
+  if (SNAPSHOT_CACHE) return SNAPSHOT_CACHE;
+  SNAPSHOT_CACHE = buildOntologyFresh();
+  return SNAPSHOT_CACHE;
+}
+
 // §5.2 척추 그래프를 결정적으로 구성. seed 는 buildTopology 와 동일 소스라 재현 가능.
-function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
+function buildOntologyFresh(): OntologySnapshot {
   const objects: OntologyObject[] = [];
   const links: OntologyLink[] = [];
   const add = <T extends Record<string, unknown>>(id: string, type: ObjectType, title: string, status: ObjectStatus, props: T) => {
-    // action 으로 반영된 override(status/revision/props)를 canonical 로 얹는다.
-    const ov = ONTOLOGY_OVERRIDES[id];
-    objects.push({
-      id, type, title,
-      props: ov?.props ? { ...props, ...ov.props } : props,
-      status: ov?.status ?? status,
-      revision: ov?.revision ?? 1,
-    });
+    // action 으로 반영된 override(status/revision/props)를 canonical 로 얹는다(mergeOverride 단일 출처).
+    objects.push(mergeOverride({ id, type, title, props, status, revision: 1 }, ONTOLOGY_OVERRIDES[id]));
   };
 
   // ── Model (MODELS) ── id 접두 model: 로 네임스페이스 충돌 회피.
@@ -922,7 +1066,17 @@ function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
     if (n.kind === "server") {
       add(`node:${n.id}`, "Node", n.label, topoStatus(n.status), { hostname: n.id, ...(n.metrics ?? {}) });
     } else if (n.kind === "gpu") {
-      add(`gpu:${n.id}`, "GpuDevice", n.label, topoStatus(n.status), { device: n.id, ...(n.metrics ?? {}) });
+      // 풀-피델리티 하드웨어(IMP-76) — 온톨로지 GpuDevice 객체에 하드웨어 필드를 얹어
+      // ObjectView 'GPU 하드웨어' 섹션이 읽게 한다. seed 는 node id(결정적). temp≥87 → thermal 시나리오.
+      const gm = n.metrics ?? {};
+      const hw = genGpuHardware(n.id, { util: gm.util_perc, hot: (gm.temp_c ?? 0) >= 87 });
+      add(`gpu:${n.id}`, "GpuDevice", n.label, topoStatus(n.status), {
+        device: n.id, ...gm,
+        // 요약 키(ObjectView Properties/badge 가 바로 읽음) + 중첩 hw(하드웨어 섹션이 재구성).
+        xid_recent: hw.xid_recent,
+        throttle: decodeClocksEventReasons(hw.clocks_event_reasons).join(", ") || "제약 없음",
+        hw,
+      });
     } else {
       // service — Topology service id 는 model id 와 겹칠 수 있어 service: 접두로 분리.
       add(`service:${n.id}`, "Service", n.label, topoStatus(n.status), { name: n.id, ...(n.metrics ?? {}) });
@@ -999,6 +1153,38 @@ function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
     }
   }
 
+  // ── PROCESS 층 Task (IMP-69) — 각 Incident 를 assignee·priority·status·workflow 를 가진 1급 과업으로 승격 ──
+  // 디지털트윈(subject-matter) 위에 얹는 과업 층. Incident --spawns--> Task, Task --tracks--> {영향 subject-matter}.
+  // 결정적: assignee/priority/status/linkedObjectIds 는 incident id + severity + affects 링크에서 파생(재현 가능).
+  const existingIds = new Set(objects.map((o) => o.id)); // Task tracks 대상 필터용(실재 객체만).
+  for (const inc of INCIDENTS) {
+    const incId = `incident:${inc.id}`;
+    const taskId = `task:${inc.id}`;
+    // 이 인시던트가 affects 하는 subject-matter 객체(위 Incident 루프가 이미 링크를 만들어 둠) = 과업이 tracks 할 대상.
+    const linkedObjectIds = links
+      .filter((l) => l.from === incId && l.linkKind === "affects")
+      .map((l) => l.to)
+      .filter((id) => existingIds.has(id));
+    // 초기 status — 이미 사람이 개입(acked)한 인시던트는 assigned 로 시작, 아니면 triaged(분류만 됨).
+    const seedStatus: TaskStatus = inc.state === "acked" || inc.state === "resolved" ? "assigned" : "triaged";
+    const props: TaskProps = {
+      title: `[대응] ${inc.title}`,
+      assignee: seedStatus === "assigned" ? assigneeFor(inc.id) : "",
+      createdAt: inc.first_seen,
+      assignedAt: seedStatus === "assigned" ? inc.last_seen : undefined,
+      priority: severityToPriority(inc.severity),
+      status: seedStatus,
+      linkedObjectIds,
+      workflowId: INCIDENT_WORKFLOW.id,
+      workflowStepIndex: workflowStepIndex(seedStatus),
+      spawnedByIncidentId: inc.id,
+    };
+    // Task 는 process 객체라 온톨로지 status 는 항상 중립(unknown) — 상태 렌즈는 subject-matter 전용.
+    add(taskId, "Task", props.title, "unknown", props as unknown as Record<string, unknown>);
+    links.push({ from: incId, to: taskId, linkKind: "spawns" });
+    for (const objId of linkedObjectIds) links.push({ from: taskId, to: objId, linkKind: "tracks" });
+  }
+
   // dangling 링크 방지 — 실재 object id 만 남긴다(단일 출처 무결성).
   const ids = new Set(objects.map((o) => o.id));
   const clean = links.filter((l) => ids.has(l.from) && ids.has(l.to));
@@ -1014,16 +1200,156 @@ const AGENT_AUDIT: import("./types").AgentAuditEntry[] = [];
 let AGENT_SEQ = 0;
 
 function runAgentMock(body: Record<string, unknown>): import("./types").AgentRun {
-  const { objects, links } = buildOntology();
+  // 순수/부작용 경계(IMP-81) — 여기서 딱 둘로 나뉜다:
+  //  (1) 순수 계산: runAgentLoop(공유 스냅샷 → 결정적 결과). 부작용·시각 의존 없음.
+  //  (2) mock 부작용: transcript 를 전역 AGENT_AUDIT 에 append(향후 audit/trace 표면 소비).
+  // 향후 실제 추론 옵션(IMP-78)은 (1)의 runAgentLoop 자리만 transport 로 스왑하고 (2)는 그대로 두면 된다.
+  const { objects, links } = buildOntology(); // 요청단위 공유 스냅샷(재구성 중복 없음).
   const intent = typeof body.intent === "string" ? body.intent : undefined;
   const entity = typeof body.entity === "string" ? body.entity : undefined;
   AGENT_SEQ++;
   // traceId — 결정적 접두 + 시퀀스(테스트가 존재만 검증). 원문/시크릿은 담지 않는다.
   const traceId = `agtr_${AGENT_SEQ.toString(36)}_${hash(`${intent ?? ""}:${entity ?? ""}`).toString(36)}`;
-  const run = runAgentLoop(objects, links, { intent, entity, traceId });
-  // transcript 를 전역 audit 에 append(최근 실행 순) — trace ID 로 키잉.
-  for (const a of run.audit) AGENT_AUDIT.unshift(a);
+  const run = runAgentLoop(objects, links, { intent, entity, traceId }); // (1) 순수
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);                      // (2) 부작용
   return run;
+}
+
+// ── 클러스터 인사이트(IMP-78) — Dynamo 로컬 모델이 온톨로지 근거로 군집·패턴 도출 ──
+// runAgentMock 과 동일한 순수/부작용 경계(IMP-81): (1) buildAgentInsights(공유 스냅샷 → 결정적 결과),
+// (2) transcript audit 를 AGENT_AUDIT 에 append. VITE_MOCK=off 면 이 자리(모델 completion)만 실 Dynamo 로 스왑되고
+// (client.runAgentInsights 가 그대로 실백엔드로), HARD grounding(parseAndGroundInsights)은 어느 경로든 동일 강제.
+function runAgentInsightsMock(): import("./types").AgentInsightRun {
+  const { objects, links } = buildOntology(); // 요청단위 공유 스냅샷(재구성 중복 없음).
+  AGENT_SEQ++;
+  const traceId = `agti_${AGENT_SEQ.toString(36)}_${hash("insights").toString(36)}`;
+  const run = buildAgentInsights(objects, links, { traceId }); // (1) 순수 — 결정적 mock completion + 인용 강제.
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);            // (2) 부작용
+  return run;
+}
+
+// GET /ontology/detections — 감지 이상을 온톨로지 객체에 귀속시킨 Kinetic 알림(IMP-72).
+// buildOntology() 메모이즈 스냅샷(IMP-81) 재사용 후 attributeDetections(순수) 호출. read-only.
+//  - 노이즈 억제(dedupe/state-transition/sustained collapse)는 파생 레이어(detection.ts) 내장.
+//  - sustained collapse: 직전 호출에서 이미 승격됐던 객체는 breachCount=2(지속 임계초과)로 접는다.
+//    (요청 사이의 "살아있는" 상태 — SNAPSHOT_CACHE 는 요청 경계마다 무효화되나 이 집합은 유지된다.)
+let PREV_ALERT_IDS: Set<string> = new Set();
+function ontologyDetections(): KineticAlertList {
+  const { objects, links } = buildOntology(); // 공유 스냅샷(재구성 중복 없음).
+  const alerts = attributeDetections(objects, links, { previousObjectIds: PREV_ALERT_IDS });
+  PREV_ALERT_IDS = new Set(alerts.map((a) => a.objectId));
+  return { generated_at: new Date().toISOString(), alerts, source: "ontology detection (mock)" };
+}
+
+// ───────────── 메트릭 소스 / 익스포터 커버리지 (IMP-74) ─────────────
+// Diagnostics(연동 상태)는 외부 의존성 능동 프로브(도달성)이고, 이건 '어떤 신호를 어떤 익스포터가 주고
+// 무엇이 아직 갭인가'를 보여주는 커버리지 인벤토리. mock-first — 실 스왑은 VictoriaMetrics up{job}+샘플수+age.
+
+// 3단 상태 판정 — **up 단독 금지**(단일 출처: 실 스왑도 이 함수를 그대로 쓴다).
+//  up=0 → NOT_CONFIGURED · up=1 & (samples=0 또는 age>임계) → CONFIGURED_NO_DATA · 그 외 → HEALTHY.
+export const SCRAPE_STALE_SEC = 120; // last-scrape age 임계(초) — 초과 시 "타깃 살아있어도 계열 정체"로 판정.
+export function deriveSourceStatus(s: MetricSourceScrape): MetricSourceStatus {
+  if (s.up !== 1) return "NOT_CONFIGURED";
+  if (s.scrape_samples_scraped <= 0 || s.last_scrape_age_sec > SCRAPE_STALE_SEC) return "CONFIGURED_NO_DATA";
+  return "HEALTHY";
+}
+
+// 결정적 scrape 상태 — seed(소스 id)로 up/샘플/age 를 만들어 3단 상태가 재현되게 한다.
+//  대부분 HEALTHY, 하나(process-exporter)는 CONFIGURED_NO_DATA(타깃 up 이지만 계열 빔), 하나(blackbox)는 NOT_CONFIGURED.
+function mkScrape(job: string, kind: "healthy" | "no_data" | "not_configured"): MetricSourceScrape {
+  const r = rng(hash(`scrape:${job}`));
+  if (kind === "not_configured") return { job, up: 0, scrape_samples_scraped: 0, last_scrape_age_sec: 0 };
+  if (kind === "no_data") return { job, up: 1, scrape_samples_scraped: 0, last_scrape_age_sec: Math.round(8 + r() * 6) };
+  return { job, up: 1, scrape_samples_scraped: Math.round(200 + r() * 4000), last_scrape_age_sec: Math.round(3 + r() * 10) };
+}
+
+// GET /metric-sources — 익스포터 축(소스 카드) + 신호×객체 커버리지 매트릭스(covered + gap).
+// 소스/갭은 문서화된 표준(kube-prometheus-stack 역할 분리) 기반의 정적 커버리지 지식이지만,
+// 상태(3단)는 결정적 scrape 에서 파생(실 스왑 대상)하고 대상 객체 타입은 온톨로지 ObjectType 과 정합.
+function genMetricSourceCoverage(): MetricSourceCoverage {
+  const sources: MetricSourceCard[] = [
+    {
+      id: "node_exporter", label: "node_exporter", role: "호스트 OS 자원(USE) — CPU·메모리·디스크·네트워크",
+      protocol: "prometheus",
+      families: ["node_cpu_seconds_total", "node_memory_*", "node_filesystem_*", "node_network_*", "node_load1"],
+      targetTypes: ["Node"],
+      scrape: mkScrape("node-exporter", "healthy"), status: "HEALTHY", notes: [],
+    },
+    {
+      id: "kube-state-metrics", label: "kube-state-metrics", role: "K8s 오브젝트 상태 — Deployment·Pod·replica·컨디션",
+      protocol: "prometheus",
+      families: ["kube_pod_status_phase", "kube_deployment_status_replicas", "kube_pod_container_status_restarts_total"],
+      targetTypes: ["Endpoint", "Model"], targetNote: "Endpoint/Model(파드·레플리카 상태)",
+      scrape: mkScrape("kube-state-metrics", "healthy"), status: "HEALTHY", notes: [],
+    },
+    {
+      id: "cadvisor", label: "cAdvisor", role: "컨테이너/cgroup 자원 — 메모리 압박·CPU throttle·재시작",
+      protocol: "prometheus",
+      families: ["container_memory_working_set_bytes", "container_cpu_cfs_throttled_seconds_total", "container_memory_failcnt"],
+      targetTypes: ["Model", "Endpoint"], targetNote: "Model pod(컨테이너)",
+      scrape: mkScrape("cadvisor", "healthy"), status: "HEALTHY", notes: [],
+    },
+    {
+      id: "dcgm-exporter", label: "DCGM-exporter", role: "GPU 하드웨어 — util·메모리·온도·throttle·XID·NVLink·ECC",
+      protocol: "prometheus",
+      families: ["DCGM_FI_DEV_GPU_UTIL", "DCGM_FI_DEV_FB_USED", "DCGM_FI_DEV_GPU_TEMP", "DCGM_FI_DEV_XID_ERRORS", "DCGM_FI_PROF_NVLINK_*"],
+      targetTypes: ["GpuDevice"],
+      scrape: mkScrape("dcgm-exporter", "healthy"), status: "HEALTHY",
+      // NVML 은 독립 카드 금지(DCGM 하위 라이브러리) — per-process 미지원을 DCGM 카드 안 배지로만(잘못된 신뢰 방지).
+      notes: [{
+        label: "per-process = 미지원 (알려진 갭)",
+        detail: "NVML(DCGM 하위 라이브러리)은 per-device 총량만 — 프로세스별 GPU 메모리 귀속은 원천 미지원. time-slicing 파드 귀속 불가.",
+        issue: "#521", tone: "warn",
+      }],
+    },
+    {
+      id: "process-exporter", label: "process-exporter", role: "프로세스별 자원 + TCP 상태(재전송·연결)",
+      protocol: "prometheus",
+      families: ["namedprocess_namegroup_cpu_seconds_total", "namedprocess_namegroup_memory_bytes", "node_netstat_Tcp_RetransSegs"],
+      targetTypes: ["Node", "Endpoint"],
+      // 타깃 up 이지만 계열 빔(CONFIGURED_NO_DATA) — 3단 상태 데모(up 단독으론 HEALTHY 판정 안 함).
+      scrape: mkScrape("process-exporter", "no_data"), status: "CONFIGURED_NO_DATA",
+      notes: [{ label: "계열 빔 (scrape_samples_scraped=0)", detail: "타깃 up=1 이지만 마지막 스크랩 샘플 0 — process names 구성(-config.path) 확인 필요.", tone: "info" }],
+    },
+    {
+      id: "blackbox-exporter", label: "blackbox-exporter", role: "엔드포인트 probe — HTTP/TCP 도달성·응답시간·TLS 만료",
+      protocol: "prometheus",
+      families: ["probe_success", "probe_http_duration_seconds", "probe_ssl_earliest_cert_expiry", "probe_tcp_*"],
+      targetTypes: ["Endpoint"],
+      // 미구성(NOT_CONFIGURED) — up=0. 배포하면 Endpoint×TCP/HTTP probe 갭이 닫힌다.
+      scrape: mkScrape("blackbox-exporter", "not_configured"), status: "NOT_CONFIGURED",
+      notes: [{ label: "미구성 (up=0)", detail: "스크레이프 타깃 없음 — 배포 시 Endpoint HTTP/TCP probe·TLS 만료 신호 확보.", tone: "info" }],
+    },
+  ];
+  // 상태는 항상 파생 함수로 재판정(카드에 적은 status 와 일치 — 단일 출처 보장, 실 스왑 시에도 동일).
+  for (const s of sources) s.status = deriveSourceStatus(s.scrape);
+
+  // 커버리지 매트릭스 — covered 셀(대표) + GAP 셀(1급 노출). GAP 은 클릭 → 드릴다운/추천 익스포터.
+  const coverage: SignalCoverageCell[] = [
+    // covered — 무엇이 되는가(매트릭스 대비군).
+    { signal: "CPU·메모리·디스크 (USE)", objectType: "Node", covered: true, sourceId: "node_exporter" },
+    { signal: "네트워크 처리량/에러", objectType: "Node", covered: true, sourceId: "node_exporter" },
+    { signal: "GPU util·온도·throttle·XID", objectType: "GpuDevice", covered: true, sourceId: "dcgm-exporter" },
+    { signal: "레플리카·파드 상태", objectType: "Endpoint", covered: true, sourceId: "kube-state-metrics" },
+    // GAP — 아직 안 잡히는 신호(1급). reason 카피 + 추천 익스포터 + 드릴다운.
+    {
+      signal: "per-process GPU memory", objectType: "GpuDevice", covered: false,
+      reason: "DCGM/NVML 원천 한계 — per-device 총량만. time-slicing 파드 귀속 불가.",
+      recommended: "dcgm-exporter", issue: "#521", drilldown: "gpu",
+    },
+    {
+      signal: "container memory pressure", objectType: "Model", objectLabel: "Model pod", covered: false,
+      reason: "컨테이너 cgroup 메모리 압박은 미수집 — cAdvisor 필요.",
+      recommended: "cadvisor", drilldown: "investigate",
+    },
+    {
+      signal: "TCP retransmit", objectType: "Endpoint", covered: false,
+      reason: "TCP 재전송/연결 상태는 미수집 — node/process-exporter 또는 blackbox 필요.",
+      recommended: "blackbox-exporter", drilldown: "nodes",
+    },
+  ];
+
+  return { generated_at: new Date().toISOString(), sources, coverage, source: "metric-source coverage (mock)" };
 }
 
 // GET /ontology/objects?type=&filter= — type(ObjectType) + filter(title/id 부분일치).
@@ -1050,6 +1376,250 @@ function ontologyLinks(id: string, kind?: string): OntologyLinkList | null {
   let rows = links.filter((l) => l.from === id || l.to === id);
   if (kind) rows = rows.filter((l) => l.linkKind === kind); // 알 수 없는 kind → 빈 배열.
   return { generated_at: new Date().toISOString(), object_id: id, links: rows, source: "ontology (mock)" };
+}
+
+// GET /ontology/objects/:id/metrics?range= — get_object_metrics tool(IMP-73)의 데이터 경로.
+// 객체 props 의 수치 필드에서 메트릭 시리즈를 결정적으로 파생(mock). 새 데이터 모델을 만들지 않고
+// 온톨로지 객체의 이미 있는 수치를 현재값으로 삼고, id+range+key seed 로 안정적인 sparkline 을 만든다.
+// 미존재 object id → null(라우터에서 404).
+const RANGE_POINTS: Record<string, number> = { "1h": 12, "6h": 12, "24h": 24, "7d": 14 };
+// 메트릭 키 → 사람용 라벨/단위(알려진 키만 승격, 나머지는 raw 수치 그대로 노출).
+const METRIC_META: Record<string, { label: string; unit: string }> = {
+  util_perc: { label: "GPU 사용률", unit: "%" }, mem_used_gb: { label: "메모리 사용", unit: "GB" },
+  mem_perc: { label: "메모리 사용률", unit: "%" }, temp_c: { label: "온도", unit: "°C" },
+  power_w: { label: "전력", unit: "W" }, replicas: { label: "레플리카", unit: "개" },
+  ttft_ms: { label: "TTFT", unit: "ms" }, total_ms: { label: "E2E 지연", unit: "ms" },
+  cpu_util: { label: "CPU 사용률", unit: "%" }, qps: { label: "QPS", unit: "req/s" },
+};
+function objectMetrics(id: string, range?: string): ObjectMetricsReport | null {
+  const obj = buildOntology().objects.find((o) => o.id === id);
+  if (!obj) return null;
+  const rng_ = (range && RANGE_POINTS[range] ? range : "1h");
+  const n = RANGE_POINTS[rng_];
+  // props 의 수치 필드만 메트릭으로(중첩 객체·문자열·불리언 제외). 결정적 순서(key 사전순).
+  const numeric = Object.entries(obj.props)
+    .filter(([, v]) => typeof v === "number" && Number.isFinite(v))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)) as [string, number][];
+  const series: ObjectMetricSeries[] = numeric.map(([key, current]) => {
+    const meta = METRIC_META[key] ?? { label: key, unit: "" };
+    // sparkline — 현재값 주변으로 ±8% 결정적 흔들림(끝점=current). id+key+range seed 로 재현 가능.
+    const r = rng(hash(`${id}|${key}|${rng_}`));
+    const points: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const jitter = (r() - 0.5) * 0.16 * (Math.abs(current) || 1);
+      points.push(+(current + jitter * (1 - i / n)).toFixed(3));
+    }
+    points[points.length - 1] = current; // 끝점은 현재 canonical 값.
+    return { key, label: meta.label, unit: meta.unit, current, points };
+  });
+  return { generated_at: new Date().toISOString(), object_id: id, range: rng_, series, source: "ontology (mock)" };
+}
+
+// ── 엔티티-앵커 Metric Explorer(IMP-71) — GET /ontology/objects/:id/metric-tree?range= ──
+// 큐레이션 요약(IMP-46/get_object_metrics)과 별개의 UNKNOWNS 검색가능 전량 드릴다운. buildOntology() 스냅샷
+// (IMP-81)의 GpuDevice(nested hw, IMP-76)·Node 객체에서 category→metric 트리를 **결정적**으로 파생한다.
+// 새 도메인 데이터를 만들지 않고 이미 있는 하드웨어/노드 수치를 원본 메트릭명·타입·단위로 승격한다.
+// live(IMP-79)는 동일 스키마를 VictoriaMetrics /series+/query+/query_range 로 채우면 됨(transport 스왑).
+
+// 결정적 sparkline — 현재값 주변 ±jitter%(끝점=value). seed 는 id|key|range(재현 가능).
+function metricSpark(id: string, key: string, range: string, value: number, jitterPct: number, n: number): number[] {
+  const r = rng(hash(`me:${id}|${key}|${range}`));
+  const pts: number[] = [];
+  const base = Math.abs(value) || 1;
+  for (let i = 0; i < n; i++) {
+    const jit = (r() - 0.5) * jitterPct * base * (1 - i / n);
+    pts.push(+(value + jit).toFixed(4));
+  }
+  pts[pts.length - 1] = value; // 끝점은 현재 canonical 값.
+  return pts;
+}
+
+// 한 메트릭 행 빌더 — TYPE/UNIT/status/freshness/points/facets 를 한 곳에서(단위 명시 강제).
+interface RowSpec {
+  key: string; label: string; type: MetricType; unit: string; value: number;
+  status?: MetricStatus; jitter?: number; // 스파크 흔들림(기본 0.14). counter 는 작게.
+}
+function mkRow(id: string, range: string, n: number, freshness: number, facets: Record<string, string>, s: RowSpec): MetricRow {
+  const jitter = s.jitter ?? (s.type === "counter" ? 0.02 : 0.14);
+  return {
+    key: s.key, label: s.label, type: s.type, unit: s.unit, value: s.value,
+    status: s.status ?? "none", freshness_sec: freshness,
+    points: metricSpark(id, s.key, range, s.value, jitter, n), facets,
+  };
+}
+// 임계 → MetricStatus(단일 출처 statusFromThresholds 계열; ThresholdStatus ⊂ MetricStatus).
+function metricStatus(value: number, warn: number, crit: number): MetricStatus {
+  return statusFromThresholds(value, warn, crit);
+}
+
+const METRIC_RANGE_POINTS: Record<string, number> = { "1h": 12, "6h": 12, "24h": 24, "7d": 14 };
+
+// GpuDevice → 8 카테고리. props(요약 수치) + nested hw(IMP-76 풀 필드)를 원본 DCGM 메트릭명으로.
+function gpuMetricTree(id: string, obj: OntologyObject, range: string, n: number, fresh: number): MetricCategory[] {
+  const p = obj.props as Record<string, unknown>;
+  const num = (k: string, d = 0): number => (typeof p[k] === "number" ? (p[k] as number) : d);
+  const hw = (p.hw as GpuHardware | undefined) ?? undefined;
+  // facet — 이 GPU 엔티티가 emit 하는 label. gpu=UUID(device props), instance/job/device.
+  const device = typeof p.device === "string" ? (p.device as string) : id.replace(/^gpu:/, "");
+  const uuid = `GPU-${device.replace(/\//g, "-")}`;
+  const host = device.split("/")[0] || "gpu-node";
+  const facets: Record<string, string> = { gpu: uuid, instance: `${host}:9400`, job: "dcgm-exporter", device };
+  const row = (s: RowSpec) => mkRow(id, range, n, fresh, facets, s);
+
+  // 요약 수치(0..1 → %). util·mem·sm·tensor·GR_ENGINE.
+  const util = num("util_perc") * 100, mem = num("mem_perc") * 100;
+  const sm = num("sm_active") * 100, tensor = num("tensor_active") * 100, gr = num("mig_efficiency") * 100;
+  const temp = num("temp_c"), power = num("power_w");
+  const memTotalMb = 81920, memUsedBytes = (num("mem_perc") * memTotalMb) * 1024 * 1024;
+
+  const cats: MetricCategory[] = [
+    { key: "utilization", label: "Utilization", rows: [
+      row({ key: "DCGM_FI_DEV_GPU_UTIL", label: "GPU 사용률", type: "gauge", unit: "%", value: +util.toFixed(1), status: metricStatus(util, 60, 90) }),
+      row({ key: "DCGM_FI_PROF_SM_ACTIVE", label: "SM Active", type: "gauge", unit: "%", value: +sm.toFixed(1) }),
+      row({ key: "DCGM_FI_PROF_PIPE_TENSOR_ACTIVE", label: "Tensor Active", type: "gauge", unit: "%", value: +tensor.toFixed(1) }),
+      row({ key: "DCGM_FI_PROF_GR_ENGINE_ACTIVE", label: "GR Engine(효율)", type: "gauge", unit: "%", value: +gr.toFixed(1) }),
+    ] },
+    { key: "memory", label: "Memory", rows: [
+      row({ key: "DCGM_FI_DEV_FB_USED", label: "FB 사용(VRAM)", type: "gauge", unit: "bytes", value: Math.round(memUsedBytes), status: metricStatus(mem, 85, 95) }),
+      row({ key: "DCGM_FI_DEV_FB_FREE", label: "FB 여유", type: "gauge", unit: "bytes", value: Math.round((memTotalMb * 1024 * 1024) - memUsedBytes) }),
+      row({ key: "DCGM_FI_DEV_FB_USED_PERCENT", label: "VRAM 사용률", type: "gauge", unit: "%", value: +mem.toFixed(1), status: metricStatus(mem, 85, 95) }),
+    ] },
+  ];
+  if (hw) {
+    const throttled = decodeClocksEventReasons(hw.clocks_event_reasons).length > 0;
+    const nvErr = hw.nvlink.crc_errors + hw.nvlink.replay_errors + hw.nvlink.recovery_errors;
+    const eccBad = hw.ecc.dbe_volatile > 0 || hw.ecc.dbe_aggregate > 0;
+    cats.push(
+      { key: "clocks", label: "Clocks", rows: [
+        row({ key: "DCGM_FI_DEV_SM_CLOCK", label: "SM Clock", type: "gauge", unit: "MHz", value: hw.sm_clock_mhz, status: throttled ? "warn" : "none" }),
+        row({ key: "DCGM_FI_DEV_MEM_CLOCK", label: "Mem Clock", type: "gauge", unit: "MHz", value: hw.mem_clock_mhz }),
+      ] },
+      { key: "power_thermal", label: "Power·Thermal", rows: [
+        row({ key: "DCGM_FI_DEV_POWER_USAGE", label: "전력", type: "gauge", unit: "W", value: power, status: metricStatus(power, 500, 650) }),
+        row({ key: "DCGM_FI_DEV_GPU_TEMP", label: "온도", type: "gauge", unit: "°C", value: temp, status: metricStatus(temp, 80, 87) }),
+        row({ key: "DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION", label: "누적 에너지", type: "counter", unit: "mJ", value: Math.round(power * 3.6e6 + hash(id) % 1e6) }),
+      ] },
+      { key: "interconnect", label: "Interconnect (PCIe·NVLink)", rows: [
+        row({ key: "DCGM_FI_PROF_PCIE_TX_BYTES", label: "PCIe TX(누적)", type: "counter", unit: "bytes", value: hw.pcie.tx_bytes }),
+        row({ key: "DCGM_FI_PROF_PCIE_RX_BYTES", label: "PCIe RX(누적)", type: "counter", unit: "bytes", value: hw.pcie.rx_bytes }),
+        row({ key: "DCGM_FI_DEV_PCIE_REPLAY_COUNTER", label: "PCIe Replay", type: "counter", unit: "count", value: hw.pcie.replay_counter, status: hw.pcie.replay_counter > 10 ? "warn" : "none" }),
+        row({ key: "DCGM_FI_PROF_NVLINK_TX_BYTES", label: "NVLink 합계 대역", type: "rate", unit: "KiB/s", value: hw.nvlink.total_kibs }),
+        ...hw.nvlink.throughput_kibs.map((t, i) =>
+          row({ key: `DCGM_FI_PROF_NVLINK_L${i}_BANDWIDTH`, label: `NVLink L${i}`, type: "rate", unit: "KiB/s", value: t })),
+        row({ key: "DCGM_FI_DEV_NVLINK_CRC_FLIT_ERROR_COUNT_TOTAL", label: "NVLink 오류(CRC·replay·recovery)", type: "counter", unit: "count", value: nvErr, status: nvErr > 20 ? "warn" : "none" }),
+      ] },
+      { key: "errors", label: "Errors (ECC·XID)", rows: [
+        row({ key: "DCGM_FI_DEV_ECC_SBE_VOL_TOTAL", label: "ECC SBE(volatile)", type: "counter", unit: "count", value: hw.ecc.sbe_volatile }),
+        row({ key: "DCGM_FI_DEV_ECC_DBE_VOL_TOTAL", label: "ECC DBE(volatile)", type: "counter", unit: "count", value: hw.ecc.dbe_volatile, status: hw.ecc.dbe_volatile > 0 ? "crit" : "none" }),
+        row({ key: "DCGM_FI_DEV_ECC_SBE_AGG_TOTAL", label: "ECC SBE(aggregate)", type: "counter", unit: "count", value: hw.ecc.sbe_aggregate }),
+        row({ key: "DCGM_FI_DEV_ECC_DBE_AGG_TOTAL", label: "ECC DBE(aggregate)", type: "counter", unit: "count", value: hw.ecc.dbe_aggregate, status: eccBad ? "crit" : "none" }),
+        row({ key: "DCGM_FI_DEV_XID_ERRORS", label: `최근 XID(${xidLabel(hw.xid_recent)})`, type: "gauge", unit: "code", value: hw.xid_recent, status: hw.xid_recent > 0 ? "crit" : "none" }),
+      ] },
+      { key: "throttle", label: "Throttle", rows: [
+        row({ key: "DCGM_FI_DEV_CLOCKS_EVENT_REASONS", label: `클럭 제약 사유(${decodeClocksEventReasons(hw.clocks_event_reasons).join(", ") || "제약 없음"})`, type: "gauge", unit: "bitmask", value: hw.clocks_event_reasons, status: throttled ? "warn" : "none" }),
+      ] },
+    );
+    if (hw.processes.length > 0) {
+      cats.push({ key: "per_process", label: "Per-process", rows: hw.processes.map((proc) =>
+        row({ key: `DCGM_FI_DEV_PROCESS_MEM__${proc.pid}`, label: `${proc.name} · PID ${proc.pid}`, type: "gauge", unit: "MiB", value: proc.mem_used_mb })) });
+    }
+  }
+  return cats;
+}
+
+// Node → 7 카테고리. buildNodeMetrics 최신 point(단일 출처)를 node_exporter 원본 메트릭명으로.
+function nodeMetricTree(id: string, obj: OntologyObject, range: string, n: number, fresh: number): MetricCategory[] {
+  const host = (typeof obj.props.hostname === "string" ? (obj.props.hostname as string) : id.replace(/^node:/, "")) || "gpu-node-01";
+  const { n: bn, stepSec } = rangeBuckets[(range in rangeBuckets ? range : "1h") as TimeRange];
+  const nm = buildNodeMetrics(host, bn, stepSec);
+  const last = nm.points[nm.points.length - 1];
+  const facets: Record<string, string> = { instance: `${host}:9100`, job: "node-exporter", device: host };
+  const row = (s: RowSpec) => mkRow(id, range, n, fresh, facets, s);
+  if (!last) return [];
+  const pctv = (v: number) => +(v * 100).toFixed(1);
+  // 파생 대표값(filesystem/systemd) — 결정적 seed(host).
+  const r = rng(hash(`node-extra:${host}`));
+  const fsUsed = clamp(0.55 + (r() - 0.5) * 0.2, 0, 1);
+  const inodeUsed = clamp(0.18 + (r() - 0.5) * 0.1, 0, 1);
+  const failedUnits = r() > 0.85 ? 1 : 0;
+  return [
+    { key: "cpu", label: "CPU", rows: [
+      row({ key: "node_cpu_utilization", label: "CPU 사용률", type: "gauge", unit: "%", value: pctv(last.cpu_util), status: metricStatus(last.cpu_util, 0.8, 0.95) }),
+      row({ key: "node_cpu_seconds_total", label: "CPU seconds(누적)", type: "counter", unit: "seconds", value: Math.round(last.cpu_util * 1e6 + hash(host) % 1e5) }),
+    ] },
+    { key: "memory", label: "Memory", rows: [
+      row({ key: "node_memory_utilization", label: "메모리 사용률", type: "gauge", unit: "%", value: pctv(last.mem_util), status: metricStatus(last.mem_util, 0.85, 0.95) }),
+      row({ key: "node_memory_SwapUsed_percent", label: "Swap 사용", type: "gauge", unit: "%", value: pctv(last.swap_used_perc), status: metricStatus(last.swap_used_perc, 0.2, 0.5) }),
+    ] },
+    { key: "disk", label: "Disk", rows: [
+      row({ key: "node_disk_utilization", label: "디스크 사용률", type: "gauge", unit: "%", value: pctv(last.disk_util), status: metricStatus(last.disk_util, 0.85, 0.95) }),
+      row({ key: "node_disk_io_time_percent", label: "Disk IO 포화", type: "gauge", unit: "%", value: pctv(last.disk_io_perc), status: metricStatus(last.disk_io_perc, 0.7, 0.9) }),
+    ] },
+    { key: "filesystem", label: "Filesystem", rows: [
+      row({ key: "node_filesystem_used_percent", label: "파일시스템 사용", type: "gauge", unit: "%", value: pctv(fsUsed), status: metricStatus(fsUsed, 0.8, 0.9) }),
+      row({ key: "node_filesystem_files_used_percent", label: "inode 사용", type: "gauge", unit: "%", value: pctv(inodeUsed) }),
+    ] },
+    { key: "network", label: "Network", rows: [
+      row({ key: "node_network_receive_bytes_total", label: "Net RX", type: "rate", unit: "Mbps", value: last.net_rx_mbps }),
+      row({ key: "node_network_transmit_bytes_total", label: "Net TX", type: "rate", unit: "Mbps", value: last.net_tx_mbps }),
+      row({ key: "node_network_receive_errs_total", label: "Net 에러", type: "rate", unit: "err/s", value: last.net_err_per_s, status: metricStatus(last.net_err_per_s, 5, 20) }),
+    ] },
+    { key: "load", label: "Load", rows: [
+      row({ key: "node_load1", label: "Load 1m", type: "gauge", unit: "load", value: last.load1, status: metricStatus(last.load1, 12, 16) }),
+    ] },
+    { key: "systemd", label: "Systemd", rows: [
+      row({ key: "node_systemd_units_failed", label: "실패한 systemd 유닛", type: "gauge", unit: "count", value: failedUnits, status: failedUnits > 0 ? "warn" : "none" }),
+    ] },
+  ];
+}
+
+// 엔티티 해석 — 온톨로지 스냅샷에 있으면 그대로, 없으면 GPU/노드 상세(genGPU/노드) id 패턴에서 합성한다.
+// (Gpu.tsx SlidePanel 은 호스트당 8 GPU 인데 topology 는 대표 2개만 승격 — 나머지 GPU 도 explorer 가 열리게
+//  gpu:<host>/gpu<N> 패턴이면 genGPU 실측 device 로 GpuDevice 객체를 만들어 준다. node:<host> 도 동일.)
+function resolveMetricEntity(id: string): OntologyObject | null {
+  const found = buildOntology().objects.find((o) => o.id === id);
+  if (found) return found;
+  // gpu:<host>/gpu<N> — genGPU() 실측 device(uuid=GPU-<host>-<N>)에서 GpuDevice props+hw 합성.
+  let m = id.match(/^gpu:(.+)\/gpu(\d+)$/i);
+  if (m) {
+    const host = m[1], gi = Number(m[2]);
+    const dev = genGPU().devices.find((d) => d.hostname === host && d.gpu.toLowerCase() === `gpu${gi}`);
+    if (dev) {
+      const status: ObjectStatus = dev.temp_c >= 87 || dev.util_perc >= 0.9 ? "crit" : dev.temp_c >= 80 || dev.util_perc >= 0.6 ? "warn" : "ok";
+      return { id, type: "GpuDevice", title: `${host} GPU${gi}`, status, revision: 1, props: {
+        device: `${host}/gpu${gi}`, util_perc: dev.util_perc, mem_perc: dev.mem_perc,
+        temp_c: dev.temp_c, power_w: dev.power_w, sm_active: dev.sm_active,
+        tensor_active: dev.tensor_active, mig_efficiency: dev.mig_efficiency, hw: dev.hw,
+      } };
+    }
+  }
+  // node:<host> — 온톨로지에 없더라도 노드 트리는 buildNodeMetrics(host)로 파생 가능.
+  m = id.match(/^node:(.+)$/);
+  if (m) {
+    return { id, type: "Node", title: m[1], status: "ok", revision: 1, props: { hostname: m[1] } };
+  }
+  return null;
+}
+
+// GET /ontology/objects/:id/metric-tree?range= — 엔티티 앵커 전량 메트릭 트리(mock).
+// GpuDevice/Node 만 엔티티 앵커. 그 외 타입은 빈 categories(엔티티 아님 — empty 상태). 미존재 id → null(404).
+function objectMetricTree(id: string, range?: string): ObjectMetricTree | null {
+  const obj = resolveMetricEntity(id);
+  if (!obj) return null;
+  const rng_ = range && METRIC_RANGE_POINTS[range] ? range : "1h";
+  const n = METRIC_RANGE_POINTS[rng_];
+  // freshness — 스크랩 주기 근사(GPU DCGM 15s, node exporter 15s). 결정적으로 0..14초.
+  const fresh = hash(`fresh:${id}`) % 15;
+  let categories: MetricCategory[] = [];
+  if (obj.type === "GpuDevice") categories = gpuMetricTree(id, obj, rng_, n, fresh);
+  else if (obj.type === "Node") categories = nodeMetricTree(id, obj, rng_, n, fresh);
+  // facet 키 — 첫 행의 facet 키 순서(결정적). 카테고리가 없으면 빈 배열.
+  const firstRow = categories[0]?.rows[0];
+  const facetKeys = firstRow ? Object.keys(firstRow.facets) : [];
+  return {
+    generated_at: new Date().toISOString(), object_id: id, object_type: obj.type,
+    range: rng_, categories, facet_keys: facetKeys, source: "metric-explorer (mock)",
+  };
 }
 
 // ── Action(writeback) 단일 실행 계약(IMP-59) — POST /ontology/actions/:name ──
@@ -1115,15 +1685,54 @@ function applyAction(name: string, body: Record<string, unknown>): Response {
     }
   }
 
+  // ── PROCESS 층 Task writeback(IMP-69) — 양 계층 반영 ──
+  // (1) process 층: Task props(status/assignee/workflowStepIndex)를 TASK_STEP_TRANSITION 대로 전이(단일 출처).
+  // (2) subject-matter 층: resolveTask 면 이 과업이 tracks 하는 디지털트윈 객체 + spawns 인시던트도 함께 수렴(status=ok).
+  //     실 외부 시스템 push(webhook)는 IMP-67 spike — 여기서는 온톨로지 override 로만 반영.
+  let taskExtraProps: Record<string, unknown> = {};
+  if (spec.target === "Task") {
+    const prev = (snapshot.props ?? {}) as Partial<TaskProps>;
+    const nextTaskStatus = TASK_STEP_TRANSITION[name] ?? (prev.status as TaskStatus | undefined) ?? "triaged";
+    const assigneeParam = typeof params.assignee === "string" ? params.assignee.trim() : "";
+    taskExtraProps = {
+      status: nextTaskStatus,
+      workflowStepIndex: workflowStepIndex(nextTaskStatus),
+      // assign/reassign 은 담당자 지정, resolveTask 는 담당자 유지. assignedAt 은 배정 시각.
+      ...(assigneeParam ? { assignee: assigneeParam, assignedAt: new Date().toISOString() } : {}),
+    };
+    if (name === "resolveTask") {
+      // (2) 디지털트윈 수렴 — 이 과업이 감시하던 subject-matter 객체(tracks)와 이를 낳은 Incident 를 ok 로.
+      const linked = Array.isArray(prev.linkedObjectIds) ? (prev.linkedObjectIds as string[]) : [];
+      const incId = prev.spawnedByIncidentId ? `incident:${prev.spawnedByIncidentId}` : undefined;
+      for (const objId of [...linked, ...(incId ? [incId] : [])]) {
+        const cur = buildOntology().objects.find((o) => o.id === objId);
+        if (!cur) continue;
+        ONTOLOGY_OVERRIDES[objId] = {
+          status: "ok",
+          revision: cur.revision + 1,
+          props: { ...(ONTOLOGY_OVERRIDES[objId]?.props ?? {}), resolved_by_task: target },
+        };
+      }
+      // 연결 Incident 는 기존 INCIDENTS 모듈 상태도 resolved 로(비회귀 — Incident 인박스와 정합).
+      if (prev.spawnedByIncidentId) actIncidentCore(prev.spawnedByIncidentId, "resolve", {});
+    }
+  }
+
   // 5) 상태 전이 반영 — Rules(STATE_TRANSITION) 대로 status 전이 + revision++.
+  //    Task 는 STATE_TRANSITION 이 undefined(온톨로지 status 불변 = process 객체) → snapshot.status(unknown) 유지.
   const nextStatus = STATE_TRANSITION[name] ?? snapshot.status;
   const nextRev = snapshot.revision + 1;
-  ONTOLOGY_OVERRIDES[target] = {
+  const nextOverride: OntologyOverride = {
     status: nextStatus,
     revision: nextRev,
-    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), last_action: name },
+    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), ...taskExtraProps, last_action: name },
   };
-  const updated: OntologyObject = { ...snapshot, status: nextStatus, revision: nextRev, props: { ...snapshot.props, last_action: name } };
+  ONTOLOGY_OVERRIDES[target] = nextOverride;
+  // 요청단위 스냅샷 무효화(IMP-81) — override 를 갱신했으니 이 요청에서 만든 캐시를 버려
+  // 이후 재구성이 새 canonical 을 반영하게 한다(writeback ↔ 재구성 정합).
+  resetOntologySnapshot();
+  // 응답 object 는 재구성 경로와 **동일한 mergeOverride** 로 만든다 — direct-fetch 와 어긋날 수 없다.
+  const updated = mergeOverride(snapshot, nextOverride);
   const result = actionResult("ok", name, target, params, { object: updated, note: spec.rulesNote });
   if (idem) ACTION_IDEMPOTENCY[idem] = result;
   return ok(result, 200);
@@ -1379,9 +1988,11 @@ function genDiagnostics(verbose = false): DiagReport {
 // mock 프로파일 — VITE_PROFILE 로 observe/manage 흉내(백엔드 capability.Resolve 와 동일 규칙).
 // 프론트 단독에서 `VITE_PROFILE=observe npm run dev` 로 관제 전용 UI 를 확인할 수 있다.
 function genCapabilities(): Capabilities {
-  const ALL = ["dashboard", "traces", "guard", "guard.write", "models", "models.write", "playground", "eval", "endpoints", "endpoints.write", "keys", "keys.write", "users", "users.write", "credentials"];
-  const observeOn = new Set(["dashboard", "traces", "guard", "models"]);
-  const mutating = new Set(["guard.write", "models.write", "playground", "eval", "endpoints.write", "keys.write", "users.write", "credentials"]);
+  // incident.ack(관제 운영자도 '처리중' 표시 허용 — observe on) / incident.write(resolve/snooze·Task 조치 — manage 전용)
+  // 는 backend capability.go 와 1:1(단일 출처 정합). Task verb(assign/reassign/resolveTask, IMP-69)도 incident.write 게이팅.
+  const ALL = ["dashboard", "traces", "guard", "guard.write", "models", "models.write", "playground", "eval", "endpoints", "endpoints.write", "keys", "keys.write", "users", "users.write", "credentials", "incident.ack", "incident.write"];
+  const observeOn = new Set(["dashboard", "traces", "guard", "models", "incident.ack"]);
+  const mutating = new Set(["guard.write", "models.write", "playground", "eval", "endpoints.write", "keys.write", "users.write", "credentials", "incident.write"]);
   const observe = (import.meta.env.VITE_PROFILE ?? "manage").toLowerCase() === "observe";
   const capabilities: Record<string, boolean> = {};
   for (const c of ALL) capabilities[c] = observe ? observeOn.has(c) : true;
@@ -1444,6 +2055,11 @@ function createAlertRuleMock(b: Record<string, unknown>): Record<string, unknown
 async function route(method: string, path: string, q: URLSearchParams, body: Json): Promise<Response> {
   // 사람이 보기엔 의미상 mock 지연(80~220ms) — skeleton/loading 상태가 실제로 보이게.
   await new Promise((res) => setTimeout(res, 80 + Math.random() * 140));
+
+  // 요청단위 온톨로지 스냅샷 경계(IMP-81) — 이 요청의 모든 파생(objects/links/metrics/agent/action)이
+  // buildOntology() 한 번의 결과를 공유하도록 진입에서 캐시를 무효화한다. 재구성 중복·요청 내 시각
+  // 흔들림(trace ts, GPU 15초 버킷)을 제거하면서, 요청 사이의 "살아있는" 변동은 그대로 유지.
+  resetOntologySnapshot();
 
   // 정확 매칭 우선
   switch (`${method} ${path}`) {
@@ -1510,8 +2126,14 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /alerts/rules": return ok(createAlertRuleMock(body as Record<string, unknown>));
     // 온톨로지(IMP-56) — Object/Link 그래프 조회(후속 IMP-57/58/59/60/63 이 소비).
     case "GET /ontology/objects": return ok(ontologyObjects(q.get("type") ?? undefined, q.get("filter") ?? undefined));
+    // Kinetic 감지→객체 귀속(IMP-72) — 감지 이상을 객체에 결정적으로 귀속한 4-슬롯 알림(read-only).
+    case "GET /ontology/detections": return ok(ontologyDetections());
+    // 메트릭 소스 / 익스포터 커버리지(IMP-74) — 신호×온톨로지 객체 커버리지 매트릭스·갭·3단 상태(read-only).
+    case "GET /metric-sources": return ok(genMetricSourceCoverage());
     // AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. read tool 자동, mutation 은 별도 ActionForm confirm(포함 안 함).
     case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
+    // AI Agent 클러스터 인사이트(IMP-78) — 로컬 모델이 온톨로지 근거로 군집·패턴 도출(HARD grounding·read-only).
+    case "POST /agent/insights": return ok(runAgentInsightsMock());
   }
 
   // 패턴 매칭 (path 변수 포함)
@@ -1528,6 +2150,20 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
   if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/links$/))) {
     const id = decodeURIComponent(m[1]);
     const res = ontologyLinks(id, q.get("kind") ?? undefined);
+    if (!res) return notFound(path);
+    return ok(res);
+  }
+  // 온톨로지 객체 메트릭(IMP-73, get_object_metrics) — /metrics 접미. /links 처럼 구체 경로 먼저.
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/metrics$/))) {
+    const id = decodeURIComponent(m[1]);
+    const res = objectMetrics(id, q.get("range") ?? undefined);
+    if (!res) return notFound(path);
+    return ok(res);
+  }
+  // 엔티티-앵커 Metric Explorer 트리(IMP-71) — /metric-tree 접미. 구체 경로라 단일 객체보다 먼저 매칭.
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/metric-tree$/))) {
+    const id = decodeURIComponent(m[1]);
+    const res = objectMetricTree(id, q.get("range") ?? undefined);
     if (!res) return notFound(path);
     return ok(res);
   }
@@ -1792,15 +2428,26 @@ function genLogs(name: string, component: string): { logs: string; components: s
 
 // ───────────────────────── FABRIX MCP(JSON-RPC) mock ─────────────────────────
 // 백엔드 server/mcp.go 의 tools/list·resources/list 응답 형태를 미러링(IMP-5 패널이 mock 에서도 렌더).
-const MCP_TOOLS = [
+// IMP-73 — 온톨로지 read tool 은 ONTOLOGY_TOOL_REGISTRY 단일 출처에서 파생(수기 미러 금지) →
+// Diagnostics McpPanel 이 mock 에서도 백엔드와 동일한 통일 tool 목록을 보여준다(자동 동기).
+const MCP_AGGREGATE_TOOLS = [
   { name: "list_dimensions", description: "groupby 가능한 차원과 메트릭 카탈로그(의미·단위·임계치)를 반환한다. 다른 tool 호출 전에 먼저 본다." },
   { name: "groupby_metric", description: "트래픽/품질 메트릭을 한 차원(model|endpoint|namespace)으로 분해해 반환한다." },
   { name: "top_outliers", description: "차원별 분해에서 카탈로그 임계치를 위반한(이상) 그룹만 추려 사유와 함께 반환한다." },
   { name: "summarize_endpoint_health", description: "전체 추론 서빙 건강도 요약(QPS·TTFT p95·ITL·캐시적중·차단·알람)을 자연어로 반환한다." },
 ];
+// aggregate + 온톨로지 read tool(레지스트리 파생, name 순). inputSchema 도 실어 패널이 계약을 그대로 노출.
+const MCP_TOOLS = [
+  ...MCP_AGGREGATE_TOOLS,
+  ...Object.values(ONTOLOGY_TOOL_REGISTRY)
+    .slice()
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+];
 const MCP_RESOURCES = [
   { uri: "fabrix://metric-catalog", name: "메트릭 카탈로그", description: "메트릭별 의미·단위·방향·임계치(AI grounding)", mimeType: "application/json" },
   { uri: "fabrix://dimensions", name: "groupby 차원", description: "분해 가능한 차원과 Prometheus 라벨 매핑", mimeType: "application/json" },
+  { uri: "fabrix://ontology/schema", name: "온톨로지 스키마", description: "Object/Link/Action 타입 카탈로그(§5.1·5.2·5.3)", mimeType: "application/json" },
 ];
 function mcpRpc(req: { id?: unknown; method?: string }): Json {
   const base = { jsonrpc: "2.0", id: req.id ?? null };

@@ -20,10 +20,13 @@ export interface PollingState<T> {
 
 export function usePolling<T>(
   fetcher: (signal: AbortSignal) => Promise<T>,
-  opts: { intervalMs: number; deps?: unknown[] },
+  opts: { intervalMs: number; deps?: unknown[]; enabled?: boolean },
 ): PollingState<T> {
   const { intervalMs } = opts;
   const deps = opts.deps ?? [];
+  // enabled=false 면 폴링(interval)만 끈다(초기·deps 로드·reload·정지/재개 로직은 유지).
+  // 드로어 '열릴 때만'(IMP-77 ObjectView) · intervalMs=0 정적 사용(KineticStrip)을 규약 안에서 처리.
+  const enabled = opts.enabled ?? true;
 
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,11 +71,11 @@ export function usePolling<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, ...deps]);
 
-  // 폴링 interval — paused 면 걸지 않는다. 재개(false 로 전환) 시 즉시 1회 따라잡기 로드.
+  // 폴링 interval — paused 이거나 enabled=false 면 걸지 않는다. 재개(false 로 전환) 시 즉시 1회 따라잡기 로드.
   const wasPaused = useRef(paused);
   useEffect(() => {
-    if (paused) {
-      wasPaused.current = true;
+    if (paused || !enabled) {
+      wasPaused.current = paused;
       return;
     }
     if (wasPaused.current) {
@@ -82,7 +85,7 @@ export function usePolling<T>(
     const id = setInterval(() => load(), intervalMs);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, intervalMs, paused, ...deps]);
+  }, [load, intervalMs, paused, enabled, ...deps]);
 
   const isStale = error != null && hasDataRef.current;
 

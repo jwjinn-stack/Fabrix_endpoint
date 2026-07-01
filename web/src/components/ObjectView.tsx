@@ -8,6 +8,9 @@
 //    fetchOntologyLinks(id)(관계). 전부 mock/실백엔드 동일 계약. 미존재 id → 빈 상태(throw 소비).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchOntologyLinks, fetchOntologyObject, fetchOntologyObjects } from "../api/client";
+import { usePolling } from "../utils/usePolling";
+import DataFreshness from "./DataFreshness";
+import PauseToggle from "./PauseToggle";
 import type { ActionAuditEntry, ActionOutcome, LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
 import { ACTION_REGISTRY, getActionSpec } from "../actions/registry";
@@ -16,6 +19,22 @@ import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
+import GpuHardwareSection from "./GpuHardwareSection";
+import MetricExplorer from "./MetricExplorer";
+import type { GpuHardware } from "../api/types";
+
+// Metric Explorer(IMP-71)를 탭으로 제공하는 엔티티 앵커 타입 — GpuDevice/Node 만 전량 메트릭을 emit.
+const METRIC_ENTITY_TYPES: OntologyObject["type"][] = ["GpuDevice", "Node"];
+
+// IMP-77 — 드로어가 '열려 있을 때만' 폴링(감지 신선도 vs 비용 균형, IMP-51 규약과 동일 15s). 닫히면 폴링 정지.
+const REFRESH_MS = 15_000;
+
+// head 로드 결과(canonical + 관계 + 이웃 해석 인덱스). 미존재 id(404)는 throw 대신 obj=null 로 소비(빈 상태).
+interface HeadData {
+  obj: OntologyObject | null;
+  links: OntologyLink[];
+  index: Record<string, OntologyObject>;
+}
 
 // 어느 페이지든 붙이는 ObjectView URL 배선 훅(IMP-57) — obj/objstack 를 단일 출처로.
 //  open(id): 진입점에서 특정 객체를 연다. close(): 닫는다. <ObjectView {...props}/> 로 스프레드.
@@ -41,6 +60,7 @@ const TYPE_METRICS: Record<OntologyObject["type"], string[]> = {
   Node: ["cpu_perc", "mem_perc"],
   Trace: ["total_ms", "ttft_ms"],
   Incident: ["severity", "count"],
+  Task: ["priority", "status"], // PROCESS 층(IMP-69) — 두드러진 metric = 우선순위·상태.
 };
 
 // linkKind → Related 섹션 라벨 + 방향 지시자(IMP-64). dir 는 head 기준 "대표" 방향의 의미 화살표:
@@ -54,6 +74,9 @@ const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> 
   executedOn: { label: "실행 GPU", dir: "⇊", hint: "하류" },
   consumes: { label: "소비 Service", dir: "↑", hint: "상류" },
   affects: { label: "영향 대상", dir: "⇢", hint: "영향" },
+  // PROCESS↔SUBJECT-MATTER 다리(IMP-69): spawns=인시던트가 낳은 과업, tracks=과업이 감시/조치하는 대상.
+  spawns: { label: "생성 과업", dir: "⇢", hint: "프로세스" },
+  tracks: { label: "대상 객체", dir: "⇢", hint: "감시·조치" },
 };
 
 // ObjectStatus → 상태 게이지 밴드 위치(IMP-64). Gauge(warn=0.75/crit=0.9/max=1) 밴드에 안착하도록:
@@ -61,7 +84,7 @@ const LINK_META: Record<LinkKind, { label: string; dir: string; hint: string }> 
 const STATUS_GAUGE_VALUE: Record<ObjectStatus, number> = { ok: 0.3, warn: 0.8, crit: 1.0, unknown: 0 };
 
 // Related 그룹 표시 순서(Replicas/Endpoint → GPU → Service → Trace → Incident 우선순).
-const KIND_ORDER: LinkKind[] = ["serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
+const KIND_ORDER: LinkKind[] = ["tracks", "spawns", "serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects"];
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };
@@ -81,6 +104,15 @@ function fmtVal(v: unknown): string {
   if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+// props.hw 를 GpuHardware 로 안전 추출(IMP-76). 최소 구조 검증 — 미제공/형식불일치면 null(섹션 skip).
+function extractGpuHw(v: unknown): GpuHardware | null {
+  if (!v || typeof v !== "object") return null;
+  const hw = v as Partial<GpuHardware>;
+  if (!hw.nvlink || !hw.pcie || !hw.ecc || !Array.isArray(hw.processes)) return null;
+  if (typeof hw.clocks_event_reasons !== "number" || typeof hw.xid_recent !== "number") return null;
+  return hw as GpuHardware;
 }
 
 interface GroupedNeighbor {
@@ -110,48 +142,50 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
 
   const head = stack[stack.length - 1] ?? null;
 
-  const [obj, setObj] = useState<OntologyObject | null>(null);
-  const [index, setIndex] = useState<Record<string, OntologyObject>>({});
-  const [links, setLinks] = useState<OntologyLink[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [missing, setMissing] = useState(false);
   // IMP-65 — 이 객체에서 실행한 Action 감사 로그(세션-로컬). ActionForm.onDone 이 돌려준 res.audit 을
   // 최근 순으로 누적. head 가 바뀌면 리셋(객체별 컨텍스트). 신규 fetch endpoint 없이 기존 계약만 소비.
   const [auditLog, setAuditLog] = useState<ActionAuditEntry[]>([]);
+  // IMP-71 — GpuDevice/Node 는 '요약'(기본, 큐레이션 KNOWNS)과 '전체 메트릭'(explorer, UNKNOWNS) 탭을 갖는다.
+  // 요약이 DEFAULT — '전체 메트릭'은 명시적 탈출구(IMP-46 회귀 없음). head 바뀌면 요약으로 리셋.
+  const [tab, setTab] = useState<"summary" | "metrics">("summary");
 
-  // head 변경 시 canonical + 관계 + 이웃 해석 인덱스 로드.
+  // head 변경 시 객체별 로컬 컨텍스트 리셋(감사 로그·탭) — 데이터 폴링과 독립.
   useEffect(() => {
-    if (!head) return;
-    const ac = new AbortController();
-    setLoading(true);
-    setMissing(false);
     setAuditLog([]); // 새 객체(traverse/재진입) — 감사 로그는 객체별 컨텍스트.
-    Promise.all([
-      fetchOntologyObject(head, ac.signal),
-      fetchOntologyLinks(head, undefined, ac.signal),
-      fetchOntologyObjects(undefined, undefined, ac.signal),
-    ])
-      .then(([o, lr, list]) => {
-        if (ac.signal.aborted) return;
-        setObj(o);
-        setLinks(lr.links);
+    setTab("summary"); // 새 객체는 큐레이션 요약이 기본(IMP-71 — explorer 는 명시적 탈출구).
+  }, [head]);
+
+  // head 의 canonical + 관계 + 이웃 해석 인덱스 로드를 IMP-51 폴링 규약으로 승격(IMP-77).
+  //  - deps:[head] → traverse/재진입 시 즉시 재로드. enabled:!!head → 드로어 닫히면 폴링 정지(hammering 방지).
+  //  - 미존재 id(404)는 throw 대신 obj=null 로 소비(빈 상태) — usePolling 의 error 로 올리지 않는다.
+  const poll = usePolling<HeadData>(
+    async (signal) => {
+      if (!head) return { obj: null, links: [], index: {} };
+      try {
+        const [o, lr, list] = await Promise.all([
+          fetchOntologyObject(head, signal),
+          fetchOntologyLinks(head, undefined, signal),
+          fetchOntologyObjects(undefined, undefined, signal),
+        ]);
         const idx: Record<string, OntologyObject> = {};
         for (const it of list.objects) idx[it.id] = it;
-        setIndex(idx);
-      })
-      .catch((e) => {
-        if (ac.signal.aborted) return;
-        // 미존재 id(404) 등 — 빈 상태로 소비(throw 안 함).
-        setObj(null);
-        setLinks([]);
-        setMissing(true);
+        return { obj: o, links: lr.links, index: idx };
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError" || signal.aborted) throw e;
+        // 미존재 id(404) 등 — 빈 상태로 소비(throw 안 함 → error 배지 대신 '찾을 수 없음').
         if (!(e instanceof Error) || !/404/.test(e.message)) console.warn("[ObjectView] 로드 실패", e);
-      })
-      .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
-      });
-    return () => ac.abort();
-  }, [head]);
+        return { obj: null, links: [], index: {} };
+      }
+    },
+    { intervalMs: REFRESH_MS, deps: [head], enabled: !!head },
+  );
+
+  const obj = poll.data?.obj ?? null;
+  const links = useMemo(() => poll.data?.links ?? [], [poll.data]);
+  const index = useMemo(() => poll.data?.index ?? {}, [poll.data]);
+  const loading = poll.loading;
+  // 미존재 — 로드가 끝났는데(데이터 도착) obj 가 null. head 없거나 로딩 중엔 미표시.
+  const missing = !!head && poll.data != null && poll.data.obj == null;
 
   // 이웃을 linkKind 로 그룹화(head 기준 방향 유지). 인덱스에 있는 실재 객체만.
   const groups = useMemo<GroupedNeighbor[]>(() => {
@@ -197,17 +231,21 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
     });
   }, [onStackChange]);
 
-  // Action 반영 후 canonical 갱신 → 현재 head 재로딩(리렌더).
+  // Action 반영 후 canonical 갱신 → 현재 head 재로딩(리렌더). 폴링 규약의 reload 재사용(IMP-77).
   const reloadHead = useCallback(() => {
     if (!head) return;
-    fetchOntologyObject(head).then(setObj).catch(() => { /* keep */ });
-  }, [head]);
+    poll.reload();
+  }, [head, poll]);
 
   if (!objectId) return null;
 
   const vis = obj ? typeVisual(obj.type) : null;
   const metricKeys = obj ? TYPE_METRICS[obj.type] : null;
   const crumbs = stack.map((id) => index[id]?.title ?? id);
+  // GpuDevice props 에 mock 이 얹은 중첩 GpuHardware(IMP-76). 구조 최소검증(nvlink 유무)으로 실백엔드/레거시 방어.
+  const gpuHw = extractGpuHw(obj?.props.hw);
+  // IMP-71 — 이 객체가 전량 메트릭을 emit 하는 엔티티 앵커(GpuDevice/Node)인지. 아니면 탭 미표시.
+  const supportsMetrics = !!obj && METRIC_ENTITY_TYPES.includes(obj.type);
 
   return (
     <SlidePanel
@@ -251,6 +289,16 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
             ))}
           </ol>
         </nav>
+      )}
+
+      {/* IMP-77 — 드로어도 IMP-51 신선도 규약: 최종 갱신 + 자동 갱신 표기 + 정지/재개(열려 있을 때만 폴링).
+          객체가 로드됐을 때만 표기(빈/로딩 상태에서는 잡음 억제). stale 시 마지막 데이터 유지. */}
+      {obj && (
+        <div className="ov-freshness">
+          <DataFreshness updatedAt={poll.lastLoaded} intervalMs={REFRESH_MS} />
+          <PauseToggle paused={poll.paused} onToggle={() => poll.setPaused(!poll.paused)} />
+          {poll.isStale && <span className="state-stale" role="status"> · 마지막 데이터 표시 중</span>}
+        </div>
       )}
 
       {loading && !obj && <div className="empty" role="status">불러오는 중…</div>}
@@ -300,15 +348,42 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
             </div>
           </div>
 
-          {/* (2) Properties — props 전부를 DetailRow 로. */}
+          {/* IMP-71 — GpuDevice/Node 는 '요약'(기본 KNOWNS)·'전체 메트릭'(explorer UNKNOWNS) 탭. 그 외 타입은 탭 없이 요약만. */}
+          {supportsMetrics && (
+            <div className="me-tabs modality-tabs" role="tablist" aria-label="객체 보기">
+              <button
+                type="button" role="tab" aria-selected={tab === "summary"}
+                className={`modality-tab ${tab === "summary" ? "active" : ""}`}
+                onClick={() => setTab("summary")}
+              >요약</button>
+              <button
+                type="button" role="tab" aria-selected={tab === "metrics"}
+                className={`modality-tab ${tab === "metrics" ? "active" : ""}`}
+                onClick={() => setTab("metrics")}
+              >전체 메트릭</button>
+            </div>
+          )}
+
+          {/* '전체 메트릭' 탭 — 엔티티 앵커 Metric Explorer(전량 드릴다운). 요약은 아래에서 tab==summary 일 때만. */}
+          {supportsMetrics && tab === "metrics" && <MetricExplorer entityId={obj.id} />}
+
+          {(!supportsMetrics || tab === "summary") && (
+          <>
+          {/* (2) Properties — props 를 DetailRow 로. 중첩 hw(하드웨어 상세)는 아래 전용 섹션이 렌더하므로 제외. */}
           <section className="ov-section" aria-label="속성">
             <h4 className="ov-h">속성</h4>
             <DetailRow label="id">{obj.id}</DetailRow>
             <DetailRow label="종류">{vis.label}</DetailRow>
-            {Object.entries(obj.props).map(([k, v]) => (
-              <DetailRow key={k} label={k}>{fmtVal(v)}</DetailRow>
-            ))}
+            {Object.entries(obj.props)
+              .filter(([k]) => k !== "hw")
+              .map(([k, v]) => (
+                <DetailRow key={k} label={k}>{fmtVal(v)}</DetailRow>
+              ))}
           </section>
+
+          {/* (2b) GPU 하드웨어(IMP-76) — GpuDevice 이고 props.hw(GpuHardware)가 있으면 전용 섹션.
+              XID·throttle reason·NVLink·PCIe·ECC·clock 을 그룹+단위+뱃지로. 없으면(레거시/실백엔드) skip. */}
+          {obj.type === "GpuDevice" && gpuHw && <GpuHardwareSection hw={gpuHw} />}
 
           {/* (3) Related — linkKind 그룹. 이웃 클릭 → in-place traverse. */}
           <section className="ov-section" aria-label="관계">
@@ -410,6 +485,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
                 })}
               </ol>
             </section>
+          )}
+          </>
           )}
         </>
       )}

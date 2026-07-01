@@ -6,6 +6,7 @@ import { CapabilitiesProvider, useCap } from "./capabilities";
 import { TimeRangeProvider } from "./timeRange";
 import { ThemeProvider } from "./theme";
 import Dashboard from "./pages/Dashboard";
+import Inbox from "./pages/Inbox";
 import Ontology from "./pages/Ontology";
 import Usage from "./pages/Usage";
 import Guard from "./pages/Guard";
@@ -27,6 +28,7 @@ import Settings from "./pages/Settings";
 import Credentials from "./pages/Credentials";
 import Keys from "./pages/Keys";
 import Diagnostics from "./pages/Diagnostics";
+import MetricSources from "./pages/MetricSources";
 
 // 부팅 시 /capabilities 를 받아 배포 프로파일(observe/manage)을 확정한 뒤 앱을 그린다.
 export default function App() {
@@ -99,6 +101,7 @@ function pageContent(
   return (
     <>
       {effPage === "dashboard" && <Dashboard onNavigate={navigate} />}
+      {effPage === "inbox" && <Inbox onNavigate={navigate} />}
       {effPage === "ontology" && <Ontology onNavigate={navigate} />}
       {effPage === "usage" && <Usage onNavigate={navigate} />}
       {effPage === "guard" && <Guard />}
@@ -113,13 +116,14 @@ function pageContent(
       {effPage === "nodes" && <NodeMetrics />}
       {effPage === "network" && <Network onNavigate={navigate} />}
       {effPage === "topology" && <Topology onNavigate={navigate} />}
-      {effPage === "investigate" && <Investigate />}
+      {effPage === "investigate" && <Investigate onNavigate={navigate} />}
       {effPage === "agent" && <AiAgent onNavigate={navigate} />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}
       {effPage === "credentials" && <Credentials />}
       {effPage === "keys" && <Keys />}
       {effPage === "diagnostics" && <Diagnostics onNavigate={navigate} />}
+      {effPage === "metric-sources" && <MetricSources onNavigate={navigate} />}
     </>
   );
 }

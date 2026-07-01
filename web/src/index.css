@@ -386,6 +386,15 @@ body {
 }
 /* 데이터 신선도 stale 배지(IMP-21) — 색 비의존(아이콘+텍스트) */
 .freshness-stale { color: var(--amber); font-weight: 600; }
+/* ObjectView 드로어 신선도 줄(IMP-77) — 최종 갱신 + 정지/재개를 컴팩트하게(패널 폭 절약). */
+.ov-freshness {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+.ov-freshness .pause-toggle { margin-left: auto; }
 /* 내보내기 메뉴(IMP-23) — 네이티브 <details> 디스클로저 */
 .export-menu { position: relative; display: inline-block; }
 .export-menu > summary { list-style: none; cursor: pointer; }
@@ -979,7 +988,9 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 /* 데스크톱 우선 관제 콘솔. 좁은 폭에서 사이드바가 콘텐츠를 찌그러뜨리지 않게 한다. */
 @media (max-width: 820px) {
   .app {
-    grid-template-columns: 1fr;
+    /* minmax(0,1fr): 콘텐츠 트랙의 암묵적 min-width:auto(=min-content) 를 0 으로 눌러
+       초협폭(≤~490px)에서 grid 트랙이 콘텐츠 최소폭에 붙어 본문이 가로로 넘치는 것을 막는다. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "topbar"
       "content";
@@ -2140,6 +2151,15 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 .cmdk-overlay { position: fixed; inset: 0; background: rgba(16,24,40,0.45); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; z-index: 60; }
 .cmdk { width: min(620px, 92vw); background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-card-hover); overflow: hidden; display: flex; flex-direction: column; max-height: 70vh; }
+/* IMP-75 — 중첩 팔레트 breadcrumb row(Search Around 모드 경로). root 에서는 렌더되지 않음. */
+.cmdk-crumbs { display: flex; align-items: center; gap: var(--sp-2); padding: 8px var(--sp-4); border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: var(--fs-xs); }
+.cmdk-crumbs ol { display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; min-width: 0; }
+.cmdk-crumbs li { display: inline-flex; align-items: center; gap: 4px; }
+.cmdk-crumb-back { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-faint); font-size: 12px; line-height: 1; cursor: pointer; flex: none; }
+.cmdk-crumb-back:hover { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
+.cmdk-crumb { color: var(--text-faint); }
+.cmdk-crumb-cur { color: var(--text); font-weight: 600; }
+.cmdk-crumb-sep { color: var(--text-faint); }
 .cmdk-input-wrap { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
 .cmdk-search { color: var(--text-faint); font-size: 18px; }
 .cmdk-input { flex: 1; border: none; outline: none; font: inherit; font-size: 15px; background: transparent; color: var(--text); }
@@ -2558,6 +2578,75 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-actions { display: flex; flex-direction: column; gap: var(--sp-4); }
 .ov-actions > .action-form { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
 
+/* ── Action Inbox (IMP-69) — PROCESS 레이어 과업 큐. LEFT(큐) + CENTER(상세). RIGHT 는 ObjectView 슬라이드. ── */
+.inbox-grid { display: grid; grid-template-columns: minmax(300px, 360px) 1fr; gap: var(--sp-4); align-items: start; margin-top: var(--sp-3); }
+@media (max-width: 900px) { .inbox-grid { grid-template-columns: 1fr; } }
+
+/* LEFT — 큐 */
+.inbox-queue { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); overflow: hidden; }
+.inbox-summary { display: flex; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border); }
+.inbox-summary-n { font-size: var(--fs-metric); font-weight: 800; color: var(--primary-strong); line-height: 1; }
+.inbox-summary-l { font-size: var(--fs-sm); color: var(--text-dim); }
+.inbox-summary .badge { margin-left: auto; }
+.inbox-filters { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-3); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.inbox-filter { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-xs); color: var(--text-dim); }
+.inbox-filter select { font-size: var(--fs-sm); padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); }
+.inbox-list { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
+.inbox-item { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3); border: none; border-bottom: 1px solid var(--border); background: transparent; cursor: pointer; border-left: 3px solid transparent; }
+.inbox-item:hover { background: var(--surface-2); }
+.inbox-item.active { background: var(--primary-weak); border-left-color: var(--primary); }
+.inbox-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.inbox-item-top { display: flex; gap: 6px; align-items: center; }
+.inbox-item-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); line-height: 1.35; }
+.inbox-item-meta { display: flex; gap: 6px; align-items: center; font-size: var(--fs-xs); color: var(--text-dim); }
+.inbox-assignee { font-weight: 600; color: var(--text-dim); }
+.inbox-sep { color: var(--text-faint); }
+
+/* CENTER — 상세 */
+.inbox-detail { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: var(--sp-4); min-height: 200px; }
+.inbox-detail-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inbox-detail-title { font-size: var(--fs-h1); font-weight: 700; margin: var(--sp-2) 0 4px; color: var(--text); }
+.inbox-detail-meta { font-size: var(--fs-sm); color: var(--text-dim); }
+.inbox-detail-meta b { color: var(--text); font-weight: 600; }
+
+/* Workflow 스텝퍼 — 순차 단계. done=채움, current=강조 링, 이후=흐림. */
+.inbox-steps { list-style: none; display: flex; gap: 0; margin: var(--sp-4) 0; padding: 0; }
+.inbox-step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; font-size: var(--fs-xs); color: var(--text-faint); }
+.inbox-step::before { content: ""; position: absolute; top: 11px; left: -50%; width: 100%; height: 2px; background: var(--border); z-index: 0; }
+.inbox-step:first-child::before { display: none; }
+.inbox-step.done::before, .inbox-step.current::before { background: var(--primary); }
+.inbox-step-dot { position: relative; z-index: 1; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; background: var(--surface-2); border: 2px solid var(--border); color: var(--text-faint); }
+.inbox-step.done .inbox-step-dot { background: var(--primary); border-color: var(--primary); color: #fff; }
+.inbox-step.current .inbox-step-dot { border-color: var(--primary); color: var(--primary-strong); background: var(--primary-weak); }
+.inbox-step.current .inbox-step-label, .inbox-step.done .inbox-step-label { color: var(--text-dim); font-weight: 600; }
+
+.inbox-h { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; margin: var(--sp-4) 0 var(--sp-2); }
+.inbox-count { color: var(--text-faint); font-weight: 600; }
+.inbox-linked-list, .inbox-actions .ov-actions { list-style: none; margin: 0; padding: 0; }
+.inbox-linked-list { display: flex; flex-direction: column; gap: 4px; }
+.inbox-linked-item { width: 100%; text-align: left; display: flex; align-items: center; gap: 8px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; }
+.inbox-linked-item:hover { background: var(--surface-2); border-color: var(--border-strong); }
+.inbox-linked-item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.inbox-linked-glyph { font-size: 13px; }
+.inbox-linked-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); flex: 1; }
+.inbox-linked-type { font-size: var(--fs-xs); color: var(--text-dim); }
+.inbox-linked-go { color: var(--text-faint); }
+
+/* 풀-피델리티 GPU 하드웨어 섹션 (IMP-76) — Gpu.tsx SlidePanel + ObjectView 공용. 그룹 카드 + 단위 병기. */
+.gpu-hw { margin-top: var(--sp-4); }
+.gpu-hw .hw-src { font-size: 10px; font-weight: 500; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-left: 6px; text-transform: none; letter-spacing: 0; }
+.hw-group { margin-bottom: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.hw-group-h { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; margin-bottom: var(--sp-2); }
+.hw-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--sp-2); }
+.hw-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: 3px 0; font-size: var(--fs-sm); }
+.hw-row-label { color: var(--text-faint); }
+.hw-row-value { font-variant-numeric: tabular-nums; color: var(--text); }
+/* NVLink 링크별 throughput — L0–L5 미니 칩 그리드. */
+.hw-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: var(--sp-2); }
+.hw-link { display: flex; flex-direction: column; gap: 1px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface, #fff); }
+.hw-link-k { font-size: 10px; color: var(--text-faint); }
+.hw-link-v { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text); }
+
 /* (5) 실행 이력 — IMP-65 감사 타임라인. IncidentAuditEntry(IMP-38) 시각 패턴을 세로 rail 로 확장.
    좌측 연속 rail(border-left) + outcome 색 dot → 시간순 사건을 "선"으로 읽히게(flat list 대비). */
 .audit-timeline { list-style: none; margin: 0; padding: 0; }
@@ -2713,6 +2802,13 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .agent-intent-input:focus { outline: none; border-color: var(--primary); }
 .agent-presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
 
+/* IMP-78 — 모드 탭 + 클러스터 인사이트 */
+.agent-modes { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.agent-insights-meta { font-size: var(--fs-xs); margin: var(--sp-2) 0 var(--sp-3); }
+.agent-insights-dropped { font-size: var(--fs-xs); margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px dashed var(--border); }
+.insight-card .agent-card-title.as-text { cursor: default; }
+.insight-card .agent-card-title.as-text:hover { text-decoration: none; }
+
 .agent-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
 @media (max-width: 980px) { .agent-grid { grid-template-columns: 1fr; } }
 
@@ -2849,3 +2945,378 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 .onto-edge-card { margin-top: var(--sp-3); }
 .onto-side { background: var(--surface-2); }
+
+/* ───────────── 운영 준비도 스코어카드 (IMP-68) ───────────── */
+/* /ontology 정문 — 타입 카탈로그 대신 "지금 무엇이 주의를 요하나" pass/fail 채점(Datadog Scorecards). */
+.onto-tabs { margin-top: var(--sp-3); }
+
+/* "주의 요약" 카드 — at-risk 면 red 톤 좌측 강조, all-pass 면 green, 그 외 중립. */
+.onto-attn { padding: var(--sp-4); border-left: 3px solid var(--border); }
+.onto-attn-risk { border-left-color: var(--red); background: var(--red-weak); }
+.onto-attn-ok { border-left-color: var(--green); background: var(--green-weak); }
+.onto-attn-headline { display: flex; align-items: center; gap: var(--sp-3); }
+.onto-attn-glyph { font-size: 22px; line-height: 1; color: var(--text-dim); flex: none; }
+.onto-attn-glyph-risk { color: var(--red); }
+.onto-attn-headline-ok .onto-attn-glyph { color: var(--green); }
+.onto-attn-title { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-attn-num { color: var(--red); font-size: var(--fs-lg, 18px); }
+.onto-attn-headline-ok .onto-attn-num { color: var(--green); }
+.onto-attn-sub { font-size: var(--fs-sm); color: var(--text-dim); margin-top: 2px; }
+
+/* 그룹별 pass/total 미니 바 — 3그룹 나란히. */
+.onto-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-3);
+  margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.onto-group-stat { display: flex; flex-direction: column; gap: 4px; }
+.onto-group-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; }
+.onto-group-nums { font-size: var(--fs-body); font-weight: 700; color: var(--green); }
+.onto-group-nums-fail { color: var(--amber); }
+.onto-group-bar { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; display: block; }
+.onto-group-bar-fill { display: block; height: 100%; background: var(--green); border-radius: 3px; }
+.onto-group-bar-fill-fail { background: var(--amber); }
+
+/* 인스턴스 스코어 목록 — at-risk 우선(정렬은 buildScorecard). */
+.onto-scorelist { list-style: none; margin: var(--sp-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.onto-scorerow { padding: var(--sp-3); border-left: 3px solid var(--border); }
+.onto-scorerow-risk { border-left-color: var(--red); }
+.onto-scorerow-main { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.onto-scorerow-main .spacer { flex: 1 1 auto; }
+.onto-scorerow-chip { flex: none; }
+.onto-scorerow-title { font-size: var(--fs-body); font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+.onto-scorerow-fails { font-size: var(--fs-sm); color: var(--green); font-weight: 600; }
+.onto-scorerow-fails-bad { color: var(--red); }
+
+/* 3그룹 pass/fail 셀. */
+.onto-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--sp-2);
+  margin-top: var(--sp-3); }
+.onto-cell { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); }
+.onto-cell-ok { border-color: var(--green); background: var(--green-weak); }
+.onto-cell-fail { border-color: var(--amber-border); background: var(--amber-weak); }
+.onto-cell-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; }
+.onto-cell-nums { font-size: var(--fs-sm); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.onto-cell-ok .onto-cell-nums { color: var(--green); }
+.onto-cell-fail .onto-cell-nums { color: var(--amber); }
+.onto-cell-mark { font-size: 12px; line-height: 1; }
+
+/* 실패 규칙 목록 — 어느 규칙이 왜 fail 인지(과업 연결 카피). */
+.onto-fail-list { list-style: none; margin: var(--sp-3) 0 0; padding: var(--sp-2) var(--sp-3) 0;
+  border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px; }
+.onto-fail-item { display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-sm); flex-wrap: wrap; }
+.onto-fail-mark { color: var(--red); font-size: 12px; line-height: 1; flex: none; }
+.onto-fail-label { font-weight: 700; color: var(--text); flex: none; }
+.onto-fail-hint { color: var(--text-dim); }
+
+/* ───────────── 엔티티-앵커 Metric Explorer (IMP-71) ───────────── */
+/* ObjectView 탭 재사용(.me-tabs 는 .modality-tabs 위계). SlidePanel 은 <details> disclosure(.me-disclosure). */
+.me-tabs { margin-top: var(--sp-3); margin-bottom: var(--sp-3); }
+
+/* SlidePanel 하단 disclosure — 큐레이션 요약(위)은 그대로, 전량 메트릭은 명시적 탈출구. */
+.me-disclosure { margin-top: var(--sp-4); border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.me-disclosure-head {
+  display: flex; align-items: center; gap: var(--sp-2); cursor: pointer;
+  font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim);
+  list-style: none; user-select: none;
+}
+.me-disclosure-head::-webkit-details-marker { display: none; }
+.me-disclosure-caret { color: var(--text-faint); transition: transform var(--ease); display: inline-block; }
+.me-disclosure[open] > .me-disclosure-head .me-disclosure-caret { transform: rotate(90deg); }
+
+/* 컨트롤 — facet 셀렉터 + 검색(faceted-then-search). */
+.me-controls { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.me-facets { display: flex; gap: var(--sp-2); flex: 0 0 auto; }
+.me-facet-key, .me-facet-val, .me-search {
+  font: inherit; font-size: var(--fs-sm); color: var(--text);
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 5px 8px;
+}
+.me-search { flex: 1 1 200px; min-width: 160px; }
+.me-facet-key:focus, .me-facet-val:focus, .me-search:focus {
+  outline: 2px solid var(--focus-ring); outline-offset: 1px; border-color: var(--primary);
+}
+.me-count {
+  font-size: var(--fs-xs); color: var(--text-faint); margin: var(--sp-2) 0 var(--sp-1);
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+.me-source { margin-left: auto; font-variant: small-caps; opacity: 0.8; }
+
+/* 스크롤 영역 — 수백 행 windowing(IMP-30). 고정 높이로 슬라이드패널 안에서 스크롤 격리. */
+.me-scroll {
+  max-height: 420px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--surface);
+}
+.me-scroll:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.me-table { width: 100%; border-collapse: collapse; }
+
+/* 카테고리 헤더 행(접힘/펼침). */
+.me-cat-row td { padding: 0; }
+.me-cat-head {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  background: var(--surface-2); border: none; border-top: 1px solid var(--border);
+  padding: var(--sp-2) var(--sp-3); font: inherit; font-size: var(--fs-sm); font-weight: 700;
+  color: var(--text-dim); cursor: pointer; text-align: left;
+}
+.me-cat-head:hover:not(:disabled) { color: var(--text); }
+.me-cat-head:disabled { cursor: default; }
+.me-caret { color: var(--text-faint); transition: transform var(--ease); display: inline-block; }
+.me-caret.open { transform: rotate(90deg); }
+.me-cat-label { flex: 1; }
+.me-cat-count {
+  font-size: var(--fs-xs); color: var(--text-faint); font-weight: 500;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0 6px;
+}
+
+/* 메트릭 행 — 이름/키 · 타입/신선도 · 스파크 · 값+단위+상태. */
+.me-row { border-top: 1px solid var(--border); }
+.me-row:hover { background: var(--surface-2); }
+.me-row td { padding: var(--sp-2) var(--sp-3); vertical-align: middle; }
+.me-row-name { max-width: 240px; }
+.me-row-label { display: block; font-size: var(--fs-sm); color: var(--text); }
+.me-row-key {
+  display: block; font-size: 10px; color: var(--text-faint); font-family: var(--mono, monospace);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px;
+}
+.me-row-meta { white-space: nowrap; }
+.me-type {
+  font-size: 10px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; margin-right: 6px;
+}
+.me-fresh { font-size: 10px; color: var(--text-faint); }
+.me-row-spark { width: 128px; }
+.me-row-spark .sparkline { height: 26px; }
+.me-row-val { text-align: right; white-space: nowrap; }
+.me-val { font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: var(--text); }
+.me-flag { font-size: var(--fs-xs); font-weight: 600; }
+.me-pin-hint {
+  display: block; font-size: 10px; color: var(--text-faint); margin-top: 2px; cursor: help; opacity: 0.75;
+}
+.me-pin-hint:hover { opacity: 1; color: var(--primary); }
+
+/* triad — loading(skeleton) / empty / error. */
+.me-state { padding: var(--sp-4); font-size: var(--fs-sm); border-radius: var(--radius-sm); }
+.me-state.empty { color: var(--text-faint); background: var(--surface-2); text-align: center; }
+.me-empty-hint { color: var(--text-faint); }
+.me-retry { margin-left: var(--sp-2); }
+.me-loading { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); }
+.me-skel {
+  height: 30px; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%; animation: skel-shimmer 1.4s ease infinite;
+}
+.me-loading-text { font-size: var(--fs-xs); color: var(--text-faint); }
+/* ── IMP-80 — 객체 상세 3층 위계 레이아웃(요약 스트립 → 카테고리 카드 그리드 → 전체 메트릭) ──
+   Palantir Object View 360° / Datadog Host·GPU / Grafana 패널 그리드 밀도·위계.
+   라이트 + 스틸블루, 네온 금지. 상태색+텍스트 병기(WCAG 1.4.1). 밀도 토큰(sp·fs) 사용. */
+
+/* 상세 상단 라인 — 상태 배지 + 데이터 출처(요약 스트립 위). */
+.metric-detail-top { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.metric-detail-src { font-size: var(--fs-xs); color: var(--text-faint); }
+.metric-detail-src code { font-size: var(--fs-xs); }
+
+/* (Tier 1) 요약 스트립 — 핵심 KPI 게이지/값. 반응형 그리드(좁으면 자동 줄바꿈). */
+.metric-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-3); margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.metric-kpi { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.metric-kpi-label { font-size: var(--fs-xs); color: var(--text-faint); font-weight: 600; letter-spacing: .01em; }
+.metric-kpi-val { font-size: var(--fs-metric); font-size: clamp(18px, 4vw, 22px); font-weight: 700; color: var(--text); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.metric-kpi-flag { font-size: var(--fs-xs); font-weight: 600; }
+.metric-kpi .gauge { margin-top: 2px; }
+
+/* (Tier 2) 카테고리 카드 그리드 — 반응형 2~3열(좁으면 1열). */
+.metric-cat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--sp-3); margin-bottom: var(--sp-3);
+}
+/* 하드웨어 등 넓은 섹션은 전체 폭 차지. */
+.metric-cat-span { grid-column: 1 / -1; }
+.metric-cat-card { padding: 0; overflow: hidden; }
+/* 카테고리 최악 상태 → 좌측 accent bar(색+헤더 배지 텍스트 병기). */
+.metric-cat-card { border-left: 3px solid transparent; }
+.metric-cat-warn { border-left-color: var(--amber); }
+.metric-cat-crit { border-left-color: var(--red); }
+/* 카드 헤더 — 접이식(caret) + 제목 + 상태 배지 + mini 스파크라인. */
+.metric-cat-head {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: var(--sp-2) var(--sp-3); background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); text-align: left;
+}
+.metric-cat-head:hover { color: var(--text); }
+.metric-cat-head:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.metric-cat-caret { color: var(--text-faint); transition: transform var(--ease); display: inline-block; flex: none; }
+.metric-cat-caret.open { transform: rotate(90deg); }
+.metric-cat-title { flex: 1; min-width: 0; }
+.metric-cat-badge { flex: none; margin-right: 0; }
+.metric-cat-spark { flex: none; display: inline-flex; align-items: center; opacity: .9; }
+.metric-cat-spark .sparkline { display: block; }
+/* 카드 body — 신호 행(node-dd-row / DetailRow). 헤더와 구분선. */
+.metric-cat-body { padding: 0 var(--sp-3) var(--sp-2); border-top: 1px solid var(--border); }
+.metric-cat-body .detail-row:first-child,
+.metric-cat-body .node-dd-row:first-child { padding-top: var(--sp-2); }
+.metric-cat-body .node-dd-row:first-child { margin-top: var(--sp-2); }
+/* 카드 안 node-dd-row 라벨 폭은 카드 폭에 맞춰 축소(그리드 셀이 좁을 수 있음). */
+.metric-cat-body .node-dd-label { width: 72px; }
+.metric-cat-body .node-dd-cur { width: auto; min-width: 64px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .me-skel { animation: none; }
+  .me-caret, .me-disclosure-caret, .metric-cat-caret { transition: none; }
+}
+
+/* ── IMP-72 — Kinetic 알림 스트립(감지→객체 위 즉시 Action, Probable Cause 4-슬롯) ──
+   대시보드/COP/ObjectView 상단. 각 카드 = [영향 객체]·[근거]·[추정 원인]·[추천 조치] 4-슬롯.
+   스틸블루·라이트·엔터프라이즈 톤(네온 금지) — 상태색은 위험/주의만. reduce-motion 안전. */
+.kinetic-strip {
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-1); box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.kinetic-strip-head {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.kinetic-strip-title { display: inline-flex; align-items: center; gap: var(--sp-2); font-weight: 700; font-size: var(--fs-sm); }
+.kinetic-strip-glyph { color: var(--primary); }
+.kinetic-strip-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 6px; border-radius: 999px;
+  background: var(--primary-weak); color: var(--primary-strong);
+  font-size: var(--fs-xs); font-weight: 700;
+}
+.kinetic-strip-caveat { color: var(--text-faint); font-size: var(--fs-xs); }
+.kinetic-cards { list-style: none; margin: 0; padding: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* 4-슬롯 카드 — 넓으면 4열 그리드, 좁으면 세로 스택. 좌측 상태색 rail(색-only 금지: 상태 Badge 병기). */
+.kinetic-card {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: minmax(160px, 0.9fr) minmax(220px, 1.6fr) minmax(180px, 1.2fr) minmax(180px, 1fr);
+  padding: var(--sp-3); padding-left: calc(var(--sp-3) + 3px);
+  border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm); background: var(--surface-1);
+}
+.kinetic-card.kinetic-crit { border-left-color: var(--red); background: color-mix(in srgb, var(--red-weak) 30%, var(--surface-1)); }
+.kinetic-card.kinetic-warn { border-left-color: var(--amber); }
+.kinetic-slot { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.kinetic-slot-h {
+  display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+
+/* [1] 영향 객체 */
+.kinetic-object-chip { border: 1px solid color-mix(in srgb, var(--otype-color, var(--border-strong)) 35%, transparent); cursor: pointer; max-width: 100%; }
+.kinetic-object-chip:disabled { cursor: default; }
+.kinetic-object-chip .otype-chip-glyph { flex: none; }
+.kinetic-object-meta { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.kinetic-breach {
+  font-size: var(--fs-xs); color: var(--red); font-weight: 700;
+  padding: 1px 6px; border-radius: var(--radius-sm); background: var(--red-weak); border: 1px solid var(--red-border);
+}
+
+/* [2] 근거(evidence) — 신호 리스트(계열 배지 + 값 + 시각/인용) */
+.kinetic-signals { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.kinetic-signal { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.kinetic-sig-kind {
+  flex: none; margin-top: 1px; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 999px; color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.kinetic-sig-kind.kind-throttle, .kinetic-sig-kind.kind-saturation { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
+.kinetic-sig-kind.kind-alertrule { color: var(--red); background: var(--red-weak); border-color: var(--red-border); }
+.kinetic-sig-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.kinetic-sig-label { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.kinetic-sig-detail { font-size: var(--fs-xs); color: var(--text-dim); }
+.kinetic-sig-cite { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-faint); flex-wrap: wrap; }
+.kinetic-sig-when { color: var(--text-dim); }
+.kinetic-sig-src { font-family: var(--mono, monospace); font-size: 10px; color: var(--text-faint); word-break: break-all; }
+
+/* [3] 추정 원인 경로(Probable Cause) */
+.kinetic-cause { margin: 0; font-size: var(--fs-sm); color: var(--text); line-height: 1.5; }
+
+/* [4] 추천 조치 — 3단 사다리 */
+.kinetic-ladder { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+.kinetic-rung { display: inline-flex; align-items: center; gap: var(--sp-2); justify-content: flex-start; text-align: left; }
+.kinetic-rung-n {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 999px; font-size: 10px; font-weight: 700;
+  background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
+}
+.kinetic-rung-exec .kinetic-rung-n { background: color-mix(in srgb, #fff 25%, transparent); color: #fff; border-color: transparent; }
+.kinetic-rung-denied {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm); color: var(--text-faint);
+  padding: 4px 8px; border-radius: var(--radius-sm);
+  background: var(--surface-2); border: 1px dashed var(--border);
+}
+.kinetic-action-form { margin-top: var(--sp-2); padding-top: var(--sp-2); border-top: 1px dashed var(--border); }
+.kinetic-action-note { margin: 0 0 var(--sp-2); font-size: var(--fs-xs); color: var(--text-dim); }
+
+/* 좁은 화면 — 4-슬롯을 세로 스택. 카드 내부는 가로 스크롤이 아니라 wrap 으로 흘린다. */
+@media (max-width: 900px) {
+  .kinetic-card { grid-template-columns: 1fr; }
+}
+
+/* ───────────── 메트릭 소스 / 익스포터 커버리지 매트릭스 (IMP-74) ─────────────
+   Diagnostics(연동 상태)와 별개 — 신호→온톨로지 객체 커버리지. Backend.AI 라이트+스틸블루 토큰만. */
+.ms-source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-4); }
+.ms-source-card { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--surface); height: 100%; }
+.ms-healthy { border-left-color: var(--green); }
+.ms-configured_no_data { border-left-color: var(--amber); }
+.ms-not_configured { border-left-color: var(--border-strong); }
+.ms-source-head { display: flex; align-items: center; gap: var(--sp-2); }
+.ms-source-name { font-weight: 600; }
+.ms-proto { font-size: var(--fs-xs); color: var(--text-faint); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; text-transform: uppercase; letter-spacing: .03em; }
+.ms-source-role { font-size: var(--fs-xs); color: var(--text-dim); margin-top: 2px; }
+.ms-label { font-size: var(--fs-xs); font-weight: 700; color: var(--text-faint); margin-right: 6px; }
+.ms-source-targets { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: var(--sp-2); }
+.ms-target-note { font-size: var(--fs-xs); }
+.ms-source-families { margin-top: var(--sp-2); }
+.ms-family-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.ms-family { font-size: var(--fs-xs); color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; word-break: break-all; }
+.ms-scrape { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.ms-scrape code { font-size: var(--fs-xs); }
+.ms-note { margin-top: var(--sp-2); padding: var(--sp-2); border-radius: var(--radius-sm); font-size: var(--fs-xs); }
+.ms-note-warn { background: var(--amber-weak); border: 1px solid var(--amber-border); }
+.ms-note-info { background: var(--surface-2); border: 1px solid var(--border); }
+.ms-note-badge { font-weight: 700; color: var(--text-dim); display: block; }
+.ms-note-warn .ms-note-badge { color: var(--amber); }
+.ms-note-detail { color: var(--text-dim); display: block; margin-top: 2px; }
+
+/* 소스 포커스 하이라이트(GAP 셀에서 추천 익스포터로 이동 시) */
+.ms-source-focus { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); transition: outline-color .3s ease; }
+
+/* GAP 셀 — 신호×객체(1급). 클릭 가능한 카드. */
+.ms-gap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-3); }
+.ms-gap-cell { text-align: left; border: 1px solid var(--red-border); border-left-width: 3px; border-left-color: var(--red); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--red-weak); cursor: pointer; font: inherit; color: inherit; transition: background .15s ease, box-shadow .15s ease; }
+.ms-gap-cell:hover { background: var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.ms-gap-cell:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ms-gap-head { display: flex; align-items: center; gap: 6px; }
+.ms-gap-obj { font-weight: 700; }
+.ms-gap-x { color: var(--text-faint); }
+.ms-gap-signal { color: var(--text-dim); }
+.ms-gap-reason { font-size: var(--fs-xs); color: var(--text-dim); margin-top: var(--sp-2); }
+.ms-gap-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: var(--sp-2); font-size: var(--fs-xs); }
+.ms-gap-rec { color: var(--text-dim); }
+.ms-gap-issue { color: var(--text-faint); }
+.ms-gap-link { margin-left: auto; color: var(--primary-strong); font-weight: 600; }
+
+/* 커버되는 신호(대비군) */
+.ms-covered-list { display: flex; flex-direction: column; gap: 6px; }
+.ms-covered-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-size: var(--fs-sm); }
+.ms-cov-obj { font-weight: 600; }
+.ms-cov-signal { color: var(--text-dim); }
+.ms-cov-src { font-size: var(--fs-xs); }
+
+/* 좁은 화면 — 한 열 스택. */
+@media (max-width: 720px) {
+  .ms-source-grid, .ms-gap-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-gap-cell, .ms-source-focus { transition: none; }
+}

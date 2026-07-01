@@ -1,24 +1,27 @@
 package server
 
-// IMP-9 PoC — JSON-RPC 2.0 MCP 전송을 공식 MCP Go SDK(modelcontextprotocol/go-sdk)로 채택.
+// IMP-9 PoC → IMP-73 — JSON-RPC 2.0 MCP 전송을 공식 MCP Go SDK(modelcontextprotocol/go-sdk)로 채택.
 //
-// 채택 순서 step 1(좁게): groupby_metric tool 1개만 typed mcp.AddTool[In,Out] 로 이전하고,
-// 전송은 mcp.NewStreamableHTTPHandler(stateless) 를 별도 PoC 라우트 POST /api/v1/mcp/v2 에 마운트한다.
-// 기존 수기 POST /api/v1/mcp(handleMCP, mcp.go) 는 무수정 유지 — 회귀 없이 나란히 비교.
+// IMP-9 에서 groupby_metric 1개만 typed mcp.AddTool[In,Out] 로 이전했고, 전송은
+// mcp.NewStreamableHTTPHandler(stateless) 를 라우트 POST /api/v1/mcp/v2 에 마운트한다.
+// IMP-73 에서 온톨로지 read tool 4종(query_objects/traverse_links/get_object/get_object_metrics)을
+// 이 SDK path 에 추가해 canonical 로 삼는다 — 스키마는 프론트 TS 레지스트리가 emit 한 committed
+// 아티팩트(mcp_ontology.go go:embed)에서 로드한다(수기 미러 금지, drift 가드).
 //
-// 봉투/전송/검증 레이어만 SDK 로 교체한다. 비즈니스 로직(s.dashboard 의 MetricsBreakdown +
-// domain.AnnotateWarnings)은 수기 라우트와 동일 경로를 그대로 재사용한다 → 데이터 패리티.
+// 봉투/전송/검증 레이어만 SDK 로 교체한다. groupby_metric 의 비즈니스 로직(s.dashboard 의
+// MetricsBreakdown + domain.AnnotateWarnings)은 수기 라우트와 동일 경로를 재사용한다 → 데이터 패리티.
 //
-// read-only 보장: groupby_metric(조회) 1개만 등록. write tool 미등록(observe 프로파일 정합).
+// read-only 보장: 등록 tool 전부 조회 전용. write tool 미등록(observe 프로파일 정합).
 // protocolVersion 하드코딩 제거: SDK 가 클라이언트와 자동 네고한다(수기 라우트의 "2024-11-05" 와 분리).
 //
 // 스키마 함정(검증 노트):
 //   - jsonschema-go 는 객체 스키마에 additionalProperties:false 를 강제(SDK #892) →
 //     봉투에 없는 여분 필드는 검증 단계에서 거부된다(핸들러 진입 전).
-//   - format/regex back-reference 는 미적용 → 허용값은 enum 태그로 선언(아래 jsonschema:"enum=..").
+//   - format/regex back-reference 는 미적용 → 허용값은 enum 으로 선언(아티팩트 스키마가 이미 enum 보유).
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -72,7 +75,35 @@ func (s *Server) mcpV2Server() *mcp.Server {
 		InputSchema: groupbyMetricInputSchema(),
 	}, s.groupbyMetricV2)
 
+	// IMP-73 — 온톨로지 read tool 4종. 스키마는 프론트가 emit 한 committed 아티팩트에서 로드하고
+	// (수기 미러 금지), 입력은 In=map[string]any + 명시 InputSchema 로 SDK 가 strict 검증한다
+	// (setSchema 는 명시 스키마가 있으면 In 을 reflect 하지 않고 그 스키마로 검증 → enum·필수·여분필드 거부).
+	// 핸들러는 조회 전용 — Go 온톨로지 provider 는 후속(out of scope)이라 안전한 미구현 응답을 낸다
+	// (계약·스키마·검증·게이팅 단일화가 이 item 의 골자; 프론트 mock 은 완전 동작).
+	for _, spec := range loadOntologyToolSpecs() {
+		name := spec.Name
+		mcp.AddTool(srv, &mcp.Tool{
+			Name:        name,
+			Description: spec.Description,
+			InputSchema: spec.InputSchema, // 아티팩트에서 로드한 *jsonschema.Schema(additionalProperties:false·enum·required)
+		}, ontologyReadHandler(name))
+	}
+
 	return srv
+}
+
+// ontologyReadHandler 는 온톨로지 read tool 의 SDK 핸들러(조회 전용). In=map[string]any 로
+// 받아(명시 InputSchema 가 이미 SDK 단계에서 검증) 결정적 안전 응답을 돌려준다.
+// Go 실 온톨로지 provider 는 후속(IMP-79/온톨로지 provider)로 분리 — 여기서는 계약을 노출하고
+// mutating 부작용 없음을 보장한다(어떤 인자에도 상태를 바꾸지 않는다).
+func ontologyReadHandler(name string) mcp.ToolHandlerFor[map[string]any, map[string]any] {
+	return func(_ context.Context, _ *mcp.CallToolRequest, in map[string]any) (*mcp.CallToolResult, map[string]any, error) {
+		// read-only — 입력은 검증 통과분만 도달. 부작용 없이 계약 응답만 구성한다.
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf(
+				"%s: 백엔드 온톨로지 provider 는 후속 작업입니다. 인앱 에이전트(mock BFF)가 동일 tool 계약으로 온톨로지를 조회합니다. args=%v", name, in)}},
+		}, map[string]any{"tool": name, "args": in, "implemented": false}, nil
+	}
 }
 
 // groupbyMetricV2 는 groupby_metric typed 핸들러 — 기존 metricsBreakdownSource +

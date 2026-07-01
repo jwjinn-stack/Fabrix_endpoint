@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import NotificationsDrawer from "./Notifications";
 import CommandPalette, { type Command } from "./CommandPalette";
+import { useSearchAround } from "./useSearchAround";
+import { useObjectView } from "./ObjectView";
 import { useCap } from "../capabilities";
 import { capForPage } from "../router";
 
 export type Page =
   | "dashboard"
+  | "inbox"
   | "ontology"
   | "usage"
   | "guard"
@@ -26,26 +29,26 @@ export type Page =
   | "traffic"
   | "settings"
   | "credentials"
-  | "diagnostics";
+  | "diagnostics"
+  | "metric-sources";
 
 type NavChild = { label: string; page: Page };
 type NavItem = { glyph: string; label: string; page?: Page; soon?: boolean; children?: NavChild[] };
 
 // 증권사 인퍼런스 관제 콘솔 — 의미가 또렷한 단색 글리프(이모지 배제로 톤 통일).
-// IA(정보구조)를 팔란티어식 object-centric·흐름 중심으로 재편(IMP-62, doc §7):
-// 최상위를 5개 흐름 그룹(탐색→관측→추적→제어→연동)으로 묶어 사용자가 관측→추적→제어 순으로 흐르게 한다.
+// IA(정보구조)를 팔란티어식 object-centric·흐름 중심으로 재편(IMP-62, doc §7).
+// IMP-70 진입점 재배치(doc §2 패턴 1·5 / §4): 오퍼레이터는 과업/상황/객체(TASK·SITUATION·OBJECT)에
+//   랜딩하고, 글로벌 스키마 개요는 "분리된 참조 아티팩트"로 둔다(박물관 정문 금지).
+//   → 그룹 순서를 일상 흐름이 먼저 오도록 **관측→추적→제어→참조→연동** 으로 재배치하고,
+//     온톨로지 개요 그룹은 정문(최상단 "탐색")에서 운영 흐름 뒤 **"참조"** 그룹으로 강등(여전히 도달 가능).
+//   기본 랜딩 자체는 이미 actionable(pageFromPath 루트/미지 → dashboard, 온톨로지 아님) — router.cap.test 가 고정.
 // 모든 그룹은 page 가 없는 groupless 그룹 — 부모 클릭 시 확장/접힘만(자식만 이동, IMP-53 패턴 재사용).
 // 2단 서브였던 모델 임포트·서드파티 자격증명은 NavChild 가 플랫이라 연동 그룹의 형제 항목으로 평탄화
 // (두 화면은 고유 라우트·App.tsx 렌더 스위치를 가져 nav shape 와 무관하게 도달 가능).
 // capability 게이팅(PAGE_CAP)은 불변 — observe 프로파일에선 mutating 항목이 빠져 제어/연동 그룹이 자연히 줄어든다.
 const NAV: NavItem[] = [
-  // 탐색(Explore) — 온톨로지 렌즈로 Object 를 탐색(개요가 Object 탐색기를 겸함).
-  {
-    glyph: "⬡",
-    label: "탐색",
-    children: [{ label: "온톨로지", page: "ontology" }],
-  },
-  // 관측(Observe) — 현상 보기: 관제·사용량·트레이스·세션·인프라(GPU/노드/네트워크/토폴로지)·트래픽.
+  // 관측(Observe) — 현상 보기(SITUATION 진입): 관제·사용량·트레이스·세션·인프라(GPU/노드/네트워크/토폴로지)·트래픽.
+  // 흐름의 시작이자 기본 랜딩 그룹(dashboard) — 최상단으로 올려 오퍼레이터가 actionable surface 를 먼저 본다.
   {
     glyph: "▦",
     label: "관측",
@@ -61,11 +64,15 @@ const NAV: NavItem[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  // 추적(Investigate) — 원인 추적을 1급 시민으로. Incidents 는 investigate 화면 내부 surface.
+  // 추적(Investigate) — 원인 추적을 1급 시민으로(TASK 진입). Action Inbox(IMP-69)가 과업-앵커 진입점(내게 할당된 과업 큐).
+  // Incidents 는 investigate 화면 내부 surface.
   {
     glyph: "◈",
     label: "추적",
-    children: [{ label: "근본원인 추적(COP)", page: "investigate" }],
+    children: [
+      { label: "과업 인박스", page: "inbox" },
+      { label: "근본원인 추적(COP)", page: "investigate" },
+    ],
   },
   // 제어(Operate) — 행위: AI Agent(MCP)·플레이그라운드. Actions 는 ObjectView/Investigate 내부.
   {
@@ -76,12 +83,21 @@ const NAV: NavItem[] = [
       { label: "플레이그라운드", page: "playground" },
     ],
   },
+  // 참조(Reference) — 온톨로지 스키마/개요 참조 surface. IMP-70: 정문("탐색")에서 강등 —
+  //   운영 흐름(관측→추적→제어) 뒤에 두어 "분리된 참조 아티팩트"로 프레이밍(박물관 정문 아님, doc §2 패턴 5).
+  //   일상 진입은 Object 이웃 drill-in(ObjectView, IMP-57). 화면 내부는 IMP-68 이 이미 스코어카드(정문)/스키마-참조(보조)로 분리.
+  {
+    glyph: "⬡",
+    label: "참조",
+    children: [{ label: "온톨로지", page: "ontology" }],
+  },
   // 연동(Integrate) — 구성·거버넌스: 연동 상태·모델·엔드포인트·자격증명·키·가드레일·평가·설정.
   {
     glyph: "⇄",
     label: "연동",
     children: [
       { label: "연동 상태", page: "diagnostics" },
+      { label: "메트릭 소스", page: "metric-sources" },
       { label: "모델", page: "models" },
       { label: "모델 임포트", page: "model-import" },
       { label: "엔드포인트", page: "endpoints" },
@@ -143,8 +159,14 @@ export default function Layout({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 명령 = 네비게이션(보이는 화면) + 전역 작업(가능한 것만). observe 에선 쓰기 작업이 빠진다.
-  const commands = useMemo<Command[]>(() => {
+  // IMP-57 — ObjectView 는 urlState(obj) 를 단일 출처로 페이지 무관하게 열린다. 팔레트의 Search Around
+  //  런처가 객체를 열 때 이 open(id) 을 쓴다(팔레트는 mutate 하지 않고 ObjectView 로 유도 — trust boundary).
+  const { open: openObjectView } = useObjectView();
+
+  // root 모드 명령 = 네비게이션(보이는 화면) + 전역 작업(가능한 것만). observe 에선 쓰기 작업이 빠진다.
+  //  IMP-75 — 이 flat Command[] 가 중첩 팔레트의 root 모드가 된다(회귀 없음). object-search/context/around 는
+  //  useSearchAround 가 이 root 위에 얹는다.
+  const rootCommands = useMemo<Command[]>(() => {
     const navCmds: Command[] = visibleNav.flatMap((n) => {
       const items: Command[] = n.page
         ? [{ id: `nav-${n.page}`, label: n.label, hint: "이동", group: "이동", glyph: n.glyph, keywords: `${n.label} ${n.page}`, run: () => onNavigate(n.page!) }]
@@ -165,6 +187,15 @@ export default function Layout({
     return [...navCmds, ...actions];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onNavigate, dark, visibleNav]);
+
+  // IMP-75 — 중첩 팔레트 모드 머신. root=위 flat rootCommands, 그 위에 object-search/context/around 를 얹는다.
+  //  openObjectView(id) 로 ObjectView 진입(안전 primary). 팔레트가 닫힌 뒤 객체를 열도록 close 를 먼저.
+  const sa = useSearchAround({
+    open: cmdOpen,
+    rootCommands,
+    openObject: (id) => { setCmdOpen(false); openObjectView(id); },
+  });
+
   return (
     <div className="app">
       <header className="topbar">
@@ -256,7 +287,17 @@ export default function Layout({
 
       <main className="content">{children}</main>
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
-      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} commands={commands} />
+      <CommandPalette
+        open={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        commands={sa.commands}
+        breadcrumb={sa.breadcrumb}
+        onBack={sa.onBack}
+        liveMessage={sa.liveMessage}
+        placeholder={sa.placeholder}
+        onQueryChange={sa.onQueryChange}
+        modeKey={sa.modeKey}
+      />
     </div>
   );
 }

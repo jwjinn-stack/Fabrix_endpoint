@@ -48,8 +48,13 @@ import type {
   OntologyObject,
   OntologyObjectList,
   OntologyLinkList,
+  KineticAlertList,
+  MetricSourceCoverage,
+  ObjectMetricsReport,
+  ObjectMetricTree,
   ActionResult,
   AgentRun,
+  AgentInsightRun,
   OrgTree,
   TopologyGraph,
   ProxyStats,
@@ -530,6 +535,18 @@ export function fetchOntologyObjects(type?: ObjectType, filter?: string, signal?
   return getJSON<OntologyObjectList>(`/ontology/objects${suffix}`, signal);
 }
 
+// Kinetic 감지→객체 귀속(IMP-72) — 감지 이상을 온톨로지 객체에 결정적으로 귀속한 4-슬롯 알림.
+// VITE_MOCK=off 면 transport 만 스왑(실백엔드로), 응답 스키마는 KineticAlertList 로 고정. read-only.
+export function fetchKineticAlerts(signal?: AbortSignal): Promise<KineticAlertList> {
+  return getJSON<KineticAlertList>(`/ontology/detections`, signal);
+}
+
+// 메트릭 소스 / 익스포터 커버리지(IMP-74) — 신호×온톨로지 객체 커버리지 매트릭스·갭·3단 상태. read-only.
+// mock 은 결정적 카탈로그, live(IMP-79)는 VictoriaMetrics up{job}+scrape_samples_scraped+age 로 상태만 스왑.
+export function fetchMetricSourceCoverage(signal?: AbortSignal): Promise<MetricSourceCoverage> {
+  return getJSON<MetricSourceCoverage>(`/metric-sources`, signal);
+}
+
 export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSignal): Promise<OntologyLinkList> {
   const q = new URLSearchParams();
   if (kind) q.set("kind", kind);
@@ -540,6 +557,21 @@ export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSi
 // 단일 canonical 객체(IMP-57 Object View) — deep-link 복원·traverse 대상 해석. 미존재 → 404 throw.
 export function fetchOntologyObject(id: string, signal?: AbortSignal): Promise<OntologyObject> {
   return getJSON<OntologyObject>(`/ontology/objects/${encodeURIComponent(id)}`, signal);
+}
+
+// get_object_metrics tool(IMP-73)의 클라 경로 — 객체 메트릭 시계열/현재값. 미존재 → 404 throw.
+// VITE_MOCK=off 면 transport 만 스왑(실백엔드로), 응답 스키마는 ObjectMetricsReport 로 고정.
+export function fetchObjectMetrics(id: string, range?: string, signal?: AbortSignal): Promise<ObjectMetricsReport> {
+  const suffix = range ? `?range=${encodeURIComponent(range)}` : "";
+  return getJSON<ObjectMetricsReport>(`/ontology/objects/${encodeURIComponent(id)}/metrics${suffix}`, signal);
+}
+
+// 엔티티-앵커 Metric Explorer(IMP-71) — GpuDevice/Node 의 전량 메트릭 category→row 트리. 미존재 → 404 throw.
+// mock 은 buildOntology 스냅샷에서 결정적 파생, live(IMP-79)는 VictoriaMetrics /series+/query+/query_range.
+// 어느 쪽이든 transport 만 스왑되고 응답 스키마는 ObjectMetricTree 로 고정.
+export function fetchObjectMetricTree(id: string, range?: string, signal?: AbortSignal): Promise<ObjectMetricTree> {
+  const suffix = range ? `?range=${encodeURIComponent(range)}` : "";
+  return getJSON<ObjectMetricTree>(`/ontology/objects/${encodeURIComponent(id)}/metric-tree${suffix}`, signal);
 }
 
 // Action(writeback) 단일 mutation 계약(IMP-59) — POST /ontology/actions/:name.
@@ -595,6 +627,30 @@ export async function runAgent(
     throw new Error(`API ${res.status}${detail}`);
   }
   return (await res.json()) as AgentRun;
+}
+
+// AI Agent 클러스터 인사이트(IMP-78) — Dynamo 로컬 모델이 온톨로지 근거로 군집·패턴을 도출. POST /agent/insights.
+// 결정적 RCA(runAgent)와 별개의 생성적 레이어다. HARD grounding(모든 claim 은 objectId 인용 필수, 인용 없으면
+// 표시 안 함)은 서버(mock/실백엔드)가 강제한 뒤 AgentInsightRun 스키마로 고정 → UI 는 표시만 한다(hallucination 금지).
+// **read-only** — 이 호출은 어떤 mutation 도 유발하지 않는다(mutation 은 오직 submitAction+<ActionForm>).
+// mock 은 결정적 응답, VITE_MOCK=off 면 이 함수는 그대로 실백엔드(→Dynamo /playground/chat 계열)로 나가고
+// (transport 만 스왑), 응답 스키마는 AgentInsightRun 로 고정. 모델 호출은 느릴 수 있어 시도별 타임아웃을 둔다.
+export async function runAgentInsights(signal?: AbortSignal): Promise<AgentInsightRun> {
+  // 외부 취소 신호 + 요청 타임아웃 합성(둘 중 먼저 발화하면 abort). runAgent 와 동일 견고성 패턴.
+  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const res = await fetch(apiPath(`/agent/insights`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "insights" }),
+    signal: composed,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as AgentInsightRun;
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {

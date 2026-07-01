@@ -31,3 +31,23 @@ describe("PAGE_CAP — 인프라 화면 cap 정합 (IMP-53)", () => {
     expect(pageFromPath("/agent")).toBe("agent");
   });
 });
+
+// IMP-70 — 진입점 재배치: 기본 랜딩은 과업/상황/객체형 actionable surface(관제), 온톨로지 개요 아님.
+// 별도 "home" 개념이 없으므로 기본 라우트(pageFromPath 루트/미지 폴백)가 곧 랜딩 — 이를 못박아 박물관 정문 회귀 방지.
+describe("기본 랜딩 — actionable surface, 온톨로지 정문 아님 (IMP-70)", () => {
+  it("루트/미지 경로는 dashboard(관제)로 폴백 — 온톨로지 개요가 아니다", () => {
+    // 루트 '/' → dashboard.
+    expect(pageFromPath("/")).toBe("dashboard");
+    expect(pageFromPath("/")).not.toBe("ontology");
+    // 미지 경로(박물관 정문 딥링크 등) → dashboard 폴백, 온톨로지 아님.
+    expect(pageFromPath("/museum-front-door")).toBe("dashboard");
+    expect(pageFromPath("/museum-front-door")).not.toBe("ontology");
+    // 빈 경로도 dashboard.
+    expect(pageFromPath("")).toBe("dashboard");
+  });
+
+  it("dashboard 는 항상-허용에 준하는 dashboard cap — 양 프로파일 공통 랜딩 가능", () => {
+    // 랜딩 화면 cap 이 켜져 있어야 observe/manage 양쪽에서 첫 화면이 폴백되지 않는다.
+    expect(capForPage("dashboard")).toBe("dashboard");
+  });
+});

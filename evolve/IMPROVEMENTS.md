@@ -112,20 +112,20 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-65 | aesthetic | Action 폼 & 실행 피드백 시각 완성도 — 파라미터 폼·확인·optimistic 전이·audit 타임라인 | low | M | medium | done | 2026-07-01 |
 | IMP-66 | oss | 온톨로지 관계 그래프 상태 traverse — 클라이언트 그래프 라이브러리(graphology) 채택 저울질 | medium | M | medium | done | 2026-07-01 |
 | IMP-67 | platform | 온톨로지 Action 의 side-effect/워크플로 백본을 검증된 워크플로 엔진(Temporal)으로 백킹 | low | L | medium | spike-needed | 2026-07-01 |
-| IMP-68 | ux | /ontology 재설계 — 추상 타입 카탈로그 → 운영 준비도 스코어카드(무엇이 지금 주의를 요하나) | high | M | high | grounded | 2026-07-01 |
-| IMP-69 | ux | PROCESS 레이어 + Action Inbox — Incident/Task 1급 process object(assignee·priority·status·workflow) 과업 큐 진입점 | high | L | high | grounded | 2026-07-01 |
-| IMP-70 | ux | 온톨로지 진입점 재배치 — 과업/COP/객체 랜딩, 스키마 그래프는 참조 보조 탭으로 강등(박물관 정문 제거) | medium | M | high | grounded | 2026-07-01 |
-| IMP-71 | ux | GPU·노드 전량-메트릭 드릴다운 — 엔티티 앵커 Metric Explorer(요약 아님, 그룹·검색·facet·단위·스파크라인) | high | L | high | grounded | 2026-07-02 |
-| IMP-72 | ux | 이상 감지 → 온톨로지 객체 위 즉시 Action(kinetic) — 감지·근거·추천 조치를 한 카드에서(Probable Cause 4-슬롯) | high | L | high | grounded | 2026-07-02 |
-| IMP-73 | code | 온톨로지·메트릭·화면을 MCP tool/resource로 노출 — 프론트 agent tool과 백엔드 MCP 스키마 단일화(레지스트리 파생) | high | L | high | grounded | 2026-07-02 |
-| IMP-74 | ux | 메트릭 소스 / 익스포터 커버리지 매트릭스 — 신호×온톨로지 객체 커버리지·갭·3단 상태(node/ksm/cAdvisor/DCGM/process/blackbox) | medium | M | high | grounded | 2026-07-02 |
-| IMP-75 | ux | Search Around 객체-액션 런처 — ⌘K를 온톨로지 순회·즉시 조치 진입점으로 확장(중첩 팔레트·이웃 집합·capability 게이팅) | medium | L | high | grounded | 2026-07-02 |
-| IMP-76 | compete | 풀-피델리티 GPU 플릿 관측(XID·throttle reason·NVLink·PCIe·ECC·per-process) + 객체그래프 traverse·인라인 remediation | medium | M | high | grounded | 2026-07-02 |
-| IMP-77 | ux | 온톨로지 객체 상태의 실시간 신선도·폴링 정합 — COP/ObjectView/Agent/Kinetic 스트립에 IMP-51 규약 승격 | medium | S | medium | proposed | 2026-07-02 |
-| IMP-78 | ux | 온톨로지 로컬-inference 클러스터 인사이트 — Dynamo 실모델이 객체 근거로 군집·패턴 도출(HARD grounding·인용 필수) | medium | L | medium | proposed | 2026-07-02 |
+| IMP-68 | ux | /ontology 재설계 — 추상 타입 카탈로그 → 운영 준비도 스코어카드(무엇이 지금 주의를 요하나) | high | M | high | accepted | 2026-07-01 |
+| IMP-69 | ux | PROCESS 레이어 + Action Inbox — Incident/Task 1급 process object(assignee·priority·status·workflow) 과업 큐 진입점 | high | L | high | accepted | 2026-07-01 |
+| IMP-70 | ux | 온톨로지 진입점 재배치 — 과업/COP/객체 랜딩, 스키마 그래프는 참조 보조 탭으로 강등(박물관 정문 제거) | medium | M | high | accepted | 2026-07-01 |
+| IMP-71 | ux | GPU·노드 전량-메트릭 드릴다운 — 엔티티 앵커 Metric Explorer(요약 아님, 그룹·검색·facet·단위·스파크라인) | high | L | high | accepted | 2026-07-02 |
+| IMP-72 | ux | 이상 감지 → 온톨로지 객체 위 즉시 Action(kinetic) — 감지·근거·추천 조치를 한 카드에서(Probable Cause 4-슬롯) | high | L | high | accepted | 2026-07-02 |
+| IMP-73 | code | 온톨로지·메트릭·화면을 MCP tool/resource로 노출 — 프론트 agent tool과 백엔드 MCP 스키마 단일화(레지스트리 파생) | high | L | high | accepted | 2026-07-02 |
+| IMP-74 | ux | 메트릭 소스 / 익스포터 커버리지 매트릭스 — 신호×온톨로지 객체 커버리지·갭·3단 상태(node/ksm/cAdvisor/DCGM/process/blackbox) | medium | M | high | accepted | 2026-07-02 |
+| IMP-75 | ux | Search Around 객체-액션 런처 — ⌘K를 온톨로지 순회·즉시 조치 진입점으로 확장(중첩 팔레트·이웃 집합·capability 게이팅) | medium | L | high | accepted | 2026-07-02 |
+| IMP-76 | compete | 풀-피델리티 GPU 플릿 관측(XID·throttle reason·NVLink·PCIe·ECC·per-process) + 객체그래프 traverse·인라인 remediation | medium | M | high | accepted | 2026-07-02 |
+| IMP-77 | ux | 온톨로지 객체 상태의 실시간 신선도·폴링 정합 — COP/ObjectView/Agent/Kinetic 스트립에 IMP-51 규약 승격 | medium | S | medium | done | 2026-07-02 |
+| IMP-78 | ux | 온톨로지 로컬-inference 클러스터 인사이트 — Dynamo 실모델이 객체 근거로 군집·패턴 도출(HARD grounding·인용 필수) | medium | L | medium | accepted | 2026-07-02 |
 | IMP-79 | platform | K8s 메트릭·익스포터 백본 채택(kube-prometheus-stack: DCGM+kube-state-metrics+cAdvisor / VictoriaMetrics) | medium | L | medium | spike-needed | 2026-07-02 |
-| IMP-80 | aesthetic | 대량 메트릭 분석 레이아웃 — 평면 key/value 상세를 Object View 360° 3층 위계(요약 스트립→카테고리 카드→전체 테이블) | low | M | medium | proposed | 2026-07-02 |
-| IMP-81 | code | 온톨로지 mock 매 호출 재구성 + 결정적 agent 루프의 상태·성능 리스크 정리(요청단위 스냅샷 메모이즈·writeback 병합·테스트) | low | M | medium | proposed | 2026-07-02 |
+| IMP-80 | aesthetic | 대량 메트릭 분석 레이아웃 — 평면 key/value 상세를 Object View 360° 3층 위계(요약 스트립→카테고리 카드→전체 테이블) | low | M | medium | accepted | 2026-07-02 |
+| IMP-81 | code | 온톨로지 mock 매 호출 재구성 + 결정적 agent 루프의 상태·성능 리스크 정리(요청단위 스냅샷 메모이즈·writeback 병합·테스트) | low | M | medium | accepted | 2026-07-02 |
 
 ## Details
 

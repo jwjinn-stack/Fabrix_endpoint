@@ -26,10 +26,10 @@ function getNav() {
   return screen.getByRole("navigation", { name: "주 메뉴" });
 }
 
-// IMP-62 — 5 흐름 그룹(탐색/관측/추적/제어/연동)의 이름·소속(그룹 → 자식 label + 도달 page).
-// doc §7 매핑. 이 표가 곧 소속 회귀 가드다(모든 기존 페이지가 어느 한 그룹에 정확히 한 번).
+// IMP-62 — 5 흐름 그룹의 이름·소속(그룹 → 자식 label + 도달 page). doc §7 매핑.
+// IMP-70 — 그룹 **순서**를 관측→추적→제어→참조→연동 으로 재배치(일상 흐름 먼저, 온톨로지 개요는 "참조"로 강등).
+//   이 배열 순서 == nav 렌더 순서(순서 회귀 가드는 T-순서 참조). 이 표가 곧 소속 회귀 가드(모든 페이지가 어느 한 그룹에 정확히 한 번).
 const GROUPS: { group: string; children: { label: string; page: Page }[] }[] = [
-  { group: "탐색", children: [{ label: "온톨로지", page: "ontology" }] },
   {
     group: "관측",
     children: [
@@ -44,7 +44,7 @@ const GROUPS: { group: string; children: { label: string; page: Page }[] }[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  { group: "추적", children: [{ label: "근본원인 추적(COP)", page: "investigate" }] },
+  { group: "추적", children: [{ label: "과업 인박스", page: "inbox" }, { label: "근본원인 추적(COP)", page: "investigate" }] },
   {
     group: "제어",
     children: [
@@ -52,10 +52,13 @@ const GROUPS: { group: string; children: { label: string; page: Page }[] }[] = [
       { label: "플레이그라운드", page: "playground" },
     ],
   },
+  // IMP-70: 온톨로지 개요는 정문("탐색")에서 강등돼 운영 흐름 뒤 "참조" 그룹에 위치(여전히 도달 가능).
+  { group: "참조", children: [{ label: "온톨로지", page: "ontology" }] },
   {
     group: "연동",
     children: [
       { label: "연동 상태", page: "diagnostics" },
+      { label: "메트릭 소스", page: "metric-sources" },
       { label: "모델", page: "models" },
       { label: "모델 임포트", page: "model-import" },
       { label: "엔드포인트", page: "endpoints" },
@@ -68,13 +71,13 @@ const GROUPS: { group: string; children: { label: string; page: Page }[] }[] = [
   },
 ];
 
-describe("Layout nav — 5 흐름 그룹 IA (IMP-62)", () => {
+describe("Layout nav — 5 흐름 그룹 IA (IMP-62·IMP-70 재배치)", () => {
   beforeEach(() => {
     mockCaps = { profile: "manage", readonly: false, capabilities: {}, data_source: "", integrations: {} };
     mockCan = () => true;
   });
 
-  it("T1 — 5개 흐름 그룹 부모(탐색/관측/추적/제어/연동)가 모두 렌더된다", () => {
+  it("T1 — 5개 흐름 그룹 부모(관측/추적/제어/참조/연동)가 모두 렌더된다", () => {
     renderLayout();
     const nav = getNav();
     for (const { group } of GROUPS) {
@@ -118,10 +121,10 @@ describe("Layout nav — 5 흐름 그룹 IA (IMP-62)", () => {
     cleanup();
   });
 
-  it("T3-신규 — 온톨로지=탐색, 근본원인 추적=추적, AI Agent=제어 그룹 소속", () => {
-    // 탐색 > 온톨로지
+  it("T3-신규 — 온톨로지=참조(IMP-70 강등), 근본원인 추적=추적, AI Agent=제어 그룹 소속", () => {
+    // 참조 > 온톨로지 (IMP-70: 정문 "탐색" 에서 "참조" 그룹으로 강등, 여전히 도달 가능)
     const r1 = renderLayout();
-    fireEvent.click(within(getNav()).getByRole("button", { name: /^탐색/ }));
+    fireEvent.click(within(getNav()).getByRole("button", { name: /^참조/ }));
     fireEvent.click(within(getNav()).getByRole("button", { name: "온톨로지" }));
     expect(r1.onNavigate).toHaveBeenCalledWith("ontology");
     cleanup();
@@ -145,6 +148,55 @@ describe("Layout nav — 5 흐름 그룹 IA (IMP-62)", () => {
     expect([...inNav].sort()).toEqual([...allRoutes].sort());
     // 중복 없음.
     expect(new Set(inNav).size).toBe(inNav.length);
+  });
+
+  // 렌더된 그룹 부모 버튼의 DOM 순서(라벨 배열) — 그룹명만(자식 label 은 정규식 앵커로 배제).
+  function renderedGroupOrder(): string[] {
+    const nav = getNav();
+    const order: string[] = [];
+    for (const { group } of GROUPS) {
+      const btn = within(nav).getByRole("button", { name: new RegExp(`^${group}`) });
+      // 문서 순서 인덱스로 정렬하기 위해 위치 계산.
+      order.push(group);
+      void btn;
+    }
+    // 실제 DOM 순서로 재정렬(compareDocumentPosition).
+    return order.sort((a, b) => {
+      const ea = within(nav).getByRole("button", { name: new RegExp(`^${a}`) });
+      const eb = within(nav).getByRole("button", { name: new RegExp(`^${b}`) });
+      return ea.compareDocumentPosition(eb) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+    });
+  }
+
+  it("T-순서(IMP-70) — 그룹 순서가 관측→추적→제어→참조→연동 (일상 흐름 먼저, 온톨로지 개요 강등)", () => {
+    renderLayout();
+    expect(renderedGroupOrder()).toEqual(["관측", "추적", "제어", "참조", "연동"]);
+  });
+
+  it("T-흐름 legible(IMP-70) — 관측<추적<제어 순 + 셋 모두 참조·연동보다 앞(관측→추적→제어 흐름)", () => {
+    renderLayout();
+    const order = renderedGroupOrder();
+    const idx = (g: string) => order.indexOf(g);
+    // 관측→추적→제어 흐름이 순서대로 legible.
+    expect(idx("관측")).toBeLessThan(idx("추적"));
+    expect(idx("추적")).toBeLessThan(idx("제어"));
+    // 운영 흐름 3그룹 모두 참조(온톨로지 개요)·연동보다 앞 — 온톨로지 정문 강등 증명.
+    for (const flow of ["관측", "추적", "제어"]) {
+      expect(idx(flow)).toBeLessThan(idx("참조"));
+      expect(idx(flow)).toBeLessThan(idx("연동"));
+    }
+  });
+
+  it("T-강등·존재(IMP-70) — 온톨로지 개요는 도달 가능하되 최상단 정문이 아니라 '참조' 그룹(관측 뒤)", () => {
+    const { onNavigate } = renderLayout();
+    const order = renderedGroupOrder();
+    // 최상단은 온톨로지(참조)가 아니라 관측(actionable surface).
+    expect(order[0]).toBe("관측");
+    expect(order[0]).not.toBe("참조");
+    // 온톨로지는 여전히 '참조' 그룹으로 도달 가능(reachable, orphan 아님).
+    fireEvent.click(within(getNav()).getByRole("button", { name: /^참조/ }));
+    fireEvent.click(within(getNav()).getByRole("button", { name: "온톨로지" }));
+    expect(onNavigate).toHaveBeenCalledWith("ontology");
   });
 
   it("T5-자동확장 — 현재 페이지가 그룹 자식이면 그 그룹이 자동 확장 + 자식 active highlight", () => {
@@ -182,7 +234,7 @@ describe("Layout nav — 5 흐름 그룹 IA (IMP-62)", () => {
   });
 
   it("T7-빈그룹 숨김 — 그룹의 보이는 자식이 0이면 그룹 헤더 자체가 사라진다", () => {
-    // dashboard cap off → 온톨로지(탐색 유일 자식)·근본원인 추적(추적 유일 자식) 모두 숨음 → 두 그룹 통째로 사라짐.
+    // dashboard cap off → 온톨로지(탐색 유일 자식)·추적 자식(과업 인박스·근본원인 추적, 둘 다 dashboard cap) 모두 숨음 → 두 그룹 통째로 사라짐.
     mockCaps = {
       profile: "observe",
       readonly: true,

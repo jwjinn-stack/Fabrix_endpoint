@@ -134,7 +134,8 @@ func TestMCPv2_ExtraField_Rejected(t *testing.T) {
 	}
 }
 
-// 4) read-only: tools/list 에 groupby_metric 1개만 — write tool 0개.
+// 4) read-only(IMP-73): SDK path 는 groupby_metric + 온톨로지 read tool 4종을 노출하되, 전부 조회 전용.
+// mutating 동사 이름이 하나라도 있으면 안 된다(auto-callable mutation 없음 — two-tier 안전 가드).
 func TestMCPv2_ReadOnly_NoWriteTools(t *testing.T) {
 	cs, done := dialV2(t)
 	defer done()
@@ -143,19 +144,51 @@ func TestMCPv2_ReadOnly_NoWriteTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools 실패: %v", err)
 	}
-	if len(res.Tools) != 1 {
-		t.Fatalf("PoC 는 groupby_metric 1개만 노출해야 하는데 %d개: %+v", len(res.Tools), res.Tools)
+	got := map[string]bool{}
+	for _, tl := range res.Tools {
+		got[tl.Name] = true
 	}
-	if res.Tools[0].Name != "groupby_metric" {
-		t.Errorf("유일 tool 은 groupby_metric 이어야 하는데 %q", res.Tools[0].Name)
+	// groupby_metric(IMP-9) + query_objects/traverse_links/get_object/get_object_metrics(IMP-73).
+	for _, want := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics"} {
+		if !got[want] {
+			t.Errorf("SDK path tools/list 에 read tool %q 가 없음: %+v", want, res.Tools)
+		}
 	}
-	// 변경 동사 이름이 하나라도 있으면 read-only 위반.
+	// **안전**: 변경 동사 이름이 하나라도 있으면 read-only 위반(mutation 은 ActionForm 경로에만).
 	for _, tl := range res.Tools {
 		n := strings.ToLower(tl.Name)
-		for _, verb := range []string{"create", "update", "delete", "set", "write", "patch"} {
+		for _, verb := range []string{"create", "update", "delete", "set", "write", "patch", "scale", "restart", "drain", "cordon", "resolve", "invoke", "apply"} {
 			if strings.Contains(n, verb) {
 				t.Errorf("write 성격 tool 노출됨(read-only 위반): %q", tl.Name)
 			}
 		}
+	}
+}
+
+// IMP-73 bad-input(strict validation) — LLM 이 낼 수 있는 malformed/hallucinated args 를 스키마가 거부.
+func TestMCPv2_Ontology_StrictValidation(t *testing.T) {
+	cs, done := dialV2(t)
+	defer done()
+	ctx := context.Background()
+
+	// (a) required 누락 — traverse_links.objectId 없음 → 거부.
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "traverse_links", Arguments: map[string]any{}})
+	if !rejected(res, err) {
+		t.Errorf("traverse_links: objectId(required) 누락은 거부돼야 함: res=%+v err=%v", res, err)
+	}
+	// (b) enum 밖 — query_objects.type=Bogus → 거부.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "query_objects", Arguments: map[string]any{"type": "Bogus"}})
+	if !rejected(res, err) {
+		t.Errorf("query_objects: enum 밖 type 은 거부돼야 함: res=%+v err=%v", res, err)
+	}
+	// (c) 여분 필드 — additionalProperties:false → 거부.
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_object_metrics", Arguments: map[string]any{"id": "x", "extra": "y"}})
+	if !rejected(res, err) {
+		t.Errorf("get_object_metrics: 여분 필드는 additionalProperties:false 로 거부돼야 함: res=%+v err=%v", res, err)
+	}
+	// (d) 정상 인자 — get_object{id} 는 통과(핸들러가 안전 응답, 크래시/에러 아님).
+	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "get_object", Arguments: map[string]any{"id": "endpoint:e-slow"}})
+	if err != nil || (res != nil && res.IsError) {
+		t.Errorf("get_object{id} 정상 인자는 통과해야 함: res=%+v err=%v", res, err)
 	}
 }

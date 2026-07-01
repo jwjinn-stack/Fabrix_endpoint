@@ -3,10 +3,10 @@ import { render, screen, act, waitFor, fireEvent } from "@testing-library/react"
 import { usePolling } from "./usePolling";
 
 // 훅을 얇은 하네스 컴포넌트로 노출해 상태 전이를 DOM 으로 확인한다.
-function Harness({ fetcher }: { fetcher: (s: AbortSignal) => Promise<string> }) {
+function Harness({ fetcher, enabled }: { fetcher: (s: AbortSignal) => Promise<string>; enabled?: boolean }) {
   const { data, error, loading, paused, isStale, reload, setPaused } = usePolling<string>(
     fetcher,
-    { intervalMs: 1000 },
+    { intervalMs: 1000, enabled },
   );
   return (
     <div>
@@ -54,6 +54,20 @@ describe("usePolling (IMP-51)", () => {
 
     fireEvent.click(screen.getByText("toggle")); // resume
     await waitFor(() => expect(fetcher.mock.calls.length).toBe(callsAtPause + 1)); // 재개 즉시 1회
+  });
+
+  it("enabled=false → 초기 1회 로드만, interval tick 은 재조회하지 않음 (IMP-77)", async () => {
+    const fetcher = vi.fn().mockResolvedValue("v");
+    render(<Harness fetcher={fetcher} enabled={false} />);
+    // 폴링은 꺼졌지만 초기 로드는 여전히 1회 수행된다.
+    await waitFor(() => expect(screen.getByTestId("data").textContent).toBe("v"));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    // interval 이 여러 번 지나도 추가 호출이 없다(hammering 방지).
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    // reload() 는 enabled 와 무관하게 명시적 1회 로드를 수행한다.
+    fireEvent.click(screen.getByText("reload"));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   });
 
   it("성공 후 에러 → 마지막 데이터 유지 + isStale=true", async () => {

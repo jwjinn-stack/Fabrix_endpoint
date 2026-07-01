@@ -3,7 +3,7 @@
 // client.ts 를 통해 실제 라우터 경로를 검증한다(프로젝트 ethos: 백엔드 0개로 동작).
 import { describe, it, expect, beforeAll } from "vitest";
 import { installMockFetch } from "./mock";
-import { fetchOntologyObjects, fetchOntologyLinks, fetchOntologyObject } from "./client";
+import { fetchOntologyObjects, fetchOntologyLinks, fetchOntologyObject, fetchObjectMetrics } from "./client";
 import type { LinkKind, ObjectType } from "./types";
 
 const OBJECT_TYPES: ObjectType[] = ["Model", "Endpoint", "Service", "GpuDevice", "Node", "Trace", "Incident"];
@@ -121,5 +121,41 @@ describe("GET /ontology/objects/:id — 단일 객체(IMP-57)", () => {
     const links = await fetchOntologyLinks(id); // 여전히 링크 목록 반환(단일객체 아님)
     expect(links.object_id).toBe(id);
     expect(Array.isArray(links.links)).toBe(true);
+  });
+});
+
+// get_object_metrics tool(IMP-73)의 데이터 경로 — GET /ontology/objects/:id/metrics.
+describe("GET /ontology/objects/:id/metrics — get_object_metrics", () => {
+  it("normal: 객체 props 의 수치 필드를 메트릭 시리즈로(끝점=현재값) 반환", async () => {
+    // GpuDevice 는 util_perc 등 수치 props 를 갖는다.
+    const gpus = await fetchOntologyObjects("GpuDevice");
+    const id = gpus.objects[0].id;
+    const rep = await fetchObjectMetrics(id, "1h");
+    expect(rep.object_id).toBe(id);
+    expect(rep.range).toBe("1h");
+    expect(rep.series.length).toBeGreaterThan(0);
+    for (const s of rep.series) {
+      expect(s.points.length).toBeGreaterThan(0);
+      expect(s.points[s.points.length - 1]).toBe(s.current); // 끝점은 canonical 현재값
+      expect(s.key).toBeTruthy();
+    }
+  });
+
+  it("retry(결정성): 같은 id/range → 동일 시리즈(seed 고정)", async () => {
+    const gpus = await fetchOntologyObjects("GpuDevice");
+    const id = gpus.objects[0].id;
+    const a = await fetchObjectMetrics(id, "6h");
+    const b = await fetchObjectMetrics(id, "6h");
+    expect(a.series.map((s) => s.points)).toEqual(b.series.map((s) => s.points));
+  });
+
+  it("bad-input: 알 수 없는 range 는 기본 1h 로 폴백(throw 없음)", async () => {
+    const gpus = await fetchOntologyObjects("GpuDevice");
+    const rep = await fetchObjectMetrics(gpus.objects[0].id, "bogus");
+    expect(rep.range).toBe("1h");
+  });
+
+  it("failure: 미존재 id → 404 (throws)", async () => {
+    await expect(fetchObjectMetrics("gpu:does-not-exist")).rejects.toThrow(/404/);
   });
 });

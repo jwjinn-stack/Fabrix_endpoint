@@ -355,6 +355,59 @@ export interface UsageTrend {
   points: UsageTrendPoint[];
 }
 
+// ── 풀-피델리티 GPU 하드웨어 필드 (IMP-76 track A) ──
+// DCGM 확정 필드셋(deep-research 검증). 경쟁자(DCGM Exporter/Run:ai/Datadog)가 노출하는
+// 하드웨어 근본원인 신호 — XID·throttle reason·NVLink/PCIe·ECC·clock — 를 온톨로지 GpuDevice 에 부착.
+// 괄호 안은 실제 DCGM field id. 실 수집은 IMP-79 spike(일부 opt-in) — 지금은 mock 결정적 생성.
+
+// NVLink 링크별/집계 throughput + 오류 카운터 (DCGM_FI_DEV_NVLINK_* 400–445).
+export interface NvlinkStats {
+  throughput_kibs: number[]; // 링크 L0–L5 throughput (KiB/s) — NVLINK_BANDWIDTH_L0..L5
+  total_kibs: number;        // 합계(NVLINK_BANDWIDTH_TOTAL, default-on)
+  crc_errors: number;        // CRC 오류 누적(count)
+  replay_errors: number;     // replay 오류 누적(count)
+  recovery_errors: number;   // recovery 오류 누적(count)
+}
+
+// PCIe throughput + replay (DCGM_FI_PROF_PCIE_TX/RX_BYTES 1009/1010, REPLAY_COUNTER 202).
+export interface PcieStats {
+  tx_bytes: number;      // 송신 누적 bytes
+  rx_bytes: number;      // 수신 누적 bytes
+  replay_counter: number; // PCIe replay(count, default-on)
+}
+
+// ECC 오류 (DCGM_FI_DEV_ECC_SBE/DBE_VOL/AGG_TOTAL 310–313). SBE=정정가능, DBE=정정불가.
+export interface EccStats {
+  sbe_volatile: number;  // single-bit, volatile(재부팅 리셋)
+  dbe_volatile: number;  // double-bit, volatile
+  sbe_aggregate: number; // single-bit, aggregate(영구 누적)
+  dbe_aggregate: number; // double-bit, aggregate
+}
+
+// per-process GPU 사용 (DCGM_FI_DEV_PROCESS_ACCOUNTING_STATS 205 — accounting 활성 필요).
+// DCGM 은 time-sharing/MIG 에서 per-process 귀속 제약이 있어 대표 프로세스만 표시(spec note).
+export interface GpuProcess {
+  pid: number;
+  name: string;       // 프로세스 이름(escape 렌더)
+  mem_used_mb: number; // 이 프로세스가 점유한 VRAM(MiB)
+}
+
+// GPU 하드웨어 상세 — GPUDevice.hw 로 옵션 부착(additive; 레거시/실백엔드 미제공 시 undefined).
+export interface GpuHardware {
+  sm_clock_mhz: number;   // DCGM_FI_DEV_SM_CLOCK (100)
+  mem_clock_mhz: number;  // DCGM_FI_DEV_MEM_CLOCK (101)
+  // 최근 XID 코드 1개 — DCGM_FI_DEV_XID_ERRORS(230)는 "가장 최근 코드"만 담는 gauge(카운터/스트림 아님).
+  // 0 = 최근 XID 없음. 라벨은 xidLabel(code) 로. 전체 이력은 dmesg/kubelet 파싱 필요(out of scope).
+  xid_recent: number;
+  // clock-throttle 사유 비트마스크 — DCGM_FI_DEV_CLOCKS_EVENT_REASONS(112). 0 = 제약 없음.
+  // decodeClocksEventReasons(mask) 로 사람이 읽는 reason 리스트로 디코드.
+  clocks_event_reasons: number;
+  nvlink: NvlinkStats;
+  pcie: PcieStats;
+  ecc: EccStats;
+  processes: GpuProcess[];
+}
+
 export interface GPUDevice {
   hostname: string;
   gpu: string;
@@ -369,6 +422,7 @@ export interface GPUDevice {
   sm_active: number;
   tensor_active: number;
   mig_efficiency: number;
+  hw?: GpuHardware; // 풀-피델리티 하드웨어 상세(IMP-76). 옵션 — 미제공 시 하드웨어 섹션 미렌더.
 }
 
 export interface GPUReport {
@@ -1080,12 +1134,16 @@ export interface NetworkReport {
 // 단일 출처: 온톨로지는 기존 Model/Endpoint/Service/GpuDevice/Node/Trace/Incident mock 을 승격해 파생한다.
 
 // §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑.
-export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident";
+// Model~Incident 는 SUBJECT-MATTER(디지털트윈) 층. Task 는 그 위에 얹는 PROCESS 층 1급 객체(IMP-69) —
+// "내게 할당된 운영 과업"(assignee·priority·status·workflow)을 온톨로지 객체로 승격해 Action Inbox 진입점을 만든다.
+export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident" | "Task";
 
 // §5.2 Link Types (관계 그래프) — 트러블슈팅 척추:
 //   Service --consumes--> Endpoint --serves--> Model --runsOn--> GpuDevice --hostedBy--> Node
 //   Trace --routedTo--> Endpoint · Trace --executedOn--> GpuDevice · Incident --affects--> {any object}
-export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects";
+// PROCESS↔SUBJECT-MATTER 다리(IMP-69):
+//   Incident --spawns--> Task (인시던트가 과업을 낳음) · Task --tracks--> {subject-matter object} (과업이 감시/조치하는 대상)
+export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects" | "spawns" | "tracks";
 
 // 온톨로지 공통 상태 렌즈 — 기존 NodeStatus(ok|warn|crit) + unknown(미배포/미측정). 소스에서 파생(단일 출처).
 export type ObjectStatus = "ok" | "warn" | "crit" | "unknown";
@@ -1151,6 +1209,47 @@ export interface ActionResult {
   reason?: string;           // 실패(denied/conflict) 사유 — 기계판독
 }
 
+// ───────────── PROCESS 레이어 — Task / Workflow (IMP-69) ─────────────
+// docs/ontology-usecase-comparison.md §1B·§4 (Palantir operational-process-coordination).
+// 실사례는 온톨로지를 2계층으로 운영한다: PROCESS(Task: assignee·시각·priority·status, Workflow=순차 단계)
+// OVER SUBJECT-MATTER(디지털트윈 = 위의 Model/Endpoint/GpuDevice/Node/Service/Trace 그래프).
+// Task 는 1급 ObjectType 이라 ObjectView(IMP-57)가 그대로 렌더하고, tracks 링크로 subject-matter 객체에 연결된다.
+// 진입점 = Action Inbox(/inbox): 할당된 과업 큐 → 컨텍스트 탐색 → 조치 → 양 계층 writeback(IMP-59 계약).
+
+export type TaskPriority = "low" | "med" | "high" | "urgent";
+// 과업 상태 — Workflow 순차 단계와 1:1(triaged→assigned→in-progress→resolved). open=미분류 초기.
+export type TaskStatus = "open" | "triaged" | "assigned" | "in-progress" | "resolved";
+
+// OntologyObject<TaskProps> 의 props — Task 객체가 담는 PROCESS 필드.
+export interface TaskProps {
+  title: string;
+  assignee: string;           // 담당자(운영자). 미할당이면 "" (open/triaged).
+  createdAt: string;          // 생성 시각(ISO)
+  assignedAt?: string;        // 할당 시각(ISO) — assign 시 기록
+  priority: TaskPriority;
+  status: TaskStatus;
+  linkedObjectIds: string[];  // subject-matter refs(이 과업이 tracks 하는 디지털트윈 객체 id)
+  workflowId: string;         // 소속 Workflow 정의 id
+  workflowStepIndex: number;  // Workflow.steps 내 현재 위치(status 와 동기화)
+  spawnedByIncidentId?: string; // 이 과업을 낳은 Incident id(있으면)
+  // OntologyObject.props 는 Record<string, unknown> 호환이어야 하므로 인덱스 시그니처 허용.
+  [k: string]: unknown;
+}
+
+// Workflow 단계 정의 한 칸 — key(상태와 매칭)·label(사람용)·terminal(종료 단계 여부).
+export interface WorkflowStep {
+  key: TaskStatus;
+  label: string;
+  terminal?: boolean;
+}
+
+// Workflow = 순차 단계의 정렬 목록(디지털트윈 위 PROCESS 층). Task.workflowStepIndex 가 이 배열의 위치.
+export interface WorkflowDef {
+  id: string;
+  name: string;
+  steps: WorkflowStep[];
+}
+
 // 응답 래퍼 — GET /ontology/objects, GET /ontology/objects/:id/links.
 export interface OntologyObjectList {
   generated_at: string;
@@ -1162,6 +1261,68 @@ export interface OntologyLinkList {
   object_id: string;
   links: OntologyLink[];
   source: string;
+}
+
+// get_object_metrics tool(IMP-73)의 데이터 — 객체의 수치 메트릭을 이름별 시계열 + 현재값으로.
+// 결정적(mock): 객체 id·range 로 seed 된다. points 는 range 구간의 sparkline(끝이 현재값).
+export interface ObjectMetricSeries {
+  key: string;        // 메트릭 키(예: util_perc, ttft_ms)
+  label: string;      // 사람용 라벨
+  unit: string;       // 단위(%, ms, GB …)
+  current: number;    // 현재값(points 마지막)
+  points: number[];   // 시계열(결정적)
+}
+export interface ObjectMetricsReport {
+  generated_at: string;
+  object_id: string;
+  range: string;      // 1h|6h|24h|7d
+  series: ObjectMetricSeries[];
+  source: string;
+}
+
+// ───────────── 엔티티-앵커 Metric Explorer (IMP-71 — 전량 메트릭 드릴다운) ─────────────
+// 큐레이션 요약(IMP-46/Gpu SlidePanel)은 KNOWNS 대시보드로 그대로 두고, explorer 는 UNKNOWNS 검색가능
+// 전량 드릴다운(Splunk Observability Metric Explorer 의 entity→all-metrics→drill 미러). 온톨로지 객체가
+// 엔티티 앵커. mock 은 buildOntology() 스냅샷(IMP-81)에서 결정적 category→metric 트리를 파생하고,
+// live(IMP-79)는 동일 스키마를 VictoriaMetrics /series+/query+/query_range 로 채운다(transport 만 스왑).
+
+// 메트릭 타입 — raw DCGM/node exporter 값은 타입 없이는 의미가 다르다.
+//  gauge=순간값(FB_USED·SM_CLOCK), counter=단조누적(ECC·PCIe replay·XID), rate=초당(net_err/s).
+export type MetricType = "gauge" | "counter" | "rate";
+
+// 메트릭 상태 — 임계 밴드(단일 출처 statusFromThresholds 계열). none=임계 정의 없음(중립).
+export type MetricStatus = "ok" | "warn" | "crit" | "none";
+
+// 전량 메트릭 한 행 — TYPE + UNIT + freshness + 임계 + 스파크라인 + facet(label/tag).
+export interface MetricRow {
+  key: string;        // 원본 메트릭명(예: DCGM_FI_DEV_FB_USED, node_cpu_seconds_total)
+  label: string;      // 사람용 라벨
+  type: MetricType;
+  unit: string;       // bytes|MiB|MHz|W|°C|count|%|req/s|load|"" — 단위 없이는 무의미
+  value: number;      // 현재값(points 끝점)
+  status: MetricStatus;
+  freshness_sec: number; // 마지막 스크랩 경과(초) — 신선도
+  points: number[];   // 결정적 시계열(끝=value). live 는 펼칠 때 lazy /query_range.
+  facets: Record<string, string>; // gpu|instance|job|device 등 label(facet 필터·검색 대상)
+}
+
+// 카테고리(접힘/펼침 단위) — GPU: Utilization/Memory/Clocks/Power·Thermal/Interconnect/Errors/Throttle/Per-process.
+//   Node: CPU/Memory/Disk/Filesystem/Network/Load/Systemd.
+export interface MetricCategory {
+  key: string;
+  label: string;
+  rows: MetricRow[];
+}
+
+// GET /ontology/objects/:id/metric-tree?range= 응답 — mock/실백엔드 동일 계약.
+export interface ObjectMetricTree {
+  generated_at: string;
+  object_id: string;
+  object_type: string; // GpuDevice | Node (그 외는 엔티티 앵커 아님 → 빈 categories)
+  range: string;       // 1h|6h|24h|7d
+  categories: MetricCategory[];
+  facet_keys: string[]; // 이 엔티티가 emit 하는 facet 키 목록(UI facet 셀렉터)
+  source: string;      // "metric-explorer (mock)" | 실백엔드
 }
 
 // ───────────── AI Agent (IMP-60 — 로컬 모델 + MCP tool-calling 온톨로지 접지) ─────────────
@@ -1222,4 +1383,146 @@ export interface AgentAuditEntry {
   kind: "prompt" | "tool" | "reasoning" | "action";
   detail: string; // 마스킹된 메타데이터만(원문/시크릿 로깅 금지)
   ts: string;
+}
+
+// ── 클러스터 인사이트(IMP-78) — Dynamo 로컬 모델이 온톨로지 근거로 도출하는 생성적 인사이트 ──
+// 결정적 RCA(위 AgentRun, 단일 진입점 원인추적)와 구분되는 **패턴·군집** 축이다:
+// "유사 상태 GPU 군집 · 반복 hot-node 패턴 · 유휴 할당갭 집중 노드". IMP-60 을 실 inference 로 확장.
+// **HARD grounding**: 모든 claim 은 온톨로지 objectId 를 인용해야 하고(citations), 인용이 없으면(또는 온톨로지에
+// 실재하지 않는 id 만 인용하면) 그 insight 는 **표시하지 않는다**(hallucination 금지). 인사이트는 read-only —
+// 어떤 mutation 도 유발하지 않으며(suggestedAction 없음), 조치는 오직 RCA 카드의 <ActionForm> 경로로만.
+export type InsightKind = "gpu-cluster" | "hot-node" | "idle-alloc-gap" | "recurring-pattern";
+
+// 인사이트 한 건 — citations(objectId) 로 접지. citations 빈 배열이면 파이프라인이 드롭하므로 표시분엔 없다.
+export interface ClusterInsight {
+  id: string;              // 결정적 id(테스트 안정)
+  kind: InsightKind;
+  title: string;           // 사람용 제목(escape 렌더)
+  claim: string;           // 생성적 서술(escape 렌더 — "추정", 상관≠인과)
+  citations: string[];     // 근거 objectId(온톨로지 실재만; 비면 이 insight 는 드롭됨)
+  severity: "info" | "warn" | "crit"; // 표시 톤(임계 아님 — 요약 정보)
+}
+
+// 클러스터 인사이트 실행 1회 결과 — AgentRun(RCA)의 형제. grounded=false 면 인사이트 0 + 사유(groundingSummary).
+export interface AgentInsightRun {
+  traceId: string;
+  mode: "insights";
+  insights: ClusterInsight[];      // HARD grounding 통과분만(모든 항목 citations.length>0)
+  grounded: boolean;               // 유효 인사이트가 하나라도 있으면 true
+  groundingSummary: string;        // 스냅샷 압축 요약(객체 N·링크 M·군집 근거) — 사람용
+  droppedCount: number;            // 인용 없어(또는 가짜 id) 드롭된 claim 수(투명성)
+  audit: AgentAuditEntry[];
+  generated_at: string;
+  source: string;                  // "agent-insights (mock)" | 실백엔드
+}
+
+// ── Kinetic 감지→객체 귀속 파생 레이어(IMP-72) ──────────────────────────────
+// 감지된 이상을 온톨로지 객체(Model/GpuDevice/Node)에 결정적으로 귀속시켜, "어느 객체가 왜 아픈지 +
+// 지금 무엇을 눌러야 하는지" 를 4-슬롯 카드로 낸다. 순수 파생(api/detection.ts), 새 데이터 모델 발명 없음.
+
+// 감지 신호 소스 종류 — 어느 축에서 이상이 왔는지(카드 근거 슬롯의 계열 구분).
+export type DetectionSignalKind =
+  | "alertrule"   // alertrules threshold 크로싱(TTFT p95 / error / block)
+  | "throttle"    // GPU clock-throttle reason 비트(thermal/reliability, IMP-76)
+  | "idleAlloc"   // GPU 유휴 할당 갭(VRAM 점유·util 낮음)
+  | "saturation"  // Node CPU/네트워크 포화
+  | "firstAnomaly"; // buildRootCausePath first-anomaly 시간축(추정 원인 시각)
+
+// 근거(evidence) 슬롯 한 줄 — 어느 신호가 언제 임계 초과했는가 + 인용(objectId/시각).
+export interface DetectionSignal {
+  kind: DetectionSignalKind;
+  label: string;      // 사람용 신호명(예: "TTFT p95 급증")
+  detail: string;     // 임계 대비 값 서술(escape 렌더) — "820ms > 임계 800ms" 등
+  observedAt: string; // 관측 시각 라벨("12분 전" 등, 상대 시간)
+  citation: string;   // 근거 objectId/룰 id(grounding 강제)
+}
+
+// Kinetic 알림 — 4-슬롯 카드의 단일 출처. dedupe/state-transition 억제 후 남은 것만.
+export interface KineticAlert {
+  objectId: string;                 // [슬롯1] 영향 객체 id
+  title: string;                    //         객체 표시명
+  objectType: ObjectType;           //         타입(chip)
+  status: ObjectStatus;             //         현재 상태(crit/warn — ok 는 승격 안 됨)
+  signals: DetectionSignal[];       // [슬롯2] 근거(신호 집계 — dedupe 결과)
+  confidence: "high" | "med";       //         신뢰도(신호 ≥2 → high, 1 → med) — IBM Probable Cause
+  probableCause: string;            // [슬롯3] 추정 원인 경로 서술(first-anomaly 시간축, "추정")
+  hypothesis: string;               //         /agent 로 넘길 가설 intent(pre-fill 마찰 제거)
+  suggestedAction?: {               // [슬롯4] 추천 Action(제안일 뿐 — 실행은 ActionForm confirm)
+    actionType: string;
+    target: string;
+  };
+  breachCount: number;              //         지속 임계초과 카운트(sustained collapse → 배지)
+}
+
+export interface KineticAlertList {
+  generated_at: string;
+  alerts: KineticAlert[];
+  source: string;
+}
+
+// ───────────── 메트릭 소스 / 익스포터 커버리지 매트릭스 (IMP-74) ─────────────
+// Diagnostics(연동 상태)는 외부 의존성 능동 프로브(도달성)이고, 이건 '어떤 신호를 어떤 익스포터가 주고
+// 무엇이 아직 갭인가'를 보여주는 Grafana Entity-catalog / OTel-coverage 방식의 커버리지 인벤토리.
+// mock-first — 실 상태(up{job}+scrape_samples_scraped+last-scrape age)는 IMP-79 spike 로 transport 만 스왑.
+
+// 소스 3단 상태 — up 단독 금지. "타깃 살아있는데 특정 계열 빔"까지 잡으려면 up + 샘플수 + 신선도 필요.
+//  NOT_CONFIGURED    : up=0 (스크레이프 타깃 없음/미구성)
+//  CONFIGURED_NO_DATA: up=1 이지만 scrape_samples_scraped=0 또는 last-scrape age 초과(계열 빔·정체)
+//  HEALTHY           : up=1 · 샘플>0 · 신선(age ≤ 임계)
+export type MetricSourceStatus = "NOT_CONFIGURED" | "CONFIGURED_NO_DATA" | "HEALTHY";
+
+// 소스 프로토콜 — signal-provider 추상(OTel 정합). 향후 OTel Collector 리시버로 흡수 가능.
+export type MetricSourceProtocol = "prometheus" | "otlp";
+
+// 소스 카드 안의 부가 배지 — NVML per-process 미지원처럼 "잘못된 신뢰 방지" 인라인 경고.
+//  NVML 은 독립 카드 금지(DCGM 하위 라이브러리) — DCGM 카드 안 배지로만 표기.
+export interface MetricSourceNote {
+  label: string;   // 배지 텍스트(예: "per-process = 미지원")
+  detail: string;  // 근거 서술(예: "DCGM/NVML 원천 한계 — 이슈 #521")
+  issue?: string;  // 참조 이슈/링크(예: "#521")
+  tone: "warn" | "info";
+}
+
+// scrape 라이브 상태 — mock 은 결정적, 실 스왑은 VictoriaMetrics 값으로 동일 필드 채움(deriveSourceStatus 재사용).
+export interface MetricSourceScrape {
+  job: string;                 // Prometheus job 라벨(예: "node-exporter")
+  up: 0 | 1;                   // up{job} — 타깃 살아있음(단독으론 부족)
+  scrape_samples_scraped: number; // 마지막 스크랩 샘플 수(0 = 계열 빔)
+  last_scrape_age_sec: number; // 마지막 스크랩 경과(초) — 신선도
+}
+
+// 익스포터(소스) 카드 — 제공 메트릭 계열 + 대상 온톨로지 객체 타입 + 상태 + 프로토콜.
+export interface MetricSourceCard {
+  id: string;                    // node_exporter|kube-state-metrics|cadvisor|dcgm-exporter|process-exporter|blackbox-exporter
+  label: string;                 // 표시명
+  role: string;                  // 한 줄 역할(예: "호스트 OS 자원(USE)")
+  protocol: MetricSourceProtocol;
+  families: string[];            // 제공 메트릭 계열(예: node_cpu_seconds_total …)
+  targetTypes: ObjectType[];     // 대상 온톨로지 객체 타입(Node/GpuDevice/Endpoint …) — Model pod 는 Model 로 표기
+  targetNote?: string;           // 대상 보조 설명(예: "Model pod(컨테이너)")
+  status: MetricSourceStatus;    // deriveSourceStatus(scrape) 파생
+  scrape: MetricSourceScrape;    // 라이브 판정 근거(실 스왑 대상)
+  notes: MetricSourceNote[];     // 인라인 갭/경고 배지(DCGM per-process 등)
+}
+
+// 커버리지 셀 — '신호 × 객체'. covered=이 소스가 신호를 준다 / gap=아직 안 잡힘(원천 한계·미배포 익스포터).
+//  GAP 셀은 클릭 → 드릴다운(gpu/nodes/investigate) 또는 추천 익스포터로 연결(IMP-71/72 grounding).
+export interface SignalCoverageCell {
+  signal: string;                // 신호명(예: "per-process GPU memory")
+  objectType: ObjectType;        // 대상 객체 타입
+  objectLabel?: string;          // 표시 보조(예: "Model pod")
+  covered: boolean;              // true=커버 / false=GAP
+  sourceId?: string;             // covered 일 때 제공 소스 id
+  reason?: string;               // GAP 사유 카피(원천 한계·필요 익스포터)
+  recommended?: string;          // 추천 익스포터 id(GAP 해소 경로)
+  issue?: string;                // 참조 이슈(예: "#521")
+  drilldown?: "gpu" | "nodes" | "investigate"; // GAP 셀 클릭 시 이동 대상 화면(스파이크/근거)
+}
+
+// GET /metric-sources 응답 — 소스 카드 축 + 커버리지 매트릭스(covered/gap 셀).
+export interface MetricSourceCoverage {
+  generated_at: string;
+  sources: MetricSourceCard[];
+  coverage: SignalCoverageCell[]; // covered + gap 셀 모두(매트릭스 — 무엇이 되고 무엇이 갭인지)
+  source: string;                 // 데이터 출처 라벨(mock 표식)
 }

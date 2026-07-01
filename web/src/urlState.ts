@@ -69,11 +69,31 @@ export const investigateSchema = {
   demo: strField(""),
 } as const;
 
+// Action Inbox(IMP-69) deep-link 스키마 — task=선택 Task id, 그리고 큐 필터(assignee/priority/status).
+//  빈 값이면 페이지가 기본(가장 급한 미해소 과업)을 고른다. 필터는 화이트리스트 밖 값이면 "all" 로 폴백.
+export const inboxSchema = {
+  task: strField(""),
+  assignee: strField("all"),
+  priority: enumField(["all", "urgent", "high", "med", "low"] as const, "all"),
+  status: enumField(["all", "open", "triaged", "assigned", "in-progress", "resolved"] as const, "all"),
+} as const;
+
 // AI Agent(IMP-60) deep-link 스키마 — entity=접지 진입 Object id(옵션), intent=자연어 의도(옵션).
 // 둘 다 빈 문자열이면 에이전트가 기본 시나리오(가장 아픈 진입)를 결정한다. intent 는 자유 텍스트라 debounce 되쓰기.
+// IMP-78 — mode=화면 모드. ""|"rca"=근본원인(현행 기본), "insights"=클러스터 인사이트(생성적 레이어).
 export const agentSchema = {
   entity: strField(""),
   intent: strField(""),
+  mode: enumField(["", "rca", "insights"] as const, ""),
+} as const;
+
+// Search Around 팔레트(IMP-75) deep-link 스키마 — ⌘K 중첩 팔레트의 **컨텍스트만** 공유(팔레트 열림 자체는 휘발).
+//  sactx  = object-context 대상 object id(그 객체의 Action Panel).
+//  saround = search-around 컨텍스트 "<objectId>|<linkKind>"(그 이웃 집합 서브페이지).
+//  빈 문자열이면 root. crafted URL 은 parse 가 throw 하지 않고 그대로/기본으로 소비(strField 규약).
+export const searchAroundSchema = {
+  sactx: strField(""),
+  saround: strField(""),
 } as const;
 
 // ───────────────────────── 순수 인코더/디코더 ─────────────────────────
