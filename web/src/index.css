@@ -1482,6 +1482,16 @@ dialog.modal.modal-wide { width: min(860px, 94vw); }
 .node-dd-flag { font-weight: 600; }
 .node-dd-hint { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-3); line-height: 1.5; }
 @media (max-width: 760px) { .node-card-metrics { grid-template-columns: repeat(2, 1fr); } }
+.node-card .node-card-metrics { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 760px) { .node-card .node-card-metrics { grid-template-columns: repeat(2, 1fr); } }
+
+/* IMP-49 네트워크 화면 — node-* 패턴 재사용 + KPI/툴바/pivot 최소 스타일 */
+.net-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.net-toolbar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.net-toolbar .node-fleet-summary { margin: 0; }
+.net-link-filter { display: inline-flex; }
+.net-pivot { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.net-pivot .node-dd-hint { margin-top: var(--sp-2); }
 
 /* 태그/배지 (동작·유형) */
 .tag {

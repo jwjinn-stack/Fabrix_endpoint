@@ -17,6 +17,7 @@ export type Page =
   | "endpoints"
   | "gpu"
   | "nodes"
+  | "network"
   | "topology"
   | "keys"
   | "traffic"
@@ -39,6 +40,7 @@ const NAV: NavItem[] = [
   { glyph: "⬡", label: "엔드포인트", page: "endpoints" },
   { glyph: "▥", label: "GPU/MIG", page: "gpu" },
   { glyph: "◱", label: "노드", page: "nodes" },
+  { glyph: "≈", label: "네트워크", page: "network" },
   { glyph: "⧉", label: "토폴로지", page: "topology" },
   { glyph: "▢", label: "키·앱", page: "keys" },
   { glyph: "↯", label: "트래픽", page: "traffic" },

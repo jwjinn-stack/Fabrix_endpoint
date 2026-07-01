@@ -17,6 +17,7 @@ import Eval from "./pages/Eval";
 import Endpoints from "./pages/Endpoints";
 import Gpu from "./pages/Gpu";
 import NodeMetrics from "./pages/NodeMetrics";
+import Network from "./pages/Network";
 import Topology from "./pages/Topology";
 import Traffic from "./pages/Traffic";
 import Settings from "./pages/Settings";
@@ -106,6 +107,7 @@ function pageContent(
       {effPage === "endpoints" && <Endpoints onNavigate={navigate} />}
       {effPage === "gpu" && <Gpu />}
       {effPage === "nodes" && <NodeMetrics />}
+      {effPage === "network" && <Network onNavigate={navigate} />}
       {effPage === "topology" && <Topology />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}
