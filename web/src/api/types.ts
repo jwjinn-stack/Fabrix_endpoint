@@ -1073,3 +1073,66 @@ export interface NetworkReport {
   links: NetworkLink[];
   source: string;
 }
+
+// ───────────── 온톨로지 데이터 모델 (IMP-56 — Palantir Foundry Object/Link/Action) ─────────────
+// docs/palantir-ontology-analysis.md §5.1–5.3 을 그대로 반영. 화면별 응답 타입(위)이 각 화면에 갇혀 있는
+// 것을 넘어, 도메인을 명사(Object)·관계(Link)·동사(Action)로 표현하는 공용 계약(common contract) 계층.
+// 단일 출처: 온톨로지는 기존 Model/Endpoint/Service/GpuDevice/Node/Trace/Incident mock 을 승격해 파생한다.
+
+// §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑.
+export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident";
+
+// §5.2 Link Types (관계 그래프) — 트러블슈팅 척추:
+//   Service --consumes--> Endpoint --serves--> Model --runsOn--> GpuDevice --hostedBy--> Node
+//   Trace --routedTo--> Endpoint · Trace --executedOn--> GpuDevice · Incident --affects--> {any object}
+export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects";
+
+// 온톨로지 공통 상태 렌즈 — 기존 NodeStatus(ok|warn|crit) + unknown(미배포/미측정). 소스에서 파생(단일 출처).
+export type ObjectStatus = "ok" | "warn" | "crit" | "unknown";
+
+// 온톨로지 객체 — Property 는 소스별 payload(props). revision 은 미래 Action writeback 의 stale-write(409)
+// 낙관적 동시성 경로를 지금 열어두기 위한 필드(IMP-59). 객체가 바뀔 때마다 증가.
+export interface OntologyObject<T = Record<string, unknown>> {
+  id: string;
+  type: ObjectType;
+  title: string;
+  props: T;
+  status: ObjectStatus;
+  revision: number;
+}
+
+// 방향 엣지(from→to). linkKind 로 §5.2 관계를 구분.
+export interface OntologyLink {
+  from: string;
+  to: string;
+  linkKind: LinkKind;
+}
+
+// §5.3 Action Types (동사 — 제어). name=Action 식별자, target=대상 Object Type,
+// params=사용자 입력 폼, requiredCap=capability 게이팅(§2 Submission Criteria), sideEffects=알림/audit 등.
+export interface ActionParam {
+  name: string;
+  kind: "text" | "number" | "enum" | "object";
+  required: boolean;
+  options?: string[]; // enum 후보
+}
+export interface ActionType {
+  name: string;
+  target: ObjectType;
+  params: ActionParam[];
+  requiredCap?: string; // 예: models.write (없으면 기본 허용)
+  sideEffects: string[]; // 예: ["audit", "알림"]
+}
+
+// 응답 래퍼 — GET /ontology/objects, GET /ontology/objects/:id/links.
+export interface OntologyObjectList {
+  generated_at: string;
+  objects: OntologyObject[];
+  source: string;
+}
+export interface OntologyLinkList {
+  generated_at: string;
+  object_id: string;
+  links: OntologyLink[];
+  source: string;
+}

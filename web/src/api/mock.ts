@@ -17,6 +17,7 @@ import type {
   SpanKind, ThirdPartyCred, TimePoint, TimeRange, Timeseries,
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
+  ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
 } from "./types";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
@@ -845,6 +846,156 @@ function genSessionDetail(sessionId: string): SessionDetail {
   return { summary, turns, scores: scores.length ? scores : undefined };
 }
 
+// ───────────────────────── 온톨로지 (IMP-56 — Object/Link/Action) ─────────────────────────
+// docs/palantir-ontology-analysis.md §5.1–5.3 을 그대로 반영. 기존 mock(MODELS/ENDPOINTS/INCIDENTS +
+// buildTopology 의 Service/Node/GpuDevice + trace 시드)을 OntologyObject 로 "승격"하고 관계 엣지를 만든다.
+// 단일 출처: 온톨로지는 여기서 파생될 뿐, 기존 화면 데이터는 그대로 유지된다(순수 additive).
+
+// AlarmSeverity → ObjectStatus (Incident 상태 렌즈 통일).
+function severityToStatus(sev: string): ObjectStatus {
+  return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
+}
+
+// §5.2 척추 그래프를 결정적으로 구성. seed 는 buildTopology 와 동일 소스라 재현 가능.
+function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
+  const objects: OntologyObject[] = [];
+  const links: OntologyLink[] = [];
+  const add = <T extends Record<string, unknown>>(id: string, type: ObjectType, title: string, status: ObjectStatus, props: T) => {
+    objects.push({ id, type, title, props, status, revision: 1 });
+  };
+
+  // ── Model (MODELS) ── id 접두 model: 로 네임스페이스 충돌 회피.
+  for (const m of MODELS) {
+    const ep = ENDPOINTS.find((e) => e.model === m.id);
+    const status: ObjectStatus = ep ? (ep.ready ? "ok" : "crit") : "unknown";
+    add(`model:${m.id}`, "Model", m.display, status, {
+      name: m.id, provider: m.provider, type: m.type, context_window: m.ctx,
+      pattern: m.pattern, gpu: m.gpu, replicas: ep?.replicas ?? 0,
+    });
+  }
+
+  // ── Endpoint (ENDPOINTS) ── serves→Model, consumes(Service→Endpoint)는 아래 Service 에서.
+  for (const e of ENDPOINTS) {
+    add(`endpoint:${e.name}`, "Endpoint", e.name, e.ready ? "ok" : "crit", {
+      namespace: e.namespace, model: e.model, backend: e.backend, replicas: e.replicas,
+      app_id: e.app_id ?? "", dept_id: e.dept_id ?? "", ready: e.ready,
+    });
+    if (e.model && MODELS.some((m) => m.id === e.model)) {
+      links.push({ from: `endpoint:${e.name}`, to: `model:${e.model}`, linkKind: "serves" });
+    }
+  }
+
+  // ── Service / Node / GpuDevice (buildTopology 승격) ──
+  // topology.nodes: kind server=Node, service=Service, gpu=GpuDevice. edges: server↔gpu, service→host.
+  const topo = buildTopology(hash("topology"));
+  const topoStatus = (s: string): ObjectStatus => (s === "crit" ? "crit" : s === "warn" ? "warn" : "ok");
+  for (const n of topo.nodes) {
+    if (n.kind === "server") {
+      add(`node:${n.id}`, "Node", n.label, topoStatus(n.status), { hostname: n.id, ...(n.metrics ?? {}) });
+    } else if (n.kind === "gpu") {
+      add(`gpu:${n.id}`, "GpuDevice", n.label, topoStatus(n.status), { device: n.id, ...(n.metrics ?? {}) });
+    } else {
+      // service — Topology service id 는 model id 와 겹칠 수 있어 service: 접두로 분리.
+      add(`service:${n.id}`, "Service", n.label, topoStatus(n.status), { name: n.id, ...(n.metrics ?? {}) });
+    }
+  }
+  // GpuDevice --hostedBy--> Node (topology server→gpu 엣지를 방향 뒤집어 hostedBy 로).
+  for (const e of topo.edges) {
+    const fromNode = topo.nodes.find((n) => n.id === e.from);
+    const toNode = topo.nodes.find((n) => n.id === e.to);
+    if (fromNode?.kind === "server" && toNode?.kind === "gpu") {
+      links.push({ from: `gpu:${e.to}`, to: `node:${e.from}`, linkKind: "hostedBy" });
+    }
+  }
+
+  // Service --consumes--> Endpoint, Model --runsOn--> GpuDevice.
+  // TOPO service id 가 곧 서빙 모델의 endpoint host 이므로, service→해당 host 의 gpu 로 runsOn 을 잇는다.
+  // 결정론: 각 Service 를 그 host 의 첫 GpuDevice 에 runsOn 으로 배치, Endpoint 에 consumes 로 연결.
+  const svcNodes = topo.nodes.filter((n) => n.kind === "service");
+  const svcHost: Record<string, string> = {};
+  for (const e of topo.edges) {
+    const f = topo.nodes.find((n) => n.id === e.from);
+    const t = topo.nodes.find((n) => n.id === e.to);
+    if (f?.kind === "service" && t?.kind === "server") svcHost[e.from] = e.to;
+  }
+  for (const svc of svcNodes) {
+    // Service --consumes--> Endpoint (같은 이름의 엔드포인트가 있으면 연결).
+    const ep = ENDPOINTS.find((x) => x.name === svc.id || x.model === svc.id);
+    if (ep) links.push({ from: `service:${svc.id}`, to: `endpoint:${ep.name}`, linkKind: "consumes" });
+    // Model --runsOn--> GpuDevice (service host 의 gpu0).
+    const host = svcHost[svc.id];
+    const model = ep?.model && MODELS.some((m) => m.id === ep.model) ? ep.model : undefined;
+    if (host && model) {
+      const gpu0 = topo.nodes.find((n) => n.kind === "gpu" && n.id.startsWith(`${host}/`));
+      if (gpu0) links.push({ from: `model:${model}`, to: `gpu:${gpu0.id}`, linkKind: "runsOn" });
+    }
+  }
+
+  // ── Trace (대표 몇 건) ── routedTo→Endpoint, executedOn→GpuDevice.
+  const traceList = genTraceList("24h", {});
+  const gpuIds = topo.nodes.filter((n) => n.kind === "gpu").map((n) => n.id);
+  for (const t of traceList.traces.slice(0, 8)) {
+    const status: ObjectStatus = t.status === "error" ? "crit" : t.decision === "blocked" ? "warn" : "ok";
+    add(`trace:${t.trace_id}`, "Trace", t.trace_id, status, {
+      model: t.model, endpoint: t.endpoint, app_id: t.app_id, dept_id: t.dept_id,
+      total_ms: t.total_ms, ttft_ms: t.ttft_ms, decision: t.decision,
+    });
+    const ep = ENDPOINTS.find((x) => x.name === t.endpoint || x.model === t.model);
+    if (ep) links.push({ from: `trace:${t.trace_id}`, to: `endpoint:${ep.name}`, linkKind: "routedTo" });
+    // executedOn — 결정적으로 trace_id 해시로 gpu 배정.
+    if (gpuIds.length) {
+      const gid = gpuIds[hash(t.trace_id) % gpuIds.length];
+      links.push({ from: `trace:${t.trace_id}`, to: `gpu:${gid}`, linkKind: "executedOn" });
+    }
+  }
+
+  // ── Incident (INCIDENTS 승격) ── affects→{object}. dedup_key 로 영향 대상을 유추.
+  for (const inc of INCIDENTS) {
+    add(`incident:${inc.id}`, "Incident", inc.title, severityToStatus(inc.severity), {
+      dedup_key: inc.dedup_key, severity: inc.severity, state: inc.state, count: inc.count,
+    });
+    // dedup_key 형식 "endpoint:<name>:..." / "scheduler:..." / "guard:..." 에서 대상 추론.
+    const parts = inc.dedup_key.split(":");
+    if (parts[0] === "endpoint" && parts[1]) {
+      const ep = ENDPOINTS.find((x) => x.name === parts[1]);
+      if (ep) links.push({ from: `incident:${inc.id}`, to: `endpoint:${ep.name}`, linkKind: "affects" });
+    } else if (parts[0] === "scheduler") {
+      // 스케줄러 backpressure 는 첫 Node 에 영향으로 표시(대표).
+      const node0 = topo.nodes.find((n) => n.kind === "server");
+      if (node0) links.push({ from: `incident:${inc.id}`, to: `node:${node0.id}`, linkKind: "affects" });
+    } else if (parts[0] === "guard") {
+      // 가드 급증은 첫 Service 에 영향으로 표시(대표).
+      const svc0 = svcNodes[0];
+      if (svc0) links.push({ from: `incident:${inc.id}`, to: `service:${svc0.id}`, linkKind: "affects" });
+    }
+  }
+
+  // dangling 링크 방지 — 실재 object id 만 남긴다(단일 출처 무결성).
+  const ids = new Set(objects.map((o) => o.id));
+  const clean = links.filter((l) => ids.has(l.from) && ids.has(l.to));
+  return { objects, links: clean };
+}
+
+// GET /ontology/objects?type=&filter= — type(ObjectType) + filter(title/id 부분일치).
+function ontologyObjects(type?: string, filter?: string): OntologyObjectList {
+  const { objects } = buildOntology();
+  let rows = objects;
+  if (type) rows = rows.filter((o) => o.type === type); // 알 수 없는 type → 빈 배열(스키마 유지).
+  const f = (filter ?? "").trim().toLowerCase();
+  if (f) rows = rows.filter((o) => o.title.toLowerCase().includes(f) || o.id.toLowerCase().includes(f));
+  return { generated_at: new Date().toISOString(), objects: rows, source: "ontology (mock)" };
+}
+
+// GET /ontology/objects/:id/links?kind= — 해당 object 를 from/to 로 갖는 링크. kind(LinkKind) 필터.
+// 미존재 object id → null(라우터에서 404).
+function ontologyLinks(id: string, kind?: string): OntologyLinkList | null {
+  const { objects, links } = buildOntology();
+  if (!objects.some((o) => o.id === id)) return null;
+  let rows = links.filter((l) => l.from === id || l.to === id);
+  if (kind) rows = rows.filter((l) => l.linkKind === kind); // 알 수 없는 kind → 빈 배열.
+  return { generated_at: new Date().toISOString(), object_id: id, links: rows, source: "ontology (mock)" };
+}
+
 // ───────────────────────── 라우터 ─────────────────────────
 type Json = unknown;
 function ok(body: Json, status = 200): Response {
@@ -1224,6 +1375,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /alerts/rules/preview": return ok(alertRulePreviewMock(q.get("metric") ?? "", q.get("window") ?? "1h"));
     case "GET /alerts/rules": return ok({ rules: ALERT_RULES, metrics: ALERT_METRIC_CATALOG, enabled: true });
     case "POST /alerts/rules": return ok(createAlertRuleMock(body as Record<string, unknown>));
+    // 온톨로지(IMP-56) — Object/Link 그래프 조회(후속 IMP-57/58/59/60/63 이 소비).
+    case "GET /ontology/objects": return ok(ontologyObjects(q.get("type") ?? undefined, q.get("filter") ?? undefined));
   }
 
   // 패턴 매칭 (path 변수 포함)
@@ -1234,6 +1387,14 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     if (!one) return notFound(path);
     if (one.configured && one.reachable && one.request) one.probe = mkProbeTrace(one);
     return ok(one);
+  }
+  // 온톨로지 링크(IMP-56) — object id 는 model:foo / gpu:host/gpu0 처럼 콜론·슬래시를 포함할 수 있어
+  // encodeURIComponent 로 인코딩된 id 를 디코드해 매칭한다(/links 접미만 고정).
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/links$/))) {
+    const id = decodeURIComponent(m[1]);
+    const res = ontologyLinks(id, q.get("kind") ?? undefined);
+    if (!res) return notFound(path);
+    return ok(res);
   }
   if (method === "POST" && (m = path.match(/^\/incidents\/([^/]+)\/(ack|resolve|snooze)$/))) { return actIncident(m[1], m[2], (body as Record<string, unknown>) ?? {}); }
   if (method === "POST" && (m = path.match(/^\/traces\/([^/]+)\/scores$/))) { return ok(recordScoreMock(m[1], body as Record<string, unknown>)); }

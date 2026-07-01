@@ -43,6 +43,10 @@ import type {
   ModelMetricsReport,
   NetworkReport,
   NodeMetrics,
+  ObjectType,
+  LinkKind,
+  OntologyObjectList,
+  OntologyLinkList,
   OrgTree,
   TopologyGraph,
   ProxyStats,
@@ -512,6 +516,22 @@ export function fetchNodeMetrics(host: string, range: TimeRange = "1h", signal?:
 
 export function fetchNetwork(range: TimeRange = "1h", signal?: AbortSignal): Promise<NetworkReport> {
   return getJSON<NetworkReport>(`/network?range=${range}`, signal);
+}
+
+// 온톨로지(IMP-56) — Object/Link 그래프. type/filter 로 명사를 추리고, id 로 관계를 traverse.
+export function fetchOntologyObjects(type?: ObjectType, filter?: string, signal?: AbortSignal): Promise<OntologyObjectList> {
+  const q = new URLSearchParams();
+  if (type) q.set("type", type);
+  if (filter && filter.trim()) q.set("filter", filter.trim());
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return getJSON<OntologyObjectList>(`/ontology/objects${suffix}`, signal);
+}
+
+export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSignal): Promise<OntologyLinkList> {
+  const q = new URLSearchParams();
+  if (kind) q.set("kind", kind);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return getJSON<OntologyLinkList>(`/ontology/objects/${encodeURIComponent(id)}/links${suffix}`, signal);
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {
