@@ -46,6 +46,9 @@ type Event struct {
 const (
 	EventThresholdCrossed = "threshold_crossed"
 	EventBudgetCrossed    = "budget_crossed"
+	// EventMetricBreached 는 지표 기반 알림 룰(IMP-36)이 임계를 교차했을 때의 이벤트.
+	// 발송은 동일 디스패처(SSRF·dedup·observe 차단)를 재사용한다 — 새 아웃바운드 경로 없음.
+	EventMetricBreached = "metric_breached"
 )
 
 // Channel 은 단일 아웃바운드 통지 채널.
@@ -305,6 +308,10 @@ func (d *Dispatcher) setWebhookUnchecked(rawURL string) {
 	d.mu.Unlock()
 }
 
+// SetWebhookUncheckedForTest 는 SSRF 검증을 건너뛰고 채널을 설정한다(다른 패키지의 테스트 전용 —
+// httptest 서버는 127.0.0.1 에 바인딩되어 ValidateWebhookURL 에 걸리므로 우회가 필요하다).
+func (d *Dispatcher) SetWebhookUncheckedForTest(rawURL string) { d.setWebhookUnchecked(rawURL) }
+
 // WebhookConfigured 는 webhook 채널 등록 여부.
 func (d *Dispatcher) WebhookConfigured() bool {
 	if d == nil {
@@ -340,6 +347,32 @@ func (d *Dispatcher) Dispatch(keyID string, e Event) {
 		return
 	}
 	e.Token = d.hashToken(keyID) // 평문 키 절대 비노출
+	if ch == nil {
+		d.record(SendRecord{Channel: "none", Event: e.Event, Token: e.Token, OK: false, Reason: "채널 미설정"})
+		return
+	}
+	go d.send(ch, e)
+}
+
+// DispatchMetric 은 지표 기반 룰(IMP-36)의 임계 교차/복구를 발송한다. budget/threshold 와 동일
+// 디스패처(profile 게이트·채널·감사·비차단 go 발송)를 재사용하되, dedup 키는 ruleID|event 로 잡고
+// 페이로드에는 키/PII 가 아니라 룰 ID 만 둔다(평문 비밀 없음 — IMP-15 해시 토큰 패턴 정합).
+//
+// renotify=true 면 dedup 을 건너뛴다(elevated 지속 재통지). 이때도 채널 미설정/observe 는 발송 안 함.
+func (d *Dispatcher) DispatchMetric(ruleID string, e Event, renotify bool) {
+	if d == nil {
+		return
+	}
+	d.mu.RLock()
+	enabled, ch := d.enabled, d.webhook
+	d.mu.RUnlock()
+	if !enabled {
+		return // observe: 읽기 전용 — 발송 안 함
+	}
+	if !renotify && !d.dd.allow("rule:"+ruleID+"|"+e.Event) {
+		return // 동일 룰×event dedup(폭주 억제). renotify 는 의도적 재통지라 건너뜀.
+	}
+	e.Token = "rule_" + ruleID // 룰 식별자(비밀 아님). 키/PII 미포함.
 	if ch == nil {
 		d.record(SendRecord{Channel: "none", Event: e.Event, Token: e.Token, OK: false, Reason: "채널 미설정"})
 		return

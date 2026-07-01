@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { createUser, deleteUser, fetchUsers, updateUser, fetchAlertConfig, setAlertWebhook } from "../api/client";
-import type { User, AlertConfig } from "../api/types";
+import { createUser, deleteUser, fetchUsers, updateUser, fetchAlertConfig, setAlertWebhook, fetchAlertRules, createAlertRule, deleteAlertRule, fetchAlertRulePreview } from "../api/client";
+import type { User, AlertConfig, AlertRule, AlertMetricMeta, AlertMetric, AlertOp, AlertWindow, AlertRuleState } from "../api/types";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import Badge, { type BadgeTone } from "../components/Badge";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -153,6 +153,148 @@ export function AlertWebhookCard() {
   );
 }
 
+// 지표 기반 알림 룰(IMP-36) — latency p95·error rate·guard block rate 임계 알림.
+// 발송은 IMP-15 디스패처를 재사용한다(새 아웃바운드 경로 없음). canEdit=manage 에서만 생성/삭제.
+const STATE_TONE: Record<AlertRuleState, BadgeTone> = { OK: "green", WARNING: "amber", ALERT: "red", NO_DATA: "neutral", PAUSED: "neutral" };
+const OP_LABEL: Record<AlertOp, string> = { gt: ">", gte: "≥", lt: "<", lte: "≤" };
+const WINDOWS: AlertWindow[] = ["5m", "1h", "1d"];
+
+export function AlertRulesCard({ canEdit }: { canEdit: boolean }) {
+  const toast = useToast();
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [metrics, setMetrics] = useState<AlertMetricMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState<{ name: string; metric: AlertMetric; op: AlertOp; alert_threshold: string; window: AlertWindow; severity: "info" | "warning" | "critical" }>(
+    { name: "", metric: "error_rate", op: "gt", alert_threshold: "0.05", window: "5m", severity: "warning" },
+  );
+  const [preview, setPreview] = useState<{ value: number; has_data: boolean } | null>(null);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const r = await fetchAlertRules(signal);
+      setRules(r.rules);
+      setMetrics(r.metrics);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setRules([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  // live current-value preview — 선택한 metric×window 의 "지금 값"을 보여줘 임계 설정 신뢰를 높인다.
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setPreview(null);
+    fetchAlertRulePreview(form.metric, form.window, ctrl.signal)
+      .then((p) => setPreview({ value: p.value, has_data: p.has_data }))
+      .catch(() => { /* preview 실패는 무시 */ });
+    return () => ctrl.abort();
+  }, [form.metric, form.window]);
+
+  const submit = async () => {
+    const thr = Number(form.alert_threshold);
+    if (!form.name.trim() || Number.isNaN(thr)) { toast.error("이름과 임계값을 확인하세요."); return; }
+    setBusy(true);
+    try {
+      await createAlertRule({ name: form.name.trim(), metric: form.metric, op: form.op, alert_threshold: thr, window: form.window, severity: form.severity, enabled: true });
+      toast.success(`알림 룰 “${form.name.trim()}”을(를) 추가했습니다.`);
+      setShowForm(false);
+      setForm({ name: "", metric: "error_rate", op: "gt", alert_threshold: "0.05", window: "5m", severity: "warning" });
+      load();
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
+  };
+
+  const remove = async (rule: AlertRule) => {
+    setBusy(true);
+    try {
+      await deleteAlertRule(rule.id);
+      toast.success(`알림 룰 “${rule.name}”을(를) 삭제했습니다.`);
+      load();
+    } catch (e) { toast.error(humanizeError((e as Error).message)); } finally { setBusy(false); }
+  };
+
+  const metricTitle = (m: AlertMetric) => metrics.find((x) => x.key === m)?.title ?? m;
+  const previewUnit = metrics.find((x) => x.key === form.metric)?.unit ?? "";
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>지표 기반 알림 룰</h3>
+        <InfoTip>지연(TTFT p95)·에러율·가드 차단율 등 지표가 임계를 넘으면 등록된 Webhook 으로 통지합니다(예산/토큰 임계와 별개). 빈 window 에서는 발화하지 않으며(NO_DATA), 진동 방지를 위해 복구 윈도를 둡니다. 발송 경로는 아웃바운드 Webhook 채널을 공유합니다.</InfoTip>
+      </div>
+      {loading ? (
+        <div className="table-scroll"><SkeletonRows rows={3} cols={5} /></div>
+      ) : rules.length === 0 ? (
+        <div className="empty">등록된 알림 룰이 없습니다.{canEdit ? " “+ 룰 추가”로 등록하세요." : ""}</div>
+      ) : (
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="알림 룰 목록">
+          <table className="usage-table">
+            <thead><tr><th>이름</th><th>지표</th><th>조건</th><th>윈도</th><th>상태</th>{canEdit && <th></th>}</tr></thead>
+            <tbody>
+              {rules.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.name}</td>
+                  <td>{metricTitle(r.metric)}</td>
+                  <td><code>{OP_LABEL[r.op]} {r.alert_threshold}</code>{r.warn_threshold != null && <span className="muted"> (warn {r.warn_threshold})</span>}</td>
+                  <td>{r.window}</td>
+                  <td>{r.enabled ? <Badge tone={STATE_TONE[(r.state ?? "OK")]} dot>{r.state ?? "OK"}</Badge> : <Badge tone="neutral" dot>비활성</Badge>}</td>
+                  {canEdit && <td className="num"><button type="button" className="btn-danger-ghost" onClick={() => remove(r)} disabled={busy}>삭제</button></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {canEdit && !showForm && (
+        <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btn-primary" onClick={() => setShowForm(true)}>+ 룰 추가</button>
+        </div>
+      )}
+      {canEdit && showForm && (
+        <div style={{ marginTop: "var(--sp-3)", borderTop: "1px solid var(--border)", paddingTop: "var(--sp-3)" }}>
+          <label className="pg-field"><span>룰 이름</span>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="예: 에러율 급증" /></label>
+          <div className="pg-field-row">
+            <label className="pg-field"><span>지표</span>
+              <select className="range-select" value={form.metric} onChange={(e) => setForm({ ...form, metric: e.target.value as AlertMetric })}>
+                {metrics.map((m) => <option key={m.key} value={m.key}>{m.title}</option>)}
+              </select></label>
+            <label className="pg-field"><span>연산자</span>
+              <select className="range-select" value={form.op} onChange={(e) => setForm({ ...form, op: e.target.value as AlertOp })}>
+                {(["gt", "gte", "lt", "lte"] as AlertOp[]).map((o) => <option key={o} value={o}>{OP_LABEL[o]}</option>)}
+              </select></label>
+            <label className="pg-field"><span>임계값</span>
+              <input value={form.alert_threshold} onChange={(e) => setForm({ ...form, alert_threshold: e.target.value })} inputMode="decimal" /></label>
+            <label className="pg-field"><span>윈도</span>
+              <select className="range-select" value={form.window} onChange={(e) => setForm({ ...form, window: e.target.value as AlertWindow })}>
+                {WINDOWS.map((w) => <option key={w} value={w}>{w}</option>)}
+              </select></label>
+            <label className="pg-field"><span>심각도</span>
+              <select className="range-select" value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value as "info" | "warning" | "critical" })}>
+                <option value="info">info</option><option value="warning">warning</option><option value="critical">critical</option>
+              </select></label>
+          </div>
+          <p className="policy-hint" style={{ marginTop: 0 }} data-testid="rule-preview">
+            현재 값({metricTitle(form.metric)}, {form.window}): {preview == null ? "측정 중…" : preview.has_data ? <b>{preview.value.toLocaleString("ko-KR", { maximumFractionDigits: 4 })} {previewUnit}</b> : <span className="muted">데이터 없음(NO_DATA)</span>}
+          </p>
+          <div className="modal-actions">
+            <button type="button" className="btn-ghost" onClick={() => setShowForm(false)}>취소</button>
+            <button type="button" className="btn-primary" onClick={submit} disabled={busy}>{busy ? "추가 중…" : "룰 추가"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const ROLE_LABEL: Record<string, string> = { admin: "관리자(Admin)", user: "일반(User)", super: "슈퍼(Super)" };
 const ROLE_TONE: Record<string, BadgeTone> = { admin: "red", super: "pink", user: "green" };
 // 권한 등급(높을수록 강함) — 상향 시 확인 다이얼로그를 띄우는 기준.
@@ -276,6 +418,8 @@ export default function Settings() {
       {error && <div className="state error" role="alert">{error}</div>}
       {canConfig && <ReconfigurePanel />}
       {canConfig && <AlertWebhookCard />}
+      {/* 지표 기반 알림 룰(IMP-36) — 목록은 읽기전용으로 항상, 편집은 manage(credentials)에서만 */}
+      <AlertRulesCard canEdit={canConfig} />
 
       <div className="card">
         <div className="card-head">

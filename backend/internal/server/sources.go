@@ -41,6 +41,16 @@ type EvalStore interface {
 	SaveExperiment(ctx context.Context, e Experiment) (Experiment, error)
 }
 
+// AlertRuleStore 는 지표 기반 알림 룰(IMP-36) CRUD seam. DataStore 와 분리한 옵셔널 능력 —
+// mock(인메모리)은 구현하고, live(*store.Store)는 미구현일 수 있어 핸들러에서 type-assert 한다.
+type AlertRuleStore interface {
+	ListAlertRules(ctx context.Context) ([]domain.AlertRule, error)
+	GetAlertRule(ctx context.Context, id string) (domain.AlertRule, error)
+	CreateAlertRule(ctx context.Context, r domain.AlertRule) (domain.AlertRule, error)
+	UpdateAlertRule(ctx context.Context, id string, r domain.AlertRule) (domain.AlertRule, error)
+	DeleteAlertRule(ctx context.Context, id string) error
+}
+
 // UsageSource 는 사용량 롤업(귀속·추세) 조회·적재(원래 *usage.Sink).
 type UsageSource interface {
 	Enabled() bool

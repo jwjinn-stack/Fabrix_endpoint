@@ -741,6 +741,50 @@ export interface IncidentList {
   counts: Record<string, number>; // triggered|acked|resolved|snoozed → count
 }
 
+// 지표 기반 알림 룰(IMP-36). latency/error/block 임계 알림. 발송은 IMP-15 디스패처 재사용.
+export type AlertMetric = "ttft_p95" | "latency_avg" | "error_rate" | "block_rate" | "throughput" | "count";
+export type AlertOp = "gt" | "gte" | "lt" | "lte";
+export type AlertWindow = "5m" | "1h" | "1d";
+export type AlertRuleState = "OK" | "WARNING" | "ALERT" | "NO_DATA" | "PAUSED";
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  metric: AlertMetric;
+  op: AlertOp;
+  alert_threshold: number;
+  warn_threshold?: number;
+  window: AlertWindow;
+  severity: "info" | "warning" | "critical";
+  no_data_mode?: "no_data" | "treat_as_zero" | "hold_previous";
+  recovery_window?: number;
+  renotify_min?: number;
+  enabled: boolean;
+  state?: AlertRuleState;
+  last_value?: number;
+  created_at?: string;
+}
+
+export interface AlertMetricMeta {
+  key: AlertMetric;
+  title: string;
+  unit: string;
+  lower_better: boolean;
+}
+
+export interface AlertRulesResponse {
+  rules: AlertRule[];
+  metrics: AlertMetricMeta[];
+  enabled?: boolean; // 발송 가능(manage) 여부
+}
+
+export interface AlertRulePreview {
+  metric: AlertMetric;
+  window: AlertWindow;
+  value: number;
+  has_data: boolean;
+}
+
 export interface Endpoint {
   name: string;
   namespace: string;
