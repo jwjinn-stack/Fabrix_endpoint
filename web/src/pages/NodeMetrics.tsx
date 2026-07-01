@@ -4,6 +4,7 @@ import type { NodeMetrics, NodePoint, NodeStatus } from "../api/types";
 import { statusFromThresholds, worstStatus } from "../api/mockFactory";
 import Sparkline from "../components/Sparkline";
 import StatMini from "../components/StatMini";
+import Gauge from "../components/Gauge";
 import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import InfoTip from "../components/InfoTip";
@@ -208,9 +209,12 @@ export default function NodeMetrics() {
   );
 }
 
-// fleet 카드 — 상태 태그(색+텍스트 병기) + 핵심 USE StatMini 그리드. 클릭 → 상세.
+// fleet 카드 — 상태 태그(색+텍스트 병기) + 포화 게이지 + 핵심 USE StatMini 그리드. 클릭 → 상세.
 function HostCard({ m, status, onOpen }: { m: NodeMetrics; status: NodeStatus; onOpen: () => void }) {
   const fleetSignals = FLEET_KEYS.map((k) => SIGNALS.find((s) => s.key === k)!);
+  // 포화 대표 신호(Load 1m) — 병목을 가장 먼저 예고하는 saturation. 임계밴드 게이지로 즉시 인지.
+  const loadSig = SIGNALS.find((s) => s.key === "load1")!;
+  const loadV = lastVal(m, "load1");
   return (
     <button type="button" className={`card node-card clickable node-card-${status}`} onClick={onOpen} aria-label={`${m.host} 상세 — 상태 ${STATUS_LABEL[status]}`}>
       <div className="card-head">
@@ -218,6 +222,11 @@ function HostCard({ m, status, onOpen }: { m: NodeMetrics; status: NodeStatus; o
         <span className={`tag tag-${STATUS_TAG[status]}`}>{STATUS_LABEL[status]}</span>
         <span className="spacer" />
         <span className="node-card-hint" aria-hidden="true">상세 ›</span>
+      </div>
+      <div className="node-gauge-row">
+        <span className="node-gauge-label">포화 · {loadSig.label}</span>
+        <Gauge value={loadV} warn={loadSig.warn} crit={loadSig.crit} valueText={loadSig.fmt(loadV)} label={loadSig.label} />
+        <span className="node-gauge-val">{loadSig.fmt(loadV)}</span>
       </div>
       <div className="node-card-metrics">
         {fleetSignals.map((s) => {
@@ -261,7 +270,7 @@ function HostDetail({ m, status }: { m: NodeMetrics; status: NodeStatus }) {
             return (
               <div className="node-dd-row" key={s.key}>
                 <span className="node-dd-label">{s.label}</span>
-                <Sparkline values={series(m, s.key)} color={sparkColor} width={240} height={30} />
+                <Sparkline values={series(m, s.key)} color={sparkColor} width={240} height={30} warnValue={s.warn} critValue={s.crit} />
                 <span className="node-dd-cur" style={color ? { color, fontWeight: 600 } : undefined}>
                   {s.fmt(v)}
                   {/* 색-only 금지: 임계 시 상태 텍스트 병기(WCAG 1.4.1). */}

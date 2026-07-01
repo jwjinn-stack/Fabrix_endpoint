@@ -5,6 +5,7 @@ import { statusFromThresholds, worstStatus } from "../api/mockFactory";
 import type { NavFn } from "../router";
 import Sparkline from "../components/Sparkline";
 import StatMini from "../components/StatMini";
+import Gauge from "../components/Gauge";
 import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import InfoTip from "../components/InfoTip";
@@ -319,6 +320,11 @@ function LinkCard({ link, status, onOpen }: { link: NetworkLink; status: NodeSta
         <span className="spacer" />
         <span className="node-card-hint" aria-hidden="true">상세 ›</span>
       </div>
+      <div className="node-gauge-row">
+        <span className="node-gauge-label">이용률</span>
+        <Gauge value={util} warn={UTIL_WARN} crit={UTIL_CRIT} max={1} valueText={p ? pct(util) : "—"} label="이용률" />
+        <span className="node-gauge-val">{p ? pct(util) : "—"}</span>
+      </div>
       <div className="node-card-metrics">
         <StatMini label="이용률" value={p ? pct(util) : "—"} tone={STATUS_TONE[utilSt]} spark={series(link, (x) => utilOf(x, link.capacity_mbps))} />
         <StatMini label="지연 p95" value={p ? ms(p.latency_p95_ms) : "—"} tone={STATUS_TONE[p95St]} spark={series(link, (x) => x.latency_p95_ms)} />
@@ -381,7 +387,7 @@ function LinkDetail({ link, status, onPivotTraffic }: { link: NetworkLink; statu
             return (
               <div className="node-dd-row" key={s.label}>
                 <span className="node-dd-label">{s.label}</span>
-                <Sparkline values={series(link, s.sel)} color={sparkColor(st)} width={240} height={30} />
+                <Sparkline values={series(link, s.sel)} color={sparkColor(st)} width={240} height={30} warnValue={s.warn} critValue={s.crit} />
                 <span className="node-dd-cur" style={color ? { color, fontWeight: 600 } : undefined}>
                   {s.fmt(v)}
                   {/* 색-only 금지: 임계 시 상태 텍스트 병기(WCAG 1.4.1). */}

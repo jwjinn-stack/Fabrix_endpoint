@@ -1493,6 +1493,23 @@ dialog.modal.modal-wide { width: min(860px, 94vw); }
 .net-pivot { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
 .net-pivot .node-dd-hint { margin-top: var(--sp-2); }
 
+/* IMP-54 — 임계밴드 선형 게이지(카드 내 포화 즉시 인지). Grafana bar gauge 관례. */
+.node-gauge-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-1);
+}
+.node-gauge-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; letter-spacing: 0.01em; }
+.node-gauge-val { font-size: var(--fs-sm); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
+.gauge { display: block; width: 100%; border-radius: var(--radius-sm); overflow: hidden; }
+/* 게이지 채움은 살짝의 전이로 값 변동을 부드럽게(라이트 톤·네온 금지). */
+.gauge-fill { transition: width var(--ease); }
+
+/* IMP-54 — 스파크라인 임계 라인(warn/crit 수평 파선). node-dd-row 안에서 라인만 격하게. */
+.spark-threshold { pointer-events: none; }
+
 /* 태그/배지 (동작·유형) */
 .tag {
   display: inline-flex; align-items: center; gap: 4px;
