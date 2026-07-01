@@ -3,6 +3,7 @@ import { fetchNodeMetrics } from "../api/client";
 import type { NodeMetrics, NodePoint, NodeStatus } from "../api/types";
 import { statusFromThresholds, worstStatus } from "../api/mockFactory";
 import Sparkline from "../components/Sparkline";
+import MetricExplorer from "../components/MetricExplorer";
 import StatMini from "../components/StatMini";
 import Gauge from "../components/Gauge";
 import { SkeletonCards } from "../components/Skeleton";
@@ -279,6 +280,16 @@ function HostDetail({ m, status }: { m: NodeMetrics; status: NodeStatus }) {
         <InfoTip>Saturation(Load·Swap·Disk IO)은 병목을 가장 먼저 예고하는 신호라 강조합니다.</InfoTip>
         {" "}USE = Utilization·Saturation·Errors. 큐레이션 세트(전량 나열 아님).
       </p>
+
+      {/* 전체 메트릭(IMP-71) — 큐레이션 USE 뷰(위)는 그대로, 명시적 탈출구. node_exporter 전량 카테고리·검색·facet·단위.
+          NodeMetrics.tsx:17 안티패턴 주석은 DEFAULT 대시보드에만 유효 — on-demand explorer 는 sanctioned. */}
+      <details className="me-disclosure">
+        <summary className="me-disclosure-head">
+          <span className="me-disclosure-caret" aria-hidden="true">▸</span>
+          전체 메트릭 (node_exporter 전량 — 카테고리·검색·단위)
+        </summary>
+        <MetricExplorer entityId={`node:${m.host}`} />
+      </details>
     </>
   );
 }

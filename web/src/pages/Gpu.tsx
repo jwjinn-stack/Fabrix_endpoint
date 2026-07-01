@@ -5,6 +5,7 @@ import StatCard from "../components/StatCard";
 import { SkeletonCards } from "../components/Skeleton";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import GpuHardwareSection from "../components/GpuHardwareSection";
+import MetricExplorer from "../components/MetricExplorer";
 import Sparkline from "../components/Sparkline";
 import GpuLedGrid from "../components/GpuLedGrid";
 import InfoTip from "../components/InfoTip";
@@ -237,6 +238,15 @@ export default function Gpu() {
                 <>이 GPU는 <b>MIG 미파티션(전체 GPU 모드)</b>입니다. RTX PRO 6000 Blackwell은 현재 슬라이스로 분할돼 있지 않아 GPU_I_PROFILE 라벨이 없습니다 — 슬라이스 bargauge 대신 전체 GPU의 GR_ENGINE 실효 가동률({detail.mig_efficiency.toFixed(2)})로 효율을 표시합니다. MIG 활성화 시 슬라이스 단위로 자동 확장됩니다.</>
               )}
             </div>
+
+            {/* 전체 메트릭(IMP-71) — 큐레이션 요약(위)은 그대로 두고 명시적 탈출구. DCGM 전량 카테고리·검색·facet·단위 드릴다운. */}
+            <details className="me-disclosure">
+              <summary className="me-disclosure-head">
+                <span className="me-disclosure-caret" aria-hidden="true">▸</span>
+                전체 메트릭 (DCGM 전량 — 카테고리·검색·단위)
+              </summary>
+              <MetricExplorer entityId={`gpu:${detail.hostname}/${detail.gpu.toLowerCase()}`} />
+            </details>
           </>
         )}
       </SlidePanel>

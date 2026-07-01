@@ -1235,6 +1235,51 @@ export interface ObjectMetricsReport {
   source: string;
 }
 
+// ───────────── 엔티티-앵커 Metric Explorer (IMP-71 — 전량 메트릭 드릴다운) ─────────────
+// 큐레이션 요약(IMP-46/Gpu SlidePanel)은 KNOWNS 대시보드로 그대로 두고, explorer 는 UNKNOWNS 검색가능
+// 전량 드릴다운(Splunk Observability Metric Explorer 의 entity→all-metrics→drill 미러). 온톨로지 객체가
+// 엔티티 앵커. mock 은 buildOntology() 스냅샷(IMP-81)에서 결정적 category→metric 트리를 파생하고,
+// live(IMP-79)는 동일 스키마를 VictoriaMetrics /series+/query+/query_range 로 채운다(transport 만 스왑).
+
+// 메트릭 타입 — raw DCGM/node exporter 값은 타입 없이는 의미가 다르다.
+//  gauge=순간값(FB_USED·SM_CLOCK), counter=단조누적(ECC·PCIe replay·XID), rate=초당(net_err/s).
+export type MetricType = "gauge" | "counter" | "rate";
+
+// 메트릭 상태 — 임계 밴드(단일 출처 statusFromThresholds 계열). none=임계 정의 없음(중립).
+export type MetricStatus = "ok" | "warn" | "crit" | "none";
+
+// 전량 메트릭 한 행 — TYPE + UNIT + freshness + 임계 + 스파크라인 + facet(label/tag).
+export interface MetricRow {
+  key: string;        // 원본 메트릭명(예: DCGM_FI_DEV_FB_USED, node_cpu_seconds_total)
+  label: string;      // 사람용 라벨
+  type: MetricType;
+  unit: string;       // bytes|MiB|MHz|W|°C|count|%|req/s|load|"" — 단위 없이는 무의미
+  value: number;      // 현재값(points 끝점)
+  status: MetricStatus;
+  freshness_sec: number; // 마지막 스크랩 경과(초) — 신선도
+  points: number[];   // 결정적 시계열(끝=value). live 는 펼칠 때 lazy /query_range.
+  facets: Record<string, string>; // gpu|instance|job|device 등 label(facet 필터·검색 대상)
+}
+
+// 카테고리(접힘/펼침 단위) — GPU: Utilization/Memory/Clocks/Power·Thermal/Interconnect/Errors/Throttle/Per-process.
+//   Node: CPU/Memory/Disk/Filesystem/Network/Load/Systemd.
+export interface MetricCategory {
+  key: string;
+  label: string;
+  rows: MetricRow[];
+}
+
+// GET /ontology/objects/:id/metric-tree?range= 응답 — mock/실백엔드 동일 계약.
+export interface ObjectMetricTree {
+  generated_at: string;
+  object_id: string;
+  object_type: string; // GpuDevice | Node (그 외는 엔티티 앵커 아님 → 빈 categories)
+  range: string;       // 1h|6h|24h|7d
+  categories: MetricCategory[];
+  facet_keys: string[]; // 이 엔티티가 emit 하는 facet 키 목록(UI facet 셀렉터)
+  source: string;      // "metric-explorer (mock)" | 실백엔드
+}
+
 // ───────────── AI Agent (IMP-60 — 로컬 모델 + MCP tool-calling 온톨로지 접지) ─────────────
 // docs/palantir-ontology-analysis.md §3·§5.4 + AWS Prescriptive Guidance grounded-agent Pattern 5.
 // "채팅"이 아니라 "온톨로지 위에서 tool 을 쓰는 운영 에이전트": LLM 이 온톨로지를 tool 로 조회(read-only)하고

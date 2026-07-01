@@ -24,7 +24,14 @@ function makeNode(host: string, overrides: Partial<NodePoint>): NodeMetrics {
 }
 
 const fetchNodeMetrics = vi.fn();
-vi.mock("../api/client", () => ({ fetchNodeMetrics: (...a: unknown[]) => fetchNodeMetrics(...a) }));
+// IMP-71 — HostDetail 하단에 Metric Explorer(<details>)가 있어 fetchObjectMetricTree 를 호출한다. 빈 트리로 스텁.
+vi.mock("../api/client", () => ({
+  fetchNodeMetrics: (...a: unknown[]) => fetchNodeMetrics(...a),
+  fetchObjectMetricTree: (id: string) => Promise.resolve({
+    generated_at: "t", object_id: id, object_type: "Node", range: "1h",
+    categories: [], facet_keys: [], source: "metric-explorer (mock)",
+  }),
+}));
 
 // 페이지가 요청한 host 로 결정적 응답을 준다. 01=정상, 02=위험(swap crit), 03=주의(cpu warn).
 function respond(host: string): NodeMetrics {

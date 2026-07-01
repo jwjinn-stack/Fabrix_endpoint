@@ -19,12 +19,13 @@ import type {
   UsageTrend, User,
   ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
   ObjectMetricsReport, ObjectMetricSeries,
+  ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
   ActionAuditEntry, ActionOutcome, ActionResult,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
-import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
+import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } from "./mockFactory";
 // GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
 import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
@@ -1210,6 +1211,213 @@ function objectMetrics(id: string, range?: string): ObjectMetricsReport | null {
   return { generated_at: new Date().toISOString(), object_id: id, range: rng_, series, source: "ontology (mock)" };
 }
 
+// ── 엔티티-앵커 Metric Explorer(IMP-71) — GET /ontology/objects/:id/metric-tree?range= ──
+// 큐레이션 요약(IMP-46/get_object_metrics)과 별개의 UNKNOWNS 검색가능 전량 드릴다운. buildOntology() 스냅샷
+// (IMP-81)의 GpuDevice(nested hw, IMP-76)·Node 객체에서 category→metric 트리를 **결정적**으로 파생한다.
+// 새 도메인 데이터를 만들지 않고 이미 있는 하드웨어/노드 수치를 원본 메트릭명·타입·단위로 승격한다.
+// live(IMP-79)는 동일 스키마를 VictoriaMetrics /series+/query+/query_range 로 채우면 됨(transport 스왑).
+
+// 결정적 sparkline — 현재값 주변 ±jitter%(끝점=value). seed 는 id|key|range(재현 가능).
+function metricSpark(id: string, key: string, range: string, value: number, jitterPct: number, n: number): number[] {
+  const r = rng(hash(`me:${id}|${key}|${range}`));
+  const pts: number[] = [];
+  const base = Math.abs(value) || 1;
+  for (let i = 0; i < n; i++) {
+    const jit = (r() - 0.5) * jitterPct * base * (1 - i / n);
+    pts.push(+(value + jit).toFixed(4));
+  }
+  pts[pts.length - 1] = value; // 끝점은 현재 canonical 값.
+  return pts;
+}
+
+// 한 메트릭 행 빌더 — TYPE/UNIT/status/freshness/points/facets 를 한 곳에서(단위 명시 강제).
+interface RowSpec {
+  key: string; label: string; type: MetricType; unit: string; value: number;
+  status?: MetricStatus; jitter?: number; // 스파크 흔들림(기본 0.14). counter 는 작게.
+}
+function mkRow(id: string, range: string, n: number, freshness: number, facets: Record<string, string>, s: RowSpec): MetricRow {
+  const jitter = s.jitter ?? (s.type === "counter" ? 0.02 : 0.14);
+  return {
+    key: s.key, label: s.label, type: s.type, unit: s.unit, value: s.value,
+    status: s.status ?? "none", freshness_sec: freshness,
+    points: metricSpark(id, s.key, range, s.value, jitter, n), facets,
+  };
+}
+// 임계 → MetricStatus(단일 출처 statusFromThresholds 계열; ThresholdStatus ⊂ MetricStatus).
+function metricStatus(value: number, warn: number, crit: number): MetricStatus {
+  return statusFromThresholds(value, warn, crit);
+}
+
+const METRIC_RANGE_POINTS: Record<string, number> = { "1h": 12, "6h": 12, "24h": 24, "7d": 14 };
+
+// GpuDevice → 8 카테고리. props(요약 수치) + nested hw(IMP-76 풀 필드)를 원본 DCGM 메트릭명으로.
+function gpuMetricTree(id: string, obj: OntologyObject, range: string, n: number, fresh: number): MetricCategory[] {
+  const p = obj.props as Record<string, unknown>;
+  const num = (k: string, d = 0): number => (typeof p[k] === "number" ? (p[k] as number) : d);
+  const hw = (p.hw as GpuHardware | undefined) ?? undefined;
+  // facet — 이 GPU 엔티티가 emit 하는 label. gpu=UUID(device props), instance/job/device.
+  const device = typeof p.device === "string" ? (p.device as string) : id.replace(/^gpu:/, "");
+  const uuid = `GPU-${device.replace(/\//g, "-")}`;
+  const host = device.split("/")[0] || "gpu-node";
+  const facets: Record<string, string> = { gpu: uuid, instance: `${host}:9400`, job: "dcgm-exporter", device };
+  const row = (s: RowSpec) => mkRow(id, range, n, fresh, facets, s);
+
+  // 요약 수치(0..1 → %). util·mem·sm·tensor·GR_ENGINE.
+  const util = num("util_perc") * 100, mem = num("mem_perc") * 100;
+  const sm = num("sm_active") * 100, tensor = num("tensor_active") * 100, gr = num("mig_efficiency") * 100;
+  const temp = num("temp_c"), power = num("power_w");
+  const memTotalMb = 81920, memUsedBytes = (num("mem_perc") * memTotalMb) * 1024 * 1024;
+
+  const cats: MetricCategory[] = [
+    { key: "utilization", label: "Utilization", rows: [
+      row({ key: "DCGM_FI_DEV_GPU_UTIL", label: "GPU 사용률", type: "gauge", unit: "%", value: +util.toFixed(1), status: metricStatus(util, 60, 90) }),
+      row({ key: "DCGM_FI_PROF_SM_ACTIVE", label: "SM Active", type: "gauge", unit: "%", value: +sm.toFixed(1) }),
+      row({ key: "DCGM_FI_PROF_PIPE_TENSOR_ACTIVE", label: "Tensor Active", type: "gauge", unit: "%", value: +tensor.toFixed(1) }),
+      row({ key: "DCGM_FI_PROF_GR_ENGINE_ACTIVE", label: "GR Engine(효율)", type: "gauge", unit: "%", value: +gr.toFixed(1) }),
+    ] },
+    { key: "memory", label: "Memory", rows: [
+      row({ key: "DCGM_FI_DEV_FB_USED", label: "FB 사용(VRAM)", type: "gauge", unit: "bytes", value: Math.round(memUsedBytes), status: metricStatus(mem, 85, 95) }),
+      row({ key: "DCGM_FI_DEV_FB_FREE", label: "FB 여유", type: "gauge", unit: "bytes", value: Math.round((memTotalMb * 1024 * 1024) - memUsedBytes) }),
+      row({ key: "DCGM_FI_DEV_FB_USED_PERCENT", label: "VRAM 사용률", type: "gauge", unit: "%", value: +mem.toFixed(1), status: metricStatus(mem, 85, 95) }),
+    ] },
+  ];
+  if (hw) {
+    const throttled = decodeClocksEventReasons(hw.clocks_event_reasons).length > 0;
+    const nvErr = hw.nvlink.crc_errors + hw.nvlink.replay_errors + hw.nvlink.recovery_errors;
+    const eccBad = hw.ecc.dbe_volatile > 0 || hw.ecc.dbe_aggregate > 0;
+    cats.push(
+      { key: "clocks", label: "Clocks", rows: [
+        row({ key: "DCGM_FI_DEV_SM_CLOCK", label: "SM Clock", type: "gauge", unit: "MHz", value: hw.sm_clock_mhz, status: throttled ? "warn" : "none" }),
+        row({ key: "DCGM_FI_DEV_MEM_CLOCK", label: "Mem Clock", type: "gauge", unit: "MHz", value: hw.mem_clock_mhz }),
+      ] },
+      { key: "power_thermal", label: "Power·Thermal", rows: [
+        row({ key: "DCGM_FI_DEV_POWER_USAGE", label: "전력", type: "gauge", unit: "W", value: power, status: metricStatus(power, 500, 650) }),
+        row({ key: "DCGM_FI_DEV_GPU_TEMP", label: "온도", type: "gauge", unit: "°C", value: temp, status: metricStatus(temp, 80, 87) }),
+        row({ key: "DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION", label: "누적 에너지", type: "counter", unit: "mJ", value: Math.round(power * 3.6e6 + hash(id) % 1e6) }),
+      ] },
+      { key: "interconnect", label: "Interconnect (PCIe·NVLink)", rows: [
+        row({ key: "DCGM_FI_PROF_PCIE_TX_BYTES", label: "PCIe TX(누적)", type: "counter", unit: "bytes", value: hw.pcie.tx_bytes }),
+        row({ key: "DCGM_FI_PROF_PCIE_RX_BYTES", label: "PCIe RX(누적)", type: "counter", unit: "bytes", value: hw.pcie.rx_bytes }),
+        row({ key: "DCGM_FI_DEV_PCIE_REPLAY_COUNTER", label: "PCIe Replay", type: "counter", unit: "count", value: hw.pcie.replay_counter, status: hw.pcie.replay_counter > 10 ? "warn" : "none" }),
+        row({ key: "DCGM_FI_PROF_NVLINK_TX_BYTES", label: "NVLink 합계 대역", type: "rate", unit: "KiB/s", value: hw.nvlink.total_kibs }),
+        ...hw.nvlink.throughput_kibs.map((t, i) =>
+          row({ key: `DCGM_FI_PROF_NVLINK_L${i}_BANDWIDTH`, label: `NVLink L${i}`, type: "rate", unit: "KiB/s", value: t })),
+        row({ key: "DCGM_FI_DEV_NVLINK_CRC_FLIT_ERROR_COUNT_TOTAL", label: "NVLink 오류(CRC·replay·recovery)", type: "counter", unit: "count", value: nvErr, status: nvErr > 20 ? "warn" : "none" }),
+      ] },
+      { key: "errors", label: "Errors (ECC·XID)", rows: [
+        row({ key: "DCGM_FI_DEV_ECC_SBE_VOL_TOTAL", label: "ECC SBE(volatile)", type: "counter", unit: "count", value: hw.ecc.sbe_volatile }),
+        row({ key: "DCGM_FI_DEV_ECC_DBE_VOL_TOTAL", label: "ECC DBE(volatile)", type: "counter", unit: "count", value: hw.ecc.dbe_volatile, status: hw.ecc.dbe_volatile > 0 ? "crit" : "none" }),
+        row({ key: "DCGM_FI_DEV_ECC_SBE_AGG_TOTAL", label: "ECC SBE(aggregate)", type: "counter", unit: "count", value: hw.ecc.sbe_aggregate }),
+        row({ key: "DCGM_FI_DEV_ECC_DBE_AGG_TOTAL", label: "ECC DBE(aggregate)", type: "counter", unit: "count", value: hw.ecc.dbe_aggregate, status: eccBad ? "crit" : "none" }),
+        row({ key: "DCGM_FI_DEV_XID_ERRORS", label: `최근 XID(${xidLabel(hw.xid_recent)})`, type: "gauge", unit: "code", value: hw.xid_recent, status: hw.xid_recent > 0 ? "crit" : "none" }),
+      ] },
+      { key: "throttle", label: "Throttle", rows: [
+        row({ key: "DCGM_FI_DEV_CLOCKS_EVENT_REASONS", label: `클럭 제약 사유(${decodeClocksEventReasons(hw.clocks_event_reasons).join(", ") || "제약 없음"})`, type: "gauge", unit: "bitmask", value: hw.clocks_event_reasons, status: throttled ? "warn" : "none" }),
+      ] },
+    );
+    if (hw.processes.length > 0) {
+      cats.push({ key: "per_process", label: "Per-process", rows: hw.processes.map((proc) =>
+        row({ key: `DCGM_FI_DEV_PROCESS_MEM__${proc.pid}`, label: `${proc.name} · PID ${proc.pid}`, type: "gauge", unit: "MiB", value: proc.mem_used_mb })) });
+    }
+  }
+  return cats;
+}
+
+// Node → 7 카테고리. buildNodeMetrics 최신 point(단일 출처)를 node_exporter 원본 메트릭명으로.
+function nodeMetricTree(id: string, obj: OntologyObject, range: string, n: number, fresh: number): MetricCategory[] {
+  const host = (typeof obj.props.hostname === "string" ? (obj.props.hostname as string) : id.replace(/^node:/, "")) || "gpu-node-01";
+  const { n: bn, stepSec } = rangeBuckets[(range in rangeBuckets ? range : "1h") as TimeRange];
+  const nm = buildNodeMetrics(host, bn, stepSec);
+  const last = nm.points[nm.points.length - 1];
+  const facets: Record<string, string> = { instance: `${host}:9100`, job: "node-exporter", device: host };
+  const row = (s: RowSpec) => mkRow(id, range, n, fresh, facets, s);
+  if (!last) return [];
+  const pctv = (v: number) => +(v * 100).toFixed(1);
+  // 파생 대표값(filesystem/systemd) — 결정적 seed(host).
+  const r = rng(hash(`node-extra:${host}`));
+  const fsUsed = clamp(0.55 + (r() - 0.5) * 0.2, 0, 1);
+  const inodeUsed = clamp(0.18 + (r() - 0.5) * 0.1, 0, 1);
+  const failedUnits = r() > 0.85 ? 1 : 0;
+  return [
+    { key: "cpu", label: "CPU", rows: [
+      row({ key: "node_cpu_utilization", label: "CPU 사용률", type: "gauge", unit: "%", value: pctv(last.cpu_util), status: metricStatus(last.cpu_util, 0.8, 0.95) }),
+      row({ key: "node_cpu_seconds_total", label: "CPU seconds(누적)", type: "counter", unit: "seconds", value: Math.round(last.cpu_util * 1e6 + hash(host) % 1e5) }),
+    ] },
+    { key: "memory", label: "Memory", rows: [
+      row({ key: "node_memory_utilization", label: "메모리 사용률", type: "gauge", unit: "%", value: pctv(last.mem_util), status: metricStatus(last.mem_util, 0.85, 0.95) }),
+      row({ key: "node_memory_SwapUsed_percent", label: "Swap 사용", type: "gauge", unit: "%", value: pctv(last.swap_used_perc), status: metricStatus(last.swap_used_perc, 0.2, 0.5) }),
+    ] },
+    { key: "disk", label: "Disk", rows: [
+      row({ key: "node_disk_utilization", label: "디스크 사용률", type: "gauge", unit: "%", value: pctv(last.disk_util), status: metricStatus(last.disk_util, 0.85, 0.95) }),
+      row({ key: "node_disk_io_time_percent", label: "Disk IO 포화", type: "gauge", unit: "%", value: pctv(last.disk_io_perc), status: metricStatus(last.disk_io_perc, 0.7, 0.9) }),
+    ] },
+    { key: "filesystem", label: "Filesystem", rows: [
+      row({ key: "node_filesystem_used_percent", label: "파일시스템 사용", type: "gauge", unit: "%", value: pctv(fsUsed), status: metricStatus(fsUsed, 0.8, 0.9) }),
+      row({ key: "node_filesystem_files_used_percent", label: "inode 사용", type: "gauge", unit: "%", value: pctv(inodeUsed) }),
+    ] },
+    { key: "network", label: "Network", rows: [
+      row({ key: "node_network_receive_bytes_total", label: "Net RX", type: "rate", unit: "Mbps", value: last.net_rx_mbps }),
+      row({ key: "node_network_transmit_bytes_total", label: "Net TX", type: "rate", unit: "Mbps", value: last.net_tx_mbps }),
+      row({ key: "node_network_receive_errs_total", label: "Net 에러", type: "rate", unit: "err/s", value: last.net_err_per_s, status: metricStatus(last.net_err_per_s, 5, 20) }),
+    ] },
+    { key: "load", label: "Load", rows: [
+      row({ key: "node_load1", label: "Load 1m", type: "gauge", unit: "load", value: last.load1, status: metricStatus(last.load1, 12, 16) }),
+    ] },
+    { key: "systemd", label: "Systemd", rows: [
+      row({ key: "node_systemd_units_failed", label: "실패한 systemd 유닛", type: "gauge", unit: "count", value: failedUnits, status: failedUnits > 0 ? "warn" : "none" }),
+    ] },
+  ];
+}
+
+// 엔티티 해석 — 온톨로지 스냅샷에 있으면 그대로, 없으면 GPU/노드 상세(genGPU/노드) id 패턴에서 합성한다.
+// (Gpu.tsx SlidePanel 은 호스트당 8 GPU 인데 topology 는 대표 2개만 승격 — 나머지 GPU 도 explorer 가 열리게
+//  gpu:<host>/gpu<N> 패턴이면 genGPU 실측 device 로 GpuDevice 객체를 만들어 준다. node:<host> 도 동일.)
+function resolveMetricEntity(id: string): OntologyObject | null {
+  const found = buildOntology().objects.find((o) => o.id === id);
+  if (found) return found;
+  // gpu:<host>/gpu<N> — genGPU() 실측 device(uuid=GPU-<host>-<N>)에서 GpuDevice props+hw 합성.
+  let m = id.match(/^gpu:(.+)\/gpu(\d+)$/i);
+  if (m) {
+    const host = m[1], gi = Number(m[2]);
+    const dev = genGPU().devices.find((d) => d.hostname === host && d.gpu.toLowerCase() === `gpu${gi}`);
+    if (dev) {
+      const status: ObjectStatus = dev.temp_c >= 87 || dev.util_perc >= 0.9 ? "crit" : dev.temp_c >= 80 || dev.util_perc >= 0.6 ? "warn" : "ok";
+      return { id, type: "GpuDevice", title: `${host} GPU${gi}`, status, revision: 1, props: {
+        device: `${host}/gpu${gi}`, util_perc: dev.util_perc, mem_perc: dev.mem_perc,
+        temp_c: dev.temp_c, power_w: dev.power_w, sm_active: dev.sm_active,
+        tensor_active: dev.tensor_active, mig_efficiency: dev.mig_efficiency, hw: dev.hw,
+      } };
+    }
+  }
+  // node:<host> — 온톨로지에 없더라도 노드 트리는 buildNodeMetrics(host)로 파생 가능.
+  m = id.match(/^node:(.+)$/);
+  if (m) {
+    return { id, type: "Node", title: m[1], status: "ok", revision: 1, props: { hostname: m[1] } };
+  }
+  return null;
+}
+
+// GET /ontology/objects/:id/metric-tree?range= — 엔티티 앵커 전량 메트릭 트리(mock).
+// GpuDevice/Node 만 엔티티 앵커. 그 외 타입은 빈 categories(엔티티 아님 — empty 상태). 미존재 id → null(404).
+function objectMetricTree(id: string, range?: string): ObjectMetricTree | null {
+  const obj = resolveMetricEntity(id);
+  if (!obj) return null;
+  const rng_ = range && METRIC_RANGE_POINTS[range] ? range : "1h";
+  const n = METRIC_RANGE_POINTS[rng_];
+  // freshness — 스크랩 주기 근사(GPU DCGM 15s, node exporter 15s). 결정적으로 0..14초.
+  const fresh = hash(`fresh:${id}`) % 15;
+  let categories: MetricCategory[] = [];
+  if (obj.type === "GpuDevice") categories = gpuMetricTree(id, obj, rng_, n, fresh);
+  else if (obj.type === "Node") categories = nodeMetricTree(id, obj, rng_, n, fresh);
+  // facet 키 — 첫 행의 facet 키 순서(결정적). 카테고리가 없으면 빈 배열.
+  const firstRow = categories[0]?.rows[0];
+  const facetKeys = firstRow ? Object.keys(firstRow.facets) : [];
+  return {
+    generated_at: new Date().toISOString(), object_id: id, object_type: obj.type,
+    range: rng_, categories, facet_keys: facetKeys, source: "metric-explorer (mock)",
+  };
+}
+
 // ── Action(writeback) 단일 실행 계약(IMP-59) — POST /ontology/actions/:name ──
 // 모든 verb(restartModel/scaleReplicas/cordonNode/drainGpu/ack/resolve/snooze)를 한 경로로 처리.
 // 1) 레지스트리 조회 → 2) capability+status 게이팅(서버 등가 trust boundary, 403) →
@@ -1703,6 +1911,13 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
   if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/metrics$/))) {
     const id = decodeURIComponent(m[1]);
     const res = objectMetrics(id, q.get("range") ?? undefined);
+    if (!res) return notFound(path);
+    return ok(res);
+  }
+  // 엔티티-앵커 Metric Explorer 트리(IMP-71) — /metric-tree 접미. 구체 경로라 단일 객체보다 먼저 매칭.
+  if (method === "GET" && (m = path.match(/^\/ontology\/objects\/(.+)\/metric-tree$/))) {
+    const id = decodeURIComponent(m[1]);
+    const res = objectMetricTree(id, q.get("range") ?? undefined);
     if (!res) return notFound(path);
     return ok(res);
   }

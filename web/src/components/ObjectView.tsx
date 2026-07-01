@@ -17,7 +17,11 @@ import Badge, { type BadgeTone } from "./Badge";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
 import GpuHardwareSection from "./GpuHardwareSection";
+import MetricExplorer from "./MetricExplorer";
 import type { GpuHardware } from "../api/types";
+
+// Metric Explorer(IMP-71)를 탭으로 제공하는 엔티티 앵커 타입 — GpuDevice/Node 만 전량 메트릭을 emit.
+const METRIC_ENTITY_TYPES: OntologyObject["type"][] = ["GpuDevice", "Node"];
 
 // 어느 페이지든 붙이는 ObjectView URL 배선 훅(IMP-57) — obj/objstack 를 단일 출처로.
 //  open(id): 진입점에서 특정 객체를 연다. close(): 닫는다. <ObjectView {...props}/> 로 스프레드.
@@ -129,6 +133,9 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   // IMP-65 — 이 객체에서 실행한 Action 감사 로그(세션-로컬). ActionForm.onDone 이 돌려준 res.audit 을
   // 최근 순으로 누적. head 가 바뀌면 리셋(객체별 컨텍스트). 신규 fetch endpoint 없이 기존 계약만 소비.
   const [auditLog, setAuditLog] = useState<ActionAuditEntry[]>([]);
+  // IMP-71 — GpuDevice/Node 는 '요약'(기본, 큐레이션 KNOWNS)과 '전체 메트릭'(explorer, UNKNOWNS) 탭을 갖는다.
+  // 요약이 DEFAULT — '전체 메트릭'은 명시적 탈출구(IMP-46 회귀 없음). head 바뀌면 요약으로 리셋.
+  const [tab, setTab] = useState<"summary" | "metrics">("summary");
 
   // head 변경 시 canonical + 관계 + 이웃 해석 인덱스 로드.
   useEffect(() => {
@@ -137,6 +144,7 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
     setLoading(true);
     setMissing(false);
     setAuditLog([]); // 새 객체(traverse/재진입) — 감사 로그는 객체별 컨텍스트.
+    setTab("summary"); // 새 객체는 큐레이션 요약이 기본(IMP-71 — explorer 는 명시적 탈출구).
     Promise.all([
       fetchOntologyObject(head, ac.signal),
       fetchOntologyLinks(head, undefined, ac.signal),
@@ -221,6 +229,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   const crumbs = stack.map((id) => index[id]?.title ?? id);
   // GpuDevice props 에 mock 이 얹은 중첩 GpuHardware(IMP-76). 구조 최소검증(nvlink 유무)으로 실백엔드/레거시 방어.
   const gpuHw = extractGpuHw(obj?.props.hw);
+  // IMP-71 — 이 객체가 전량 메트릭을 emit 하는 엔티티 앵커(GpuDevice/Node)인지. 아니면 탭 미표시.
+  const supportsMetrics = !!obj && METRIC_ENTITY_TYPES.includes(obj.type);
 
   return (
     <SlidePanel
@@ -313,6 +323,27 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
             </div>
           </div>
 
+          {/* IMP-71 — GpuDevice/Node 는 '요약'(기본 KNOWNS)·'전체 메트릭'(explorer UNKNOWNS) 탭. 그 외 타입은 탭 없이 요약만. */}
+          {supportsMetrics && (
+            <div className="me-tabs modality-tabs" role="tablist" aria-label="객체 보기">
+              <button
+                type="button" role="tab" aria-selected={tab === "summary"}
+                className={`modality-tab ${tab === "summary" ? "active" : ""}`}
+                onClick={() => setTab("summary")}
+              >요약</button>
+              <button
+                type="button" role="tab" aria-selected={tab === "metrics"}
+                className={`modality-tab ${tab === "metrics" ? "active" : ""}`}
+                onClick={() => setTab("metrics")}
+              >전체 메트릭</button>
+            </div>
+          )}
+
+          {/* '전체 메트릭' 탭 — 엔티티 앵커 Metric Explorer(전량 드릴다운). 요약은 아래에서 tab==summary 일 때만. */}
+          {supportsMetrics && tab === "metrics" && <MetricExplorer entityId={obj.id} />}
+
+          {(!supportsMetrics || tab === "summary") && (
+          <>
           {/* (2) Properties — props 를 DetailRow 로. 중첩 hw(하드웨어 상세)는 아래 전용 섹션이 렌더하므로 제외. */}
           <section className="ov-section" aria-label="속성">
             <h4 className="ov-h">속성</h4>
@@ -429,6 +460,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
                 })}
               </ol>
             </section>
+          )}
+          </>
           )}
         </>
       )}

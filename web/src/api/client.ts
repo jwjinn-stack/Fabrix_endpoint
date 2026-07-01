@@ -49,6 +49,7 @@ import type {
   OntologyObjectList,
   OntologyLinkList,
   ObjectMetricsReport,
+  ObjectMetricTree,
   ActionResult,
   AgentRun,
   OrgTree,
@@ -548,6 +549,14 @@ export function fetchOntologyObject(id: string, signal?: AbortSignal): Promise<O
 export function fetchObjectMetrics(id: string, range?: string, signal?: AbortSignal): Promise<ObjectMetricsReport> {
   const suffix = range ? `?range=${encodeURIComponent(range)}` : "";
   return getJSON<ObjectMetricsReport>(`/ontology/objects/${encodeURIComponent(id)}/metrics${suffix}`, signal);
+}
+
+// 엔티티-앵커 Metric Explorer(IMP-71) — GpuDevice/Node 의 전량 메트릭 category→row 트리. 미존재 → 404 throw.
+// mock 은 buildOntology 스냅샷에서 결정적 파생, live(IMP-79)는 VictoriaMetrics /series+/query+/query_range.
+// 어느 쪽이든 transport 만 스왑되고 응답 스키마는 ObjectMetricTree 로 고정.
+export function fetchObjectMetricTree(id: string, range?: string, signal?: AbortSignal): Promise<ObjectMetricTree> {
+  const suffix = range ? `?range=${encodeURIComponent(range)}` : "";
+  return getJSON<ObjectMetricTree>(`/ontology/objects/${encodeURIComponent(id)}/metric-tree${suffix}`, signal);
 }
 
 // Action(writeback) 단일 mutation 계약(IMP-59) — POST /ontology/actions/:name.
