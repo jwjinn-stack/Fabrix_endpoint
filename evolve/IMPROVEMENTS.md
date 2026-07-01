@@ -89,17 +89,17 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-42 | platform | 트레이스/스팬 수집을 OpenTelemetry(OTLP + Collector)로 표준화 — 손수 짠 Langfuse synth 경로 대체 | medium | L | medium | spike-needed | 2026-06-30 |
 | IMP-43 | aesthetic | 알림/인시던트 표면의 시각 위계가 빈약 — severity 색·타임스탬프·그룹핑이 Datadog/Grafana OnCall 대비 평면적 | low | M | medium | done | 2026-06-30 |
 | IMP-44 | aesthetic | KPI stat-mini 카드의 타입 위계·델타 시각화가 Datadog/Vercel 대비 단조 — 숫자 나열에 그침 | low | M | medium | done | 2026-06-30 |
-| IMP-45 | ux | 운영 토폴로지/의존성 그래프 뷰 신설(노드=서버·서비스·GPU, 엣지=트래픽·의존성) — mock-first | high | L | high | grounded | 2026-07-01 |
-| IMP-46 | ux | 핵심 운용 메트릭 화면(온콜이 실제 보는 USE/골든시그널만: CPU/메모리/디스크/네트워크) — mock-first, node_exporter 지향 | high | L | high | grounded | 2026-07-01 |
-| IMP-47 | oss | 운영 토폴로지 그래프 렌더러 선택 — hand-rolled SVG 계층 DAG vs React Flow vs elkjs 저울질 | medium | M | high | grounded | 2026-07-01 |
-| IMP-48 | aesthetic | 토폴로지 그래프 시각 완성도 — 노드/엣지 인코딩·깊이·모션이 Datadog Service Map/Grafana Node Graph 수준 미달 | medium | M | high | grounded | 2026-07-01 |
-| IMP-49 | ux | 네트워크 모니터링 화면(대역폭·지연·연결·에러) — mock-first, 실 수집은 인프라 spike | medium | L | high | grounded | 2026-07-01 |
-| IMP-50 | compete | 서비스 의존성 맵 + 골든시그널 인프라 뷰로 관측 콘솔 경쟁력 확장(LLM-aware 인프라 관측) | medium | L | high | grounded | 2026-07-01 |
-| IMP-51 | ux | 신규 인프라 화면(토폴로지/노드/네트워크)의 자동 폴링에 신선도·정지/재개·에러 복구 일관 적용 | medium | S | medium | proposed | 2026-07-01 |
-| IMP-52 | platform | 호스트/네트워크 골든시그널 수집을 node_exporter로 표준 채택(IMP-41 Prometheus 백본의 익스포터 층) | medium | L | medium | proposed | 2026-07-01 |
-| IMP-53 | ux | 토폴로지·노드·네트워크 화면의 observe/manage 프로파일 정합 + nav 정보구조(인프라/관측 그룹) 정리 | low | S | medium | proposed | 2026-07-01 |
-| IMP-54 | aesthetic | 노드/네트워크 메트릭 화면 시각 완성도 — 골든시그널 게이지·스파크라인·포화 인코딩을 Grafana/Datadog 밀도로 | low | M | medium | proposed | 2026-07-01 |
-| IMP-55 | code | 신규 토폴로지·노드·네트워크 mock 데이터 중복 위험 — 그래프/시계열 mock 팩토리 공통화 | low | M | medium | proposed | 2026-07-01 |
+| IMP-45 | ux | 운영 토폴로지/의존성 그래프 뷰 신설(노드=서버·서비스·GPU, 엣지=트래픽·의존성) — mock-first | high | L | high | done | 2026-07-01 |
+| IMP-46 | ux | 핵심 운용 메트릭 화면(온콜이 실제 보는 USE/골든시그널만: CPU/메모리/디스크/네트워크) — mock-first, node_exporter 지향 | high | L | high | done | 2026-07-01 |
+| IMP-47 | oss | 운영 토폴로지 그래프 렌더러 선택 — hand-rolled SVG 계층 DAG vs React Flow vs elkjs 저울질 | medium | M | high | done | 2026-07-01 |
+| IMP-48 | aesthetic | 토폴로지 그래프 시각 완성도 — 노드/엣지 인코딩·깊이·모션이 Datadog Service Map/Grafana Node Graph 수준 미달 | medium | M | high | done | 2026-07-01 |
+| IMP-49 | ux | 네트워크 모니터링 화면(대역폭·지연·연결·에러) — mock-first, 실 수집은 인프라 spike | medium | L | high | done | 2026-07-01 |
+| IMP-50 | compete | 서비스 의존성 맵 + 골든시그널 인프라 뷰로 관측 콘솔 경쟁력 확장(LLM-aware 인프라 관측) | medium | L | high | done | 2026-07-01 |
+| IMP-51 | ux | 신규 인프라 화면(토폴로지/노드/네트워크)의 자동 폴링에 신선도·정지/재개·에러 복구 일관 적용 | medium | S | medium | done | 2026-07-01 |
+| IMP-52 | platform | 호스트/네트워크 골든시그널 수집을 node_exporter로 표준 채택(IMP-41 Prometheus 백본의 익스포터 층) | medium | L | medium | spike-needed | 2026-07-01 |
+| IMP-53 | ux | 토폴로지·노드·네트워크 화면의 observe/manage 프로파일 정합 + nav 정보구조(인프라/관측 그룹) 정리 | low | S | medium | done | 2026-07-01 |
+| IMP-54 | aesthetic | 노드/네트워크 메트릭 화면 시각 완성도 — 골든시그널 게이지·스파크라인·포화 인코딩을 Grafana/Datadog 밀도로 | low | M | medium | done | 2026-07-01 |
+| IMP-55 | code | 신규 토폴로지·노드·네트워크 mock 데이터 중복 위험 — 그래프/시계열 mock 팩토리 공통화 | low | M | medium | done | 2026-07-01 |
 
 ## Details
 
