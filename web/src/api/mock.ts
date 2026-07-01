@@ -18,6 +18,8 @@ import type {
   TraceDetail, TraceListReport, TraceSpan, TraceSummary, UsageReport, UsageRow,
   UsageTrend, User,
 } from "./types";
+// 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
+import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -1186,6 +1188,16 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /endpoints/preview": return ok(previewEndpoint(body as Record<string, unknown>));
     case "GET /gpu": return ok(genGPU());
     case "GET /gpu/timeseries": return ok(genGPUTimeseries(q.get("uuid") ?? "GPU-gpu-node-01-0"));
+    // 토폴로지·노드·네트워크(IMP-55) — mockFactory 결정적 팩토리 경유.
+    case "GET /topology": return ok(buildTopology(hash("topology")));
+    case "GET /nodes/metrics": {
+      const { n, stepSec } = rangeBuckets[parseRange(q)];
+      return ok(buildNodeMetrics(q.get("host") ?? "gpu-node-01", n, stepSec));
+    }
+    case "GET /network": {
+      const { n, stepSec } = rangeBuckets[parseRange(q)];
+      return ok({ generated_at: new Date().toISOString(), links: buildNetwork(n, stepSec), source: "network (mock)" });
+    }
     case "GET /harbor/models": return ok({ models: genHarborModels(), available: true });
     case "GET /harbor/status": return ok({ enabled: true, reachable: true, registry: "harbor.fabrix.local", projects: ["llm", "embeddings"], model_count: MODELS.length } satisfies HarborStatus);
     case "POST /harbor/import": return ok(harborImport(body as Record<string, unknown>));
