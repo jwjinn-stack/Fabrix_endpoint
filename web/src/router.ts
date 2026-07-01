@@ -19,6 +19,7 @@ export const ROUTES: Record<Page, string> = {
   network: "/network",
   topology: "/topology",
   investigate: "/investigate",
+  agent: "/agent",
   keys: "/keys",
   traffic: "/traffic",
   settings: "/settings",
@@ -36,6 +37,8 @@ export const PAGE_CAP: Partial<Record<Page, string>> = {
   network: "dashboard",
   topology: "dashboard",
   investigate: "dashboard",
+  // AI Agent(IMP-60) — 읽기 관제 권한이면 노출. mutating 은 카드의 ActionForm 이 별도로 게이팅(two-tier).
+  agent: "dashboard",
   traffic: "dashboard",
   guard: "guard",
   traces: "traces",

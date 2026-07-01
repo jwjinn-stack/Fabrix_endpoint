@@ -1163,3 +1163,63 @@ export interface OntologyLinkList {
   links: OntologyLink[];
   source: string;
 }
+
+// ───────────── AI Agent (IMP-60 — 로컬 모델 + MCP tool-calling 온톨로지 접지) ─────────────
+// docs/palantir-ontology-analysis.md §3·§5.4 + AWS Prescriptive Guidance grounded-agent Pattern 5.
+// "채팅"이 아니라 "온톨로지 위에서 tool 을 쓰는 운영 에이전트": LLM 이 온톨로지를 tool 로 조회(read-only)하고
+// 근본원인 후보 + 실행 가능 Action 을 제안한다. **핵심 안전장치**: 에이전트의 tool 은 조회 3종뿐이고
+// (mutating tool 없음), mutation 은 오직 <ActionForm>(IMP-59) confirm + capability 게이팅으로만 실행된다.
+
+// read-only tool 이름 — 모델이 자동 실행. mutating(invokeAction)은 의도적으로 tool 에서 배제(two-tier 게이팅).
+export type AgentToolName = "queryObjects" | "traverseLinks" | "getIncidents";
+
+// tool 호출(모델이 낸 typed call) — args 는 tool 별 파라미터(문자열 위주로 escape-safe 렌더).
+export interface AgentToolCall {
+  tool: AgentToolName;
+  args: Record<string, string>;
+}
+
+// tool 실행 결과 — grounding 소스인 objectId 목록을 항상 반환(RCA 인용의 출처). found=false → grounding 없음.
+export interface AgentToolResult {
+  objectIds: string[]; // 이 tool 이 접지한 온톨로지 객체 id(인용 소스)
+  summary: string;     // 사람용 한 줄 요약(escape 렌더)
+  found: boolean;      // 아무것도 못 찾으면 false → 정적 runbook fallback 트리거
+}
+
+// ReAct 타임라인 한 스텝(discriminated union) — reasoning(생각) 또는 tool(도구 호출+결과).
+export type AgentStep =
+  | { kind: "reasoning"; text: string }
+  | { kind: "tool"; call: AgentToolCall; result: AgentToolResult };
+
+// 근본원인 후보 카드 — 모든 claim 은 objectId/trace id 를 인용(citations)해야 한다(grounding 1급).
+// suggestedAction 은 "제안"일 뿐 — 실행은 사용자의 <ActionForm> confirm + capability 게이팅을 반드시 통과한다.
+export interface RcaCandidate {
+  objectId: string;            // 대상 온톨로지 객체 id(ObjectView deep-link)
+  title: string;
+  objectType: ObjectType;
+  confidence: number;          // 0..1 (순위·바 표시)
+  claim: string;               // 근본원인 추정 서술(escape 렌더 — "추정", 상관≠인과)
+  citations: string[];         // 근거 objectId/trace id(비어 있으면 grounding 없음)
+  suggestedAction?: { actionType: string; target: string }; // 제안 verb(ActionForm 확장으로만 실행)
+}
+
+// 에이전트 실행 1회 결과 — 전체 transcript 는 traceId 로 키잉되어 audit 표면과 연결된다.
+export interface AgentRun {
+  traceId: string;             // transcript 추적 id(audit 조인 키)
+  intent: string;             // 사용자 의도(자연어, escape 렌더)
+  steps: AgentStep[];          // ReAct 타임라인(순서 보존)
+  candidates: RcaCandidate[];  // confidence 순위 RCA 후보(grounding 있을 때만)
+  grounded: boolean;           // tool 이 근거를 찾았는지. false → fallbackRunbook 사용(hallucination 금지)
+  fallbackRunbook?: string[];  // grounding 없음 시 정적 runbook 절차(모델이 지어내지 않음)
+  audit: AgentAuditEntry[];    // transcript audit 라인(prompt/tool/reasoning/action)
+  generated_at: string;
+  source: string;             // "agent (mock)" | 실백엔드
+}
+
+// transcript audit 라인(IMP-60) — ActionAuditEntry 의 형제. 어떤 실행이든 traceId 로 묶는다.
+export interface AgentAuditEntry {
+  traceId: string;
+  kind: "prompt" | "tool" | "reasoning" | "action";
+  detail: string; // 마스킹된 메타데이터만(원문/시크릿 로깅 금지)
+  ts: string;
+}

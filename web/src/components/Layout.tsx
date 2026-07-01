@@ -20,6 +20,7 @@ export type Page =
   | "network"
   | "topology"
   | "investigate"
+  | "agent"
   | "keys"
   | "traffic"
   | "settings"
@@ -50,6 +51,7 @@ const NAV: NavItem[] = [
       { label: "네트워크", page: "network" },
       { label: "토폴로지", page: "topology" },
       { label: "근본원인 추적(COP)", page: "investigate" },
+      { label: "AI Agent", page: "agent" },
       { label: "트래픽", page: "traffic" },
     ],
   },

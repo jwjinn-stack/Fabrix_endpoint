@@ -23,4 +23,11 @@ describe("PAGE_CAP — 인프라 화면 cap 정합 (IMP-53)", () => {
     expect(pageFromPath("/investigate")).toBe("investigate");
     expect(pathForPage("investigate", { entity: "endpoint:e1" })).toBe("/investigate?entity=endpoint%3Ae1");
   });
+
+  // IMP-60 — AI Agent 화면 라우트/cap 등록 고정. mutating 은 카드 ActionForm 이 별도 게이팅(two-tier).
+  it("agent 는 /agent 라우트 + dashboard cap 로 등록된다", () => {
+    expect(ROUTES.agent).toBe("/agent");
+    expect(capForPage("agent")).toBe("dashboard");
+    expect(pageFromPath("/agent")).toBe("agent");
+  });
 });

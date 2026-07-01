@@ -20,6 +20,7 @@ import NodeMetrics from "./pages/NodeMetrics";
 import Network from "./pages/Network";
 import Topology from "./pages/Topology";
 import Investigate from "./pages/Investigate";
+import AiAgent from "./pages/AiAgent";
 import Traffic from "./pages/Traffic";
 import Settings from "./pages/Settings";
 import Credentials from "./pages/Credentials";
@@ -111,6 +112,7 @@ function pageContent(
       {effPage === "network" && <Network onNavigate={navigate} />}
       {effPage === "topology" && <Topology onNavigate={navigate} />}
       {effPage === "investigate" && <Investigate />}
+      {effPage === "agent" && <AiAgent onNavigate={navigate} />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}
       {effPage === "credentials" && <Credentials />}

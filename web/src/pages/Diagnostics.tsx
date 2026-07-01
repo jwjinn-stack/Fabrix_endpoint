@@ -322,7 +322,7 @@ const MCP_CLIENTS: { id: McpClient; label: string }[] = [
   { id: "generic", label: "Vercel · 일반" },
 ];
 
-function McpPanel({ enabled }: { enabled: boolean }) {
+function McpPanel({ enabled, onNavigate }: { enabled: boolean; onNavigate: (p: Page) => void }) {
   const toast = useToast();
   const url = mcpEndpointUrl();
   const [tools, setTools] = useState<McpTool[] | null>(null);
@@ -434,6 +434,15 @@ function McpPanel({ enabled }: { enabled: boolean }) {
           <div className="state" role="note" style={{ marginTop: "var(--sp-2)", fontSize: "var(--fs-xs)" }}>
             🔒 읽기 전용입니다 — tool 은 메트릭·인사이트를 조회만 합니다(쓰기·삭제 없음). 자격증명·시크릿은 노출되지 않습니다. 이 엔드포인트는 사내 네트워크에서만 접근 가능해야 합니다.
           </div>
+
+          {/* (e) 인앱 AI Agent 로 연결(IMP-60) — 같은 tool 인터페이스로 온톨로지를 조회하는 운영 에이전트. */}
+          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>인앱 에이전트</div>
+          <p className="muted" style={{ fontSize: "var(--fs-xs)", marginTop: 0 }}>
+            외부 클라이언트 대신 앱 안에서 바로 써 보려면 — 로컬 모델이 위 tool 로 온톨로지를 조회해 근본원인 후보와 권장 조치를 제안합니다.
+          </p>
+          <button type="button" className="link-btn" onClick={() => onNavigate("agent")}>
+            인앱 AI Agent 열기 →
+          </button>
         </>
       )}
     </div>
@@ -523,7 +532,7 @@ export default function Diagnostics({ onNavigate }: { onNavigate: (p: Page) => v
         )}
       </div>
 
-      <McpPanel enabled={can("dashboard")} />
+      <McpPanel enabled={can("dashboard")} onNavigate={onNavigate} />
 
       <InspectDrawer status={inspect} onClose={() => setInspect(null)} />
     </>

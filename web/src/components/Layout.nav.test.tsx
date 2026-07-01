@@ -70,6 +70,17 @@ describe("Layout nav — 인프라·관측 그룹 (IMP-53)", () => {
     expect(onNavigate).toHaveBeenCalledWith("investigate");
   });
 
+  // IMP-60 — AI Agent nav 항목이 인프라·관측 그룹에 등록된다.
+  it("T2e — 'AI Agent' 자식이 그룹에 있고 클릭 시 agent 로 이동", () => {
+    const { onNavigate } = renderLayout();
+    fireEvent.click(screen.getByRole("button", { name: /인프라 · 관측/ }));
+    const nav = screen.getByRole("navigation", { name: "주 메뉴" });
+    const item = within(nav).getByRole("button", { name: "AI Agent" });
+    expect(item).toBeInTheDocument();
+    fireEvent.click(item);
+    expect(onNavigate).toHaveBeenCalledWith("agent");
+  });
+
   it("T3 — observe(dashboard on, mutating off): 3 인프라 화면 노출 + '관제 전용' 배지", () => {
     // observe: dashboard=true, mutating 계열 미허용(readonly=true).
     mockCaps = {

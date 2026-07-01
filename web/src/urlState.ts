@@ -67,6 +67,13 @@ export const investigateSchema = {
   entity: strField(""),
 } as const;
 
+// AI Agent(IMP-60) deep-link 스키마 — entity=접지 진입 Object id(옵션), intent=자연어 의도(옵션).
+// 둘 다 빈 문자열이면 에이전트가 기본 시나리오(가장 아픈 진입)를 결정한다. intent 는 자유 텍스트라 debounce 되쓰기.
+export const agentSchema = {
+  entity: strField(""),
+  intent: strField(""),
+} as const;
+
 // ───────────────────────── 순수 인코더/디코더 ─────────────────────────
 // (테스트 용이성 — DOM/History 없이 schema + search string 만으로 동작.)
 // 스키마 제약 — 필드 값 타입은 필드마다 다르므로 `any` 로 둔다(매핑 타입이 정확한 T 를 복원).

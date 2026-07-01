@@ -2567,3 +2567,98 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .cop-signal-v { font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
 
 .cop-foot-note { font-size: var(--fs-xs); color: var(--text-faint); margin: var(--sp-3) 0 0; line-height: var(--lh-body); }
+
+/* ───────────── AI Agent(IMP-60) — 온톨로지 접지 ReAct 패널 ───────────── */
+/* intent 입력 + ReAct 타임라인(LEFT) + RCA 후보/runbook(RIGHT) 2열. 좁은 폭에선 세로 스택. */
+.agent-intent { display: flex; gap: var(--sp-2); align-items: center; margin: var(--sp-2) 0; }
+.agent-intent-input {
+  flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font-size: var(--fs-body);
+}
+.agent-intent-input:focus { outline: none; border-color: var(--primary); }
+.agent-presets { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+
+.agent-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+@media (max-width: 980px) { .agent-grid { grid-template-columns: 1fr; } }
+
+/* LEFT — ReAct 타임라인 */
+.agent-trace-meta { font-size: var(--fs-xs); margin-bottom: var(--sp-3); }
+.agent-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.agent-step {
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border);
+  border-left-width: 3px; border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.agent-step-reason { border-left-color: var(--border-strong); }
+.agent-step-tool { border-left-color: var(--primary); }
+.agent-step-tool.empty { border-left-color: var(--amber-border); background: var(--amber-weak); }
+.agent-step-badge {
+  flex: none; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  border-radius: 999px; padding: 1px 8px; color: var(--text-dim);
+  background: var(--surface); border: 1px solid var(--border); margin-top: 1px;
+}
+.agent-step-badge.tool { color: var(--primary); border-color: var(--primary); }
+.agent-step-text { font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); }
+.agent-step-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.agent-tool-call { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.agent-tool-name { font-size: var(--fs-sm); font-weight: 700; color: var(--text); }
+.agent-tool-args { font-size: var(--fs-xs); color: var(--text-dim); word-break: break-all; }
+.agent-tool-auto {
+  font-size: 10px; font-weight: 700; color: var(--text-faint);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px;
+}
+.agent-tool-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.agent-tool-summary { font-size: var(--fs-xs); color: var(--text-dim); }
+.agent-cites { display: flex; flex-wrap: wrap; gap: 4px; }
+.agent-cite {
+  font-size: 10px; font-family: var(--font-mono, monospace); cursor: pointer;
+  color: var(--primary); background: var(--primary-weak); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 7px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-cite:hover { border-color: var(--primary); }
+.agent-cite-more { font-size: 10px; color: var(--text-faint); }
+
+/* RIGHT — RCA 후보 카드 / runbook fallback */
+.agent-cards { display: flex; flex-direction: column; gap: var(--sp-3); }
+.agent-card {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  box-shadow: var(--shadow-card); padding: var(--sp-3);
+}
+.agent-card.active { border-color: var(--primary); }
+.agent-card-top { display: flex; align-items: center; gap: var(--sp-2); }
+.agent-card-glyph { color: var(--text-dim); flex: none; }
+.agent-card-title {
+  font-weight: 700; font-size: var(--fs-body); color: var(--text); cursor: pointer;
+  background: none; border: none; padding: 0; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.agent-card-title:hover { text-decoration: underline; }
+.agent-card-type { font-size: var(--fs-xs); color: var(--text-faint); }
+.agent-card-top > .badge { margin-left: auto; }
+
+.agent-conf { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: var(--sp-2) 0; }
+.agent-conf-fill { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+.agent-conf-fill.tone-red { background: var(--red); }
+.agent-conf-fill.tone-amber { background: var(--amber); }
+.agent-conf-fill.tone-neutral { background: var(--text-faint); }
+
+.agent-card-claim { font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); margin: 0 0 var(--sp-2); }
+.agent-card-cites { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.agent-card-cites-h { font-size: var(--fs-xs); color: var(--text-faint); margin-right: 2px; }
+.agent-card-action { margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--border); }
+.agent-action-note {
+  font-size: var(--fs-xs); color: var(--text-dim); background: var(--amber-weak);
+  border: 1px solid var(--amber-border); border-radius: var(--radius-sm);
+  padding: var(--sp-2); margin-bottom: var(--sp-2); line-height: var(--lh-body);
+}
+
+/* grounding 없음 → 정적 runbook fallback */
+.agent-fallback {
+  border: 1px dashed var(--amber-border); border-radius: var(--radius);
+  background: var(--amber-weak); padding: var(--sp-3);
+}
+.agent-fallback-h { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--text); margin-bottom: var(--sp-2); }
+.agent-runbook { margin: 0 0 var(--sp-2); padding-left: var(--sp-4); font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-body); }
+.agent-runbook li { margin-bottom: 4px; }
+.agent-cop-link { margin-top: var(--sp-3); display: inline-block; }

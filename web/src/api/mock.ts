@@ -23,6 +23,8 @@ import type {
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology } from "./mockFactory";
+// AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
+import { runAgentLoop } from "./agent";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -1003,6 +1005,27 @@ function buildOntology(): { objects: OntologyObject[]; links: OntologyLink[] } {
   return { objects, links: clean };
 }
 
+// ── AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프 mock ──
+// runAgentLoop(순수, api/agent.ts)에 buildOntology() 스냅샷을 주입한다. read tool 은 그 위에서 조회만 하고
+// (mutating tool 없음), grounding 소스로 buildRootCausePath(investigate.ts)를 재사용한다(단일 출처).
+// 실백엔드는 이 응답 스키마(AgentRun)를 그대로 돌려주면 됨 — client.runAgent 는 transport 만 스왑.
+// transcript audit 는 전역 AGENT_AUDIT 에 누적(향후 audit/trace 표면 소비).
+const AGENT_AUDIT: import("./types").AgentAuditEntry[] = [];
+let AGENT_SEQ = 0;
+
+function runAgentMock(body: Record<string, unknown>): import("./types").AgentRun {
+  const { objects, links } = buildOntology();
+  const intent = typeof body.intent === "string" ? body.intent : undefined;
+  const entity = typeof body.entity === "string" ? body.entity : undefined;
+  AGENT_SEQ++;
+  // traceId — 결정적 접두 + 시퀀스(테스트가 존재만 검증). 원문/시크릿은 담지 않는다.
+  const traceId = `agtr_${AGENT_SEQ.toString(36)}_${hash(`${intent ?? ""}:${entity ?? ""}`).toString(36)}`;
+  const run = runAgentLoop(objects, links, { intent, entity, traceId });
+  // transcript 를 전역 audit 에 append(최근 실행 순) — trace ID 로 키잉.
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);
+  return run;
+}
+
 // GET /ontology/objects?type=&filter= — type(ObjectType) + filter(title/id 부분일치).
 function ontologyObjects(type?: string, filter?: string): OntologyObjectList {
   const { objects } = buildOntology();
@@ -1487,6 +1510,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /alerts/rules": return ok(createAlertRuleMock(body as Record<string, unknown>));
     // 온톨로지(IMP-56) — Object/Link 그래프 조회(후속 IMP-57/58/59/60/63 이 소비).
     case "GET /ontology/objects": return ok(ontologyObjects(q.get("type") ?? undefined, q.get("filter") ?? undefined));
+    // AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. read tool 자동, mutation 은 별도 ActionForm confirm(포함 안 함).
+    case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
   }
 
   // 패턴 매칭 (path 변수 포함)

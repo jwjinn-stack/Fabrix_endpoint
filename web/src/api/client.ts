@@ -49,6 +49,7 @@ import type {
   OntologyObjectList,
   OntologyLinkList,
   ActionResult,
+  AgentRun,
   OrgTree,
   TopologyGraph,
   ProxyStats,
@@ -572,6 +573,28 @@ export async function submitAction(
   if (j && "outcome" in j) return j as unknown as ActionResult;
   const errMsg = j && typeof j.error === "string" ? j.error : `API ${res.status}`;
   throw new Error(errMsg);
+}
+
+// AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. POST /agent/run(mock/실백엔드 동일 계약).
+// read tool(queryObjects/traverseLinks/getIncidents)은 서버(에이전트)가 자동 실행하고, mutating 은 응답에
+// 포함되지 않는다 — mutation 은 오직 submitAction(<ActionForm>) + capability 게이팅으로만 실행된다(two-tier).
+// VITE_MOCK=off 면 이 함수는 그대로 실백엔드로 나가고(transport 만 스왑), 응답 스키마는 AgentRun 로 고정.
+export async function runAgent(
+  req?: { intent?: string; entity?: string },
+  signal?: AbortSignal,
+): Promise<AgentRun> {
+  const res = await fetch(`${BASE}/agent/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ intent: req?.intent, entity: req?.entity }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as AgentRun;
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {
