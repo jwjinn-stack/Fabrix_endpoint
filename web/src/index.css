@@ -1452,6 +1452,37 @@ dialog.modal.modal-wide { width: min(860px, 94vw); }
 .gpu-mig-note { background: var(--primary-weak); border: 1px solid var(--amber-border); border-radius: var(--radius); padding: var(--sp-3); font-size: var(--fs-sm); color: var(--text); margin-top: var(--sp-3); }
 .gpu-mig-note b { color: var(--primary-strong); }
 
+/* IMP-46 노드 메트릭 화면 (USE / 골든시그널) */
+.node-mock-badge {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  background: var(--amber-weak); border: 1px solid var(--amber-border);
+  border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); margin-bottom: var(--sp-4);
+}
+.node-mock-badge .tag { flex: none; }
+.node-mock-text { font-size: var(--fs-sm); color: var(--text); line-height: 1.5; }
+.node-mock-text code { font-size: var(--fs-xs); }
+.node-fleet-summary { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-3); }
+.node-risk { color: var(--red); }
+.node-fleet { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--sp-4); }
+.node-card {
+  text-align: left; cursor: pointer; width: 100%;
+  border-left: 3px solid var(--border); transition: border-color .12s, box-shadow .12s;
+}
+.node-card:hover { box-shadow: var(--shadow-2, 0 2px 8px rgba(0,0,0,.08)); }
+.node-card-warn { border-left-color: var(--amber); }
+.node-card-crit { border-left-color: var(--red); }
+.node-card-hint { font-size: var(--fs-sm); color: var(--text-faint); }
+.node-card-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-2); margin-top: var(--sp-2); }
+.node-dd-group { margin: var(--sp-4) 0; }
+.node-dd-gtitle { font-size: var(--fs-sm); color: var(--text-muted); margin: 0 0 var(--sp-2); font-weight: 700; }
+.node-dd-row { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.node-dd-row .sparkline { flex: 1; max-width: none; height: 30px; }
+.node-dd-label { width: 76px; font-size: var(--fs-sm); color: var(--text-faint); }
+.node-dd-cur { width: 130px; text-align: right; font-weight: 700; font-size: var(--fs-sm); }
+.node-dd-flag { font-weight: 600; }
+.node-dd-hint { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-3); line-height: 1.5; }
+@media (max-width: 760px) { .node-card-metrics { grid-template-columns: repeat(2, 1fr); } }
+
 /* 태그/배지 (동작·유형) */
 .tag {
   display: inline-flex; align-items: center; gap: 4px;
