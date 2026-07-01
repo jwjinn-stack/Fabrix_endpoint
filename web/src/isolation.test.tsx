@@ -3,12 +3,12 @@
 // FABRIX 는 고객사별로 화면·기능을 선택 활성화해 배포한다(direction 9 최우선). 한 기능을 빼거나
 // (cap OFF / 라우트 미등록) 해도 **나머지 앱이 조용히 깨지면 안 된다**. 두-프로파일 게이팅
 // (capabilities + PAGE_CAP)과 mock 파생(buildOntology 및 스코어카드/Kinetic 감지/스키마 그래프)이
-// 강하게 얽혀 있어 IMP-90(/inbox 격리 제거)·향후 cap-off 작업이 회귀를 부를 위험이 있다.
+// 강하게 얽혀 있어 IMP-90(/inbox·Task 제거)·향후 cap-off 작업이 회귀를 부를 위험이 있다.
 //
 // 이 스위트는 그 안전 전제를 기계적으로 못박는다:
 //   (1) cap 매트릭스 × 핵심 화면 — App 의 effPage 폴백·pageFromPath·nav 필터가 크래시 없이 동작.
 //   (2) "빼도 나머지 통과" — ontology off → dashboard/endpoints OK, endpoints off → ontology/dashboard OK.
-//   (3) mock 파생 크래시 가드 — buildOntology 파생이 특정 객체 타입(Task/Endpoint 등) 부재 시
+//   (3) mock 파생 크래시 가드 — buildOntology 파생이 특정 객체 타입(Endpoint/Incident 등) 부재 시
 //       throw/undefined-access 없이 graceful degrade(각 파생은 objects/links 배열을 받는 순수 함수라 직접 주입).
 //
 // TEST-ONLY(+ 실제 크래시 발견 시에만 최소 방어 가드). /inbox 제거는 하지 않는다(그건 IMP-90).
@@ -111,10 +111,9 @@ describe("IMP-88 — 빼도 나머지 통과 (제거·게이팅 안전 전제)",
     expect(effPage("dashboard", can)).toBe("dashboard");
   });
 
-  it("inbox 라우트 미등록(IMP-90 전제) 시뮬레이션 → 나머지 라우팅 무영향", () => {
-    // /inbox 경로가 미등록이 되면 pageFromPath 는 dashboard 로 폴백(딥링크 방어). 나머지 화면 왕복 유지.
-    // (실제 제거는 IMP-90 — 여기선 '제거해도 안전'을 라우팅 레벨에서 가드.)
-    expect(pageFromPath("/inbox")).toBe("inbox"); // 현재는 등록됨(기준선).
+  it("inbox 라우트 미등록(IMP-90 완료) → /inbox 딥링크는 dashboard 폴백, 나머지 라우팅 무영향", () => {
+    // IMP-90 로 /inbox 는 실제 제거됨 — pageFromPath 는 dashboard 로 폴백(딥링크 방어). 나머지 화면 왕복 유지.
+    expect(pageFromPath("/inbox")).toBe("dashboard"); // 미등록 → 폴백(제거 완료).
     for (const page of CORE_PAGES) {
       expect(pageFromPath(pathForPage(page))).toBe(page);
     }
@@ -170,7 +169,7 @@ describe("IMP-88 — nav 필터 격리(cap-off 에서 크래시 없이 렌더)",
 // 받는 순수 함수다. 특정 기능/타입을 빼면(필터·미등록) 이 배열에서 해당 타입이 사라질 수 있으므로,
 // 타입 부재·빈 스냅샷에서 throw/undefined-access 없이 결과를 내는지 직접 주입해 가드한다.
 //
-// 대표 척추 스냅샷(Service→Endpoint→Model→GpuDevice→Node + Trace/Incident + Task).
+// 대표 척추 스냅샷(Service→Endpoint→Model→GpuDevice→Node + Trace/Incident). (IMP-90: Task 제거.)
 const FULL_OBJECTS: OntologyObject[] = [
   { id: "service:svc-a", type: "Service", title: "Svc A", props: { name: "svc-a", qps: 12, error_rate: 0.01 }, status: "ok", revision: 1 },
   { id: "endpoint:ep-a", type: "Endpoint", title: "EP A", props: { replicas: 2, backend: "vllm", ready: false, app_id: "a1" }, status: "crit", revision: 1 },
@@ -179,7 +178,6 @@ const FULL_OBJECTS: OntologyObject[] = [
   { id: "node:n0", type: "Node", title: "Node 0", props: { hostname: "n0", cpu_util: 0.9 }, status: "warn", revision: 1 },
   { id: "trace:t-1", type: "Trace", title: "trace 1", props: { model: "m-a", endpoint: "ep-a", total_ms: 900, ttft_ms: 300, decision: "allowed" }, status: "ok", revision: 1 },
   { id: "incident:i-1", type: "Incident", title: "Incident 1", props: { severity: "high", state: "firing", count: 3 }, status: "crit", revision: 1 },
-  { id: "task:i-1", type: "Task", title: "[대응] Incident 1", props: { title: "[대응] Incident 1", assignee: "", status: "triaged", priority: "P1", linkedObjectIds: ["endpoint:ep-a"] }, status: "unknown", revision: 1 },
 ];
 const FULL_LINKS: OntologyLink[] = [
   { from: "service:svc-a", to: "endpoint:ep-a", linkKind: "consumes" },
@@ -188,8 +186,6 @@ const FULL_LINKS: OntologyLink[] = [
   { from: "gpu:g0", to: "node:n0", linkKind: "hostedBy" },
   { from: "trace:t-1", to: "endpoint:ep-a", linkKind: "routedTo" },
   { from: "incident:i-1", to: "endpoint:ep-a", linkKind: "affects" },
-  { from: "incident:i-1", to: "task:i-1", linkKind: "spawns" },
-  { from: "task:i-1", to: "endpoint:ep-a", linkKind: "tracks" },
 ];
 
 // objects 에서 주어진 타입들을 제거하고, dangling 이 되는 링크도 함께 제거(무결성 — buildOntology 규약과 동형).
@@ -218,7 +214,7 @@ describe("IMP-88 — mock 파생 크래시 가드(타입 부재 → degrade, not
   });
 
   // 각 객체 타입을 하나씩 제거해도(그 기능만 배포 제외 = 그 타입 부재) 파생이 크래시하지 않는지 전수 확인.
-  const ALL_TYPES = ["Service", "Endpoint", "Model", "GpuDevice", "Node", "Trace", "Incident", "Task"];
+  const ALL_TYPES = ["Service", "Endpoint", "Model", "GpuDevice", "Node", "Trace", "Incident"];
   for (const t of ALL_TYPES) {
     it(`'${t}' 타입 부재 — 모든 파생이 throw 없이 degrade`, () => {
       const { objects, links } = withoutTypes([t]);
@@ -242,14 +238,14 @@ describe("IMP-88 — mock 파생 크래시 가드(타입 부재 → degrade, not
     expect(() => buildSchemaGraph(objects, links)).not.toThrow();
   });
 
-  it("Task 만 있는 스냅샷 — PROCESS 층 단독에서도 파생이 크래시하지 않는다(IMP-68 Task 노드 회귀 가드)", () => {
-    const taskOnly = FULL_OBJECTS.filter((o) => o.type === "Task");
-    // Task 만 남기면 spawns/tracks 링크의 반대편(Incident/Endpoint)이 사라져 전부 dangling → 빈 링크.
-    const ids = new Set(taskOnly.map((o) => o.id));
+  it("Incident 만 있는 스냅샷 — 비-SCORABLE 단독에서도 파생이 크래시하지 않는다(IMP-90 Task 제거 후 회귀 가드)", () => {
+    const incidentOnly = FULL_OBJECTS.filter((o) => o.type === "Incident");
+    // Incident 만 남기면 affects 링크의 반대편(Endpoint)이 사라져 전부 dangling → 빈 링크.
+    const ids = new Set(incidentOnly.map((o) => o.id));
     const links = FULL_LINKS.filter((l) => ids.has(l.from) && ids.has(l.to));
-    expect(() => runAllDerivations(taskOnly, links)).not.toThrow();
-    // 스코어카드는 Task 를 채점하지 않으므로(SCORABLE 제외) scored=0, allPass=false(공허 참).
-    expect(buildScorecard(taskOnly).summary.scored).toBe(0);
+    expect(() => runAllDerivations(incidentOnly, links)).not.toThrow();
+    // 스코어카드는 Incident 를 채점하지 않으므로(SCORABLE 제외) scored=0, allPass=false(공허 참).
+    expect(buildScorecard(incidentOnly).summary.scored).toBe(0);
   });
 
   it("완전히 빈 스냅샷(모든 기능 미배포) — 모든 파생이 빈 결과로 graceful", () => {
@@ -260,7 +256,7 @@ describe("IMP-88 — mock 파생 크래시 가드(타입 부재 → degrade, not
     expect(buildObjectTypeCatalog([]).every((c) => c.count === 0)).toBe(true);
   });
 
-  it("Trace·Incident·Task(비-SCORABLE) 만 남긴 스냅샷 — 스코어카드는 채점 0, 파생은 crash 없음", () => {
+  it("Trace·Incident(비-SCORABLE) 만 남긴 스냅샷 — 스코어카드는 채점 0, 파생은 crash 없음", () => {
     const { objects, links } = withoutTypes(["Service", "Endpoint", "Model", "GpuDevice", "Node"]);
     expect(() => runAllDerivations(objects, links)).not.toThrow();
     expect(buildScorecard(objects).summary.scored).toBe(0);

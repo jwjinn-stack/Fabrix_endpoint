@@ -134,7 +134,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-87 | aesthetic | 고객사 화이트라벨 — 로고·제품명·favicon + 디자인 토큰 확장(색상 프리셋 위에, WCAG on-primary 대비 검증) | medium | M | high | grounded | 2026-07-02 |
 | IMP-88 | code | 기능 격리 회귀 테스트 — cap-off/라우트 미등록 시 나머지 앱 동작 보장(cap 매트릭스·mock 파생 크래시 가드) | high | S | medium | done | 2026-07-02 |
 | IMP-89 | ux | Endpoint↔app_id 라우팅을 온톨로지 관계로 노출(ObjectView·COP·목록 drill-through) | medium | M | medium | proposed | 2026-07-02 |
-| IMP-90 | ux | 과업 인박스(/inbox) 제거 — 관제는 할당보다 알림+즉시대응(KineticStrip), Task assignee/workflow 레이어 안전 강등 | medium | M | medium | proposed | 2026-07-02 |
+| IMP-90 | ux | 과업 인박스(/inbox) 제거 — 관제는 할당보다 알림+즉시대응(KineticStrip), Task assignee/workflow 레이어 안전 강등 | medium | M | medium | done | 2026-07-02 |
 | IMP-91 | compete | AI Agent 에서 Kubernetes 클러스터 상태 질의 — read-only K8s MCP tool(파드/노드/이벤트/배포), mock-first·실연동 spike | medium | L | medium | proposed | 2026-07-02 |
 | IMP-92 | platform | LLM 트레이스/평가 백본을 Langfuse(K8s Helm)로 백킹 — 손수 짠 synth 트레이스 대체(OSS 코어 범위) | medium | L | medium | spike-needed | 2026-07-02 |
 

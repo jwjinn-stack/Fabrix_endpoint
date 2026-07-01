@@ -1133,17 +1133,15 @@ export interface NetworkReport {
 // 것을 넘어, 도메인을 명사(Object)·관계(Link)·동사(Action)로 표현하는 공용 계약(common contract) 계층.
 // 단일 출처: 온톨로지는 기존 Model/Endpoint/Service/GpuDevice/Node/Trace/Incident mock 을 승격해 파생한다.
 
-// §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑.
-// Model~Incident 는 SUBJECT-MATTER(디지털트윈) 층. Task 는 그 위에 얹는 PROCESS 층 1급 객체(IMP-69) —
-// "내게 할당된 운영 과업"(assignee·priority·status·workflow)을 온톨로지 객체로 승격해 Action Inbox 진입점을 만든다.
-export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident" | "Task";
+// §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑. 전부 SUBJECT-MATTER(디지털트윈) 층.
+// (IMP-90: PROCESS 층 Task 는 제거 — 관제 콘솔은 과업 배정이 아니라 알림+즉시대응(KineticStrip)으로 수렴.)
+export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident";
 
 // §5.2 Link Types (관계 그래프) — 트러블슈팅 척추:
 //   Service --consumes--> Endpoint --serves--> Model --runsOn--> GpuDevice --hostedBy--> Node
 //   Trace --routedTo--> Endpoint · Trace --executedOn--> GpuDevice · Incident --affects--> {any object}
-// PROCESS↔SUBJECT-MATTER 다리(IMP-69):
-//   Incident --spawns--> Task (인시던트가 과업을 낳음) · Task --tracks--> {subject-matter object} (과업이 감시/조치하는 대상)
-export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects" | "spawns" | "tracks";
+// (IMP-90: PROCESS↔SUBJECT-MATTER 다리 spawns/tracks 는 Task 제거와 함께 삭제.)
+export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects";
 
 // 온톨로지 공통 상태 렌즈 — 기존 NodeStatus(ok|warn|crit) + unknown(미배포/미측정). 소스에서 파생(단일 출처).
 export type ObjectStatus = "ok" | "warn" | "crit" | "unknown";
@@ -1209,46 +1207,7 @@ export interface ActionResult {
   reason?: string;           // 실패(denied/conflict) 사유 — 기계판독
 }
 
-// ───────────── PROCESS 레이어 — Task / Workflow (IMP-69) ─────────────
-// docs/ontology-usecase-comparison.md §1B·§4 (Palantir operational-process-coordination).
-// 실사례는 온톨로지를 2계층으로 운영한다: PROCESS(Task: assignee·시각·priority·status, Workflow=순차 단계)
-// OVER SUBJECT-MATTER(디지털트윈 = 위의 Model/Endpoint/GpuDevice/Node/Service/Trace 그래프).
-// Task 는 1급 ObjectType 이라 ObjectView(IMP-57)가 그대로 렌더하고, tracks 링크로 subject-matter 객체에 연결된다.
-// 진입점 = Action Inbox(/inbox): 할당된 과업 큐 → 컨텍스트 탐색 → 조치 → 양 계층 writeback(IMP-59 계약).
-
-export type TaskPriority = "low" | "med" | "high" | "urgent";
-// 과업 상태 — Workflow 순차 단계와 1:1(triaged→assigned→in-progress→resolved). open=미분류 초기.
-export type TaskStatus = "open" | "triaged" | "assigned" | "in-progress" | "resolved";
-
-// OntologyObject<TaskProps> 의 props — Task 객체가 담는 PROCESS 필드.
-export interface TaskProps {
-  title: string;
-  assignee: string;           // 담당자(운영자). 미할당이면 "" (open/triaged).
-  createdAt: string;          // 생성 시각(ISO)
-  assignedAt?: string;        // 할당 시각(ISO) — assign 시 기록
-  priority: TaskPriority;
-  status: TaskStatus;
-  linkedObjectIds: string[];  // subject-matter refs(이 과업이 tracks 하는 디지털트윈 객체 id)
-  workflowId: string;         // 소속 Workflow 정의 id
-  workflowStepIndex: number;  // Workflow.steps 내 현재 위치(status 와 동기화)
-  spawnedByIncidentId?: string; // 이 과업을 낳은 Incident id(있으면)
-  // OntologyObject.props 는 Record<string, unknown> 호환이어야 하므로 인덱스 시그니처 허용.
-  [k: string]: unknown;
-}
-
-// Workflow 단계 정의 한 칸 — key(상태와 매칭)·label(사람용)·terminal(종료 단계 여부).
-export interface WorkflowStep {
-  key: TaskStatus;
-  label: string;
-  terminal?: boolean;
-}
-
-// Workflow = 순차 단계의 정렬 목록(디지털트윈 위 PROCESS 층). Task.workflowStepIndex 가 이 배열의 위치.
-export interface WorkflowDef {
-  id: string;
-  name: string;
-  steps: WorkflowStep[];
-}
+// (IMP-90: PROCESS 레이어 Task / Workflow 타입은 제거 — /inbox 및 과업 할당 레이어 폐기.)
 
 // 응답 래퍼 — GET /ontology/objects, GET /ontology/objects/:id/links.
 export interface OntologyObjectList {

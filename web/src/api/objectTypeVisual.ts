@@ -25,7 +25,6 @@ export interface ObjectTypeVisual {
 // 타입별 시각 토큰 — 색 의미:
 //  Model=스틸블루(제품 심장) · Endpoint=진한 블루(외부 노출 표면) · Service=청록(논리 서비스; 블루와 구분)
 //  GpuDevice/Node=그레이(물리 자원) · Trace=인디고(실행 궤적) · Incident=레드(항상 경계색).
-//  Task=스틸블루 강조(PROCESS 층 — 과업; 글리프 ☰ 로 subject-matter 명사들과 형태를 구분, IMP-69).
 export const objectTypeVisual: Record<ObjectType, ObjectTypeVisual> = {
   Model: { glyph: "◆", label: "모델", color: "var(--primary)", tint: "var(--primary-weak)", className: "otype-model" },
   Endpoint: { glyph: "▣", label: "엔드포인트", color: "var(--primary-strong)", tint: "var(--primary-weak)", className: "otype-endpoint" },
@@ -34,7 +33,6 @@ export const objectTypeVisual: Record<ObjectType, ObjectTypeVisual> = {
   Node: { glyph: "▥", label: "노드", color: "var(--brand-gray-strong)", tint: "var(--brand-gray-weak)", className: "otype-node" },
   Trace: { glyph: "≣", label: "트레이스", color: "var(--blue)", tint: "#e8effe", className: "otype-trace" },
   Incident: { glyph: "▲", label: "인시던트", color: "var(--red)", tint: "var(--red-weak)", className: "otype-incident" },
-  Task: { glyph: "☰", label: "과업", color: "var(--primary-strong)", tint: "var(--primary-weak)", className: "otype-task" },
 };
 
 // 편의 접근자 — 알 수 없는 타입 방어(런타임 안전; 기본 그레이 칩).

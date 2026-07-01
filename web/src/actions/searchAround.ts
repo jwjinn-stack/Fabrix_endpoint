@@ -25,14 +25,13 @@ export const MAX_SET = 1000;
 
 // 런처에 노출할 Search Around 관계 순서(ObjectView LINK_META 위계와 정합: 상류 소비 → 하류 자원 → 영향/프로세스).
 export const SEARCH_AROUND_KINDS: LinkKind[] = [
-  "serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects", "spawns", "tracks",
+  "serves", "consumes", "routedTo", "runsOn", "executedOn", "hostedBy", "affects",
 ];
 
 // linkKind → 사람이 읽는 Search Around 라벨(ObjectView LINK_META 라벨과 동일 어휘 — 단일 어휘집).
 export const AROUND_LABEL: Record<LinkKind, string> = {
   serves: "서빙 모델", runsOn: "실행 GPU", hostedBy: "호스트 노드", routedTo: "라우팅 엔드포인트",
   executedOn: "실행 GPU", consumes: "소비 Service", affects: "영향 대상",
-  spawns: "생성 과업", tracks: "대상 객체",
 };
 
 // object-context 서브페이지를 만들 때 필요한 실행 콜백(팔레트 shell 로부터 주입).
