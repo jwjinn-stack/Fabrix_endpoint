@@ -93,6 +93,7 @@ export type NavParams = {
   decision?: string; // allowed|flagged|blocked
   from?: string; // 시간窓 시작(RFC3339) — metric→trace 조인
   to?: string; // 시간窓 끝
+  host?: string; // IMP-50: 인프라 host join key(토폴로지 server/gpu 노드 → Gpu/NodeMetrics 드릴다운)
 };
 
 // NavFn — 모든 화면이 공유하는 네비게이션 시그니처(필터 컨텍스트 운반).

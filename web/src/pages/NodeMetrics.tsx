@@ -11,6 +11,7 @@ import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
 import { usePolling } from "../utils/usePolling";
+import { queryParam } from "../router";
 
 // IMP-46 — 핵심 운용 메트릭 화면 (USE / 골든시그널 큐레이션, cause 뷰).
 // node_exporter 는 수백 메트릭 — 전량 덤프("Node Exporter Full" id 1860)는 안티패턴.
@@ -104,7 +105,8 @@ async function fetchAllNodes(signal: AbortSignal): Promise<NodeMetrics[]> {
 }
 
 export default function NodeMetrics() {
-  const [selectedHost, setSelectedHost] = useState<string | null>(null);
+  // IMP-50: 토폴로지/트레이스에서 host 를 실어 드릴다운해 오면 해당 호스트 상세를 자동 오픈(correlation seed).
+  const [selectedHost, setSelectedHost] = useState<string | null>(() => queryParam("host") ?? null);
 
   const {
     data: nodes,

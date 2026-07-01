@@ -108,7 +108,7 @@ function pageContent(
       {effPage === "gpu" && <Gpu />}
       {effPage === "nodes" && <NodeMetrics />}
       {effPage === "network" && <Network onNavigate={navigate} />}
-      {effPage === "topology" && <Topology />}
+      {effPage === "topology" && <Topology onNavigate={navigate} />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}
       {effPage === "credentials" && <Credentials />}

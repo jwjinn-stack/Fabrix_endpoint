@@ -835,6 +835,20 @@ body {
   color: var(--text-faint);
   font-size: var(--fs-xs);
 }
+/* IMP-50: LLM-aware 포지셔닝 배너 + 노드 드릴다운 버튼 + trace↔infra 상관 요약. */
+.topo-positioning {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+.topo-positioning b { color: var(--text); }
+.topo-drill-btn { margin-top: var(--sp-3); width: 100%; }
+.trace-infra-note { color: var(--text-dim); }
 /* reduce-motion: 엣지 트랜지션·흐름 애니 정적화 */
 @media (prefers-reduced-motion: reduce) {
   .topo-edge {

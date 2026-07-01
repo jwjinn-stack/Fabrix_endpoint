@@ -8,6 +8,8 @@ import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
 import { useCap } from "../capabilities";
 import { usePolling } from "../utils/usePolling";
+import type { NavFn } from "../router";
+import { nodeNavTarget } from "../api/correlation";
 
 const REFRESH_MS = 15_000;
 const KIND_LABEL: Record<TopologyNode["kind"], string> = { server: "서버", service: "서비스", gpu: "GPU" };
@@ -24,7 +26,7 @@ function fmtMetric(key: string, v: number): string {
 // 운영 토폴로지/의존성 그래프 화면 (IMP-45) + Datadog/Grafana 시각 완성도(IMP-48).
 // 서버·서비스·GPU 의존성을 계층 SVG(TopologyView)로 그리고, 노드 클릭 → SlidePanel 드릴다운,
 // '표로 보기' 토글 + 상단 텍스트 요약으로 complex-image 동등 대안(접근성)을 제공한다.
-export default function Topology() {
+export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
   const { caps } = useCap();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showTable, setShowTable] = useState(false);
@@ -82,6 +84,13 @@ export default function Topology() {
         </button>
       </div>
 
+      {/* IMP-50: LLM-aware 인프라 관측 포지셔닝 — inference(trace) ↔ infra(GPU/호스트/네트워크) 상관.
+          경쟁사(Datadog/Kiali/Grafana)는 service edge 를 host/GPU saturation 과 native 융합하지 않는다. */}
+      <p className="topo-positioning" role="note">
+        <b>LLM-aware 인프라 관측</b> — LLM이 느린 게 앱인가, GPU인가, 네트워크인가?를 한 콘솔에서.
+        노드를 클릭하면 트레이스·GPU·노드 메트릭 화면으로 바로 드릴다운해 <b>추론 ↔ 인프라 상관</b>을 추적합니다.
+      </p>
+
       {error && (
         <div className="state error" role="alert">
           토폴로지를 불러오지 못했습니다. ({error})
@@ -134,8 +143,23 @@ export default function Topology() {
             {Object.entries(selectedNode.metrics ?? {}).map(([k, v]) => (
               <DetailRow key={k} label={k}>{fmtMetric(k, v)}</DetailRow>
             ))}
+            {/* IMP-50: 노드 kind별 기존 화면 드릴다운(correlation moat). 필터 컨텍스트를 onNavigate 로 운반. */}
+            {(() => {
+              const target = nodeNavTarget(selectedNode);
+              if (!target || !onNavigate) return null;
+              return (
+                <button
+                  type="button"
+                  className="btn-primary topo-drill-btn"
+                  onClick={() => onNavigate(target.page, target.params)}
+                >
+                  {target.label} →
+                </button>
+              );
+            })()}
             <p className="topo-dd-hint">
               그래프에서 이 노드를 선택하면 upstream/downstream 인접 노드가 강조되고 나머지는 흐려집니다.
+              {onNavigate && " 위 버튼으로 이 엔티티의 트레이스·GPU·노드 메트릭 화면으로 이동해 추론 ↔ 인프라 상관을 추적하세요."}
             </p>
           </>
         )}
