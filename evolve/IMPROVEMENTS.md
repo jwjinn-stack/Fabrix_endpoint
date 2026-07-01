@@ -117,7 +117,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-70 | ux | 온톨로지 진입점 재배치 — 과업/COP/객체 랜딩, 스키마 그래프는 참조 보조 탭으로 강등(박물관 정문 제거) | medium | M | high | grounded | 2026-07-01 |
 | IMP-71 | ux | GPU·노드 전량-메트릭 드릴다운 — 엔티티 앵커 Metric Explorer(요약 아님, 그룹·검색·facet·단위·스파크라인) | high | L | high | grounded | 2026-07-02 |
 | IMP-72 | ux | 이상 감지 → 온톨로지 객체 위 즉시 Action(kinetic) — 감지·근거·추천 조치를 한 카드에서(Probable Cause 4-슬롯) | high | L | high | grounded | 2026-07-02 |
-| IMP-73 | code | 온톨로지·메트릭·화면을 MCP tool/resource로 노출 — 프론트 agent tool과 백엔드 MCP 스키마 단일화(레지스트리 파생) | high | L | high | grounded | 2026-07-02 |
+| IMP-73 | code | 온톨로지·메트릭·화면을 MCP tool/resource로 노출 — 프론트 agent tool과 백엔드 MCP 스키마 단일화(레지스트리 파생) | high | L | high | accepted | 2026-07-02 |
 | IMP-74 | ux | 메트릭 소스 / 익스포터 커버리지 매트릭스 — 신호×온톨로지 객체 커버리지·갭·3단 상태(node/ksm/cAdvisor/DCGM/process/blackbox) | medium | M | high | grounded | 2026-07-02 |
 | IMP-75 | ux | Search Around 객체-액션 런처 — ⌘K를 온톨로지 순회·즉시 조치 진입점으로 확장(중첩 팔레트·이웃 집합·capability 게이팅) | medium | L | high | grounded | 2026-07-02 |
 | IMP-76 | compete | 풀-피델리티 GPU 플릿 관측(XID·throttle reason·NVLink·PCIe·ECC·per-process) + 객체그래프 traverse·인라인 remediation | medium | M | high | accepted | 2026-07-02 |
