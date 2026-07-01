@@ -3061,3 +3061,62 @@ tr.row-sel { background: var(--primary-weak) !important; }
 @media (max-width: 900px) {
   .kinetic-card { grid-template-columns: 1fr; }
 }
+
+/* ───────────── 메트릭 소스 / 익스포터 커버리지 매트릭스 (IMP-74) ─────────────
+   Diagnostics(연동 상태)와 별개 — 신호→온톨로지 객체 커버리지. Backend.AI 라이트+스틸블루 토큰만. */
+.ms-source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-4); }
+.ms-source-card { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--surface); height: 100%; }
+.ms-healthy { border-left-color: var(--green); }
+.ms-configured_no_data { border-left-color: var(--amber); }
+.ms-not_configured { border-left-color: var(--border-strong); }
+.ms-source-head { display: flex; align-items: center; gap: var(--sp-2); }
+.ms-source-name { font-weight: 600; }
+.ms-proto { font-size: var(--fs-xs); color: var(--text-faint); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; text-transform: uppercase; letter-spacing: .03em; }
+.ms-source-role { font-size: var(--fs-xs); color: var(--text-dim); margin-top: 2px; }
+.ms-label { font-size: var(--fs-xs); font-weight: 700; color: var(--text-faint); margin-right: 6px; }
+.ms-source-targets { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: var(--sp-2); }
+.ms-target-note { font-size: var(--fs-xs); }
+.ms-source-families { margin-top: var(--sp-2); }
+.ms-family-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.ms-family { font-size: var(--fs-xs); color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; word-break: break-all; }
+.ms-scrape { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.ms-scrape code { font-size: var(--fs-xs); }
+.ms-note { margin-top: var(--sp-2); padding: var(--sp-2); border-radius: var(--radius-sm); font-size: var(--fs-xs); }
+.ms-note-warn { background: var(--amber-weak); border: 1px solid var(--amber-border); }
+.ms-note-info { background: var(--surface-2); border: 1px solid var(--border); }
+.ms-note-badge { font-weight: 700; color: var(--text-dim); display: block; }
+.ms-note-warn .ms-note-badge { color: var(--amber); }
+.ms-note-detail { color: var(--text-dim); display: block; margin-top: 2px; }
+
+/* 소스 포커스 하이라이트(GAP 셀에서 추천 익스포터로 이동 시) */
+.ms-source-focus { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); transition: outline-color .3s ease; }
+
+/* GAP 셀 — 신호×객체(1급). 클릭 가능한 카드. */
+.ms-gap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-3); }
+.ms-gap-cell { text-align: left; border: 1px solid var(--red-border); border-left-width: 3px; border-left-color: var(--red); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--red-weak); cursor: pointer; font: inherit; color: inherit; transition: background .15s ease, box-shadow .15s ease; }
+.ms-gap-cell:hover { background: var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.ms-gap-cell:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.ms-gap-head { display: flex; align-items: center; gap: 6px; }
+.ms-gap-obj { font-weight: 700; }
+.ms-gap-x { color: var(--text-faint); }
+.ms-gap-signal { color: var(--text-dim); }
+.ms-gap-reason { font-size: var(--fs-xs); color: var(--text-dim); margin-top: var(--sp-2); }
+.ms-gap-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: var(--sp-2); font-size: var(--fs-xs); }
+.ms-gap-rec { color: var(--text-dim); }
+.ms-gap-issue { color: var(--text-faint); }
+.ms-gap-link { margin-left: auto; color: var(--primary-strong); font-weight: 600; }
+
+/* 커버되는 신호(대비군) */
+.ms-covered-list { display: flex; flex-direction: column; gap: 6px; }
+.ms-covered-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); font-size: var(--fs-sm); }
+.ms-cov-obj { font-weight: 600; }
+.ms-cov-signal { color: var(--text-dim); }
+.ms-cov-src { font-size: var(--fs-xs); }
+
+/* 좁은 화면 — 한 열 스택. */
+@media (max-width: 720px) {
+  .ms-source-grid, .ms-gap-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ms-gap-cell, .ms-source-focus { transition: none; }
+}

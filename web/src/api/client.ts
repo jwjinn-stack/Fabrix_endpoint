@@ -49,6 +49,7 @@ import type {
   OntologyObjectList,
   OntologyLinkList,
   KineticAlertList,
+  MetricSourceCoverage,
   ObjectMetricsReport,
   ObjectMetricTree,
   ActionResult,
@@ -537,6 +538,12 @@ export function fetchOntologyObjects(type?: ObjectType, filter?: string, signal?
 // VITE_MOCK=off 면 transport 만 스왑(실백엔드로), 응답 스키마는 KineticAlertList 로 고정. read-only.
 export function fetchKineticAlerts(signal?: AbortSignal): Promise<KineticAlertList> {
   return getJSON<KineticAlertList>(`/ontology/detections`, signal);
+}
+
+// 메트릭 소스 / 익스포터 커버리지(IMP-74) — 신호×온톨로지 객체 커버리지 매트릭스·갭·3단 상태. read-only.
+// mock 은 결정적 카탈로그, live(IMP-79)는 VictoriaMetrics up{job}+scrape_samples_scraped+age 로 상태만 스왑.
+export function fetchMetricSourceCoverage(signal?: AbortSignal): Promise<MetricSourceCoverage> {
+  return getJSON<MetricSourceCoverage>(`/metric-sources`, signal);
 }
 
 export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSignal): Promise<OntologyLinkList> {

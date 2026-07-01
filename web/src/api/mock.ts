@@ -21,6 +21,7 @@ import type {
   ObjectMetricsReport, ObjectMetricSeries,
   ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
   ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
+  MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
@@ -1163,6 +1164,117 @@ function ontologyDetections(): KineticAlertList {
   return { generated_at: new Date().toISOString(), alerts, source: "ontology detection (mock)" };
 }
 
+// ───────────── 메트릭 소스 / 익스포터 커버리지 (IMP-74) ─────────────
+// Diagnostics(연동 상태)는 외부 의존성 능동 프로브(도달성)이고, 이건 '어떤 신호를 어떤 익스포터가 주고
+// 무엇이 아직 갭인가'를 보여주는 커버리지 인벤토리. mock-first — 실 스왑은 VictoriaMetrics up{job}+샘플수+age.
+
+// 3단 상태 판정 — **up 단독 금지**(단일 출처: 실 스왑도 이 함수를 그대로 쓴다).
+//  up=0 → NOT_CONFIGURED · up=1 & (samples=0 또는 age>임계) → CONFIGURED_NO_DATA · 그 외 → HEALTHY.
+export const SCRAPE_STALE_SEC = 120; // last-scrape age 임계(초) — 초과 시 "타깃 살아있어도 계열 정체"로 판정.
+export function deriveSourceStatus(s: MetricSourceScrape): MetricSourceStatus {
+  if (s.up !== 1) return "NOT_CONFIGURED";
+  if (s.scrape_samples_scraped <= 0 || s.last_scrape_age_sec > SCRAPE_STALE_SEC) return "CONFIGURED_NO_DATA";
+  return "HEALTHY";
+}
+
+// 결정적 scrape 상태 — seed(소스 id)로 up/샘플/age 를 만들어 3단 상태가 재현되게 한다.
+//  대부분 HEALTHY, 하나(process-exporter)는 CONFIGURED_NO_DATA(타깃 up 이지만 계열 빔), 하나(blackbox)는 NOT_CONFIGURED.
+function mkScrape(job: string, kind: "healthy" | "no_data" | "not_configured"): MetricSourceScrape {
+  const r = rng(hash(`scrape:${job}`));
+  if (kind === "not_configured") return { job, up: 0, scrape_samples_scraped: 0, last_scrape_age_sec: 0 };
+  if (kind === "no_data") return { job, up: 1, scrape_samples_scraped: 0, last_scrape_age_sec: Math.round(8 + r() * 6) };
+  return { job, up: 1, scrape_samples_scraped: Math.round(200 + r() * 4000), last_scrape_age_sec: Math.round(3 + r() * 10) };
+}
+
+// GET /metric-sources — 익스포터 축(소스 카드) + 신호×객체 커버리지 매트릭스(covered + gap).
+// 소스/갭은 문서화된 표준(kube-prometheus-stack 역할 분리) 기반의 정적 커버리지 지식이지만,
+// 상태(3단)는 결정적 scrape 에서 파생(실 스왑 대상)하고 대상 객체 타입은 온톨로지 ObjectType 과 정합.
+function genMetricSourceCoverage(): MetricSourceCoverage {
+  const sources: MetricSourceCard[] = [
+    {
+      id: "node_exporter", label: "node_exporter", role: "호스트 OS 자원(USE) — CPU·메모리·디스크·네트워크",
+      protocol: "prometheus",
+      families: ["node_cpu_seconds_total", "node_memory_*", "node_filesystem_*", "node_network_*", "node_load1"],
+      targetTypes: ["Node"],
+      scrape: mkScrape("node-exporter", "healthy"), status: "HEALTHY", notes: [],
+    },
+    {
+      id: "kube-state-metrics", label: "kube-state-metrics", role: "K8s 오브젝트 상태 — Deployment·Pod·replica·컨디션",
+      protocol: "prometheus",
+      families: ["kube_pod_status_phase", "kube_deployment_status_replicas", "kube_pod_container_status_restarts_total"],
+      targetTypes: ["Endpoint", "Model"], targetNote: "Endpoint/Model(파드·레플리카 상태)",
+      scrape: mkScrape("kube-state-metrics", "healthy"), status: "HEALTHY", notes: [],
+    },
+    {
+      id: "cadvisor", label: "cAdvisor", role: "컨테이너/cgroup 자원 — 메모리 압박·CPU throttle·재시작",
+      protocol: "prometheus",
+      families: ["container_memory_working_set_bytes", "container_cpu_cfs_throttled_seconds_total", "container_memory_failcnt"],
+      targetTypes: ["Model", "Endpoint"], targetNote: "Model pod(컨테이너)",
+      scrape: mkScrape("cadvisor", "healthy"), status: "HEALTHY", notes: [],
+    },
+    {
+      id: "dcgm-exporter", label: "DCGM-exporter", role: "GPU 하드웨어 — util·메모리·온도·throttle·XID·NVLink·ECC",
+      protocol: "prometheus",
+      families: ["DCGM_FI_DEV_GPU_UTIL", "DCGM_FI_DEV_FB_USED", "DCGM_FI_DEV_GPU_TEMP", "DCGM_FI_DEV_XID_ERRORS", "DCGM_FI_PROF_NVLINK_*"],
+      targetTypes: ["GpuDevice"],
+      scrape: mkScrape("dcgm-exporter", "healthy"), status: "HEALTHY",
+      // NVML 은 독립 카드 금지(DCGM 하위 라이브러리) — per-process 미지원을 DCGM 카드 안 배지로만(잘못된 신뢰 방지).
+      notes: [{
+        label: "per-process = 미지원 (알려진 갭)",
+        detail: "NVML(DCGM 하위 라이브러리)은 per-device 총량만 — 프로세스별 GPU 메모리 귀속은 원천 미지원. time-slicing 파드 귀속 불가.",
+        issue: "#521", tone: "warn",
+      }],
+    },
+    {
+      id: "process-exporter", label: "process-exporter", role: "프로세스별 자원 + TCP 상태(재전송·연결)",
+      protocol: "prometheus",
+      families: ["namedprocess_namegroup_cpu_seconds_total", "namedprocess_namegroup_memory_bytes", "node_netstat_Tcp_RetransSegs"],
+      targetTypes: ["Node", "Endpoint"],
+      // 타깃 up 이지만 계열 빔(CONFIGURED_NO_DATA) — 3단 상태 데모(up 단독으론 HEALTHY 판정 안 함).
+      scrape: mkScrape("process-exporter", "no_data"), status: "CONFIGURED_NO_DATA",
+      notes: [{ label: "계열 빔 (scrape_samples_scraped=0)", detail: "타깃 up=1 이지만 마지막 스크랩 샘플 0 — process names 구성(-config.path) 확인 필요.", tone: "info" }],
+    },
+    {
+      id: "blackbox-exporter", label: "blackbox-exporter", role: "엔드포인트 probe — HTTP/TCP 도달성·응답시간·TLS 만료",
+      protocol: "prometheus",
+      families: ["probe_success", "probe_http_duration_seconds", "probe_ssl_earliest_cert_expiry", "probe_tcp_*"],
+      targetTypes: ["Endpoint"],
+      // 미구성(NOT_CONFIGURED) — up=0. 배포하면 Endpoint×TCP/HTTP probe 갭이 닫힌다.
+      scrape: mkScrape("blackbox-exporter", "not_configured"), status: "NOT_CONFIGURED",
+      notes: [{ label: "미구성 (up=0)", detail: "스크레이프 타깃 없음 — 배포 시 Endpoint HTTP/TCP probe·TLS 만료 신호 확보.", tone: "info" }],
+    },
+  ];
+  // 상태는 항상 파생 함수로 재판정(카드에 적은 status 와 일치 — 단일 출처 보장, 실 스왑 시에도 동일).
+  for (const s of sources) s.status = deriveSourceStatus(s.scrape);
+
+  // 커버리지 매트릭스 — covered 셀(대표) + GAP 셀(1급 노출). GAP 은 클릭 → 드릴다운/추천 익스포터.
+  const coverage: SignalCoverageCell[] = [
+    // covered — 무엇이 되는가(매트릭스 대비군).
+    { signal: "CPU·메모리·디스크 (USE)", objectType: "Node", covered: true, sourceId: "node_exporter" },
+    { signal: "네트워크 처리량/에러", objectType: "Node", covered: true, sourceId: "node_exporter" },
+    { signal: "GPU util·온도·throttle·XID", objectType: "GpuDevice", covered: true, sourceId: "dcgm-exporter" },
+    { signal: "레플리카·파드 상태", objectType: "Endpoint", covered: true, sourceId: "kube-state-metrics" },
+    // GAP — 아직 안 잡히는 신호(1급). reason 카피 + 추천 익스포터 + 드릴다운.
+    {
+      signal: "per-process GPU memory", objectType: "GpuDevice", covered: false,
+      reason: "DCGM/NVML 원천 한계 — per-device 총량만. time-slicing 파드 귀속 불가.",
+      recommended: "dcgm-exporter", issue: "#521", drilldown: "gpu",
+    },
+    {
+      signal: "container memory pressure", objectType: "Model", objectLabel: "Model pod", covered: false,
+      reason: "컨테이너 cgroup 메모리 압박은 미수집 — cAdvisor 필요.",
+      recommended: "cadvisor", drilldown: "investigate",
+    },
+    {
+      signal: "TCP retransmit", objectType: "Endpoint", covered: false,
+      reason: "TCP 재전송/연결 상태는 미수집 — node/process-exporter 또는 blackbox 필요.",
+      recommended: "blackbox-exporter", drilldown: "nodes",
+    },
+  ];
+
+  return { generated_at: new Date().toISOString(), sources, coverage, source: "metric-source coverage (mock)" };
+}
+
 // GET /ontology/objects?type=&filter= — type(ObjectType) + filter(title/id 부분일치).
 function ontologyObjects(type?: string, filter?: string): OntologyObjectList {
   const { objects } = buildOntology();
@@ -1903,6 +2015,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /ontology/objects": return ok(ontologyObjects(q.get("type") ?? undefined, q.get("filter") ?? undefined));
     // Kinetic 감지→객체 귀속(IMP-72) — 감지 이상을 객체에 결정적으로 귀속한 4-슬롯 알림(read-only).
     case "GET /ontology/detections": return ok(ontologyDetections());
+    // 메트릭 소스 / 익스포터 커버리지(IMP-74) — 신호×온톨로지 객체 커버리지 매트릭스·갭·3단 상태(read-only).
+    case "GET /metric-sources": return ok(genMetricSourceCoverage());
     // AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. read tool 자동, mutation 은 별도 ActionForm confirm(포함 안 함).
     case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
   }

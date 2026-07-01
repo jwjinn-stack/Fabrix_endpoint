@@ -26,7 +26,8 @@ export type Page =
   | "traffic"
   | "settings"
   | "credentials"
-  | "diagnostics";
+  | "diagnostics"
+  | "metric-sources";
 
 type NavChild = { label: string; page: Page };
 type NavItem = { glyph: string; label: string; page?: Page; soon?: boolean; children?: NavChild[] };
@@ -82,6 +83,7 @@ const NAV: NavItem[] = [
     label: "연동",
     children: [
       { label: "연동 상태", page: "diagnostics" },
+      { label: "메트릭 소스", page: "metric-sources" },
       { label: "모델", page: "models" },
       { label: "모델 임포트", page: "model-import" },
       { label: "엔드포인트", page: "endpoints" },

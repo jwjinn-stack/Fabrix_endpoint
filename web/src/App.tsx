@@ -27,6 +27,7 @@ import Settings from "./pages/Settings";
 import Credentials from "./pages/Credentials";
 import Keys from "./pages/Keys";
 import Diagnostics from "./pages/Diagnostics";
+import MetricSources from "./pages/MetricSources";
 
 // 부팅 시 /capabilities 를 받아 배포 프로파일(observe/manage)을 확정한 뒤 앱을 그린다.
 export default function App() {
@@ -120,6 +121,7 @@ function pageContent(
       {effPage === "credentials" && <Credentials />}
       {effPage === "keys" && <Keys />}
       {effPage === "diagnostics" && <Diagnostics onNavigate={navigate} />}
+      {effPage === "metric-sources" && <MetricSources onNavigate={navigate} />}
     </>
   );
 }

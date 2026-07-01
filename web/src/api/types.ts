@@ -1383,3 +1383,70 @@ export interface KineticAlertList {
   alerts: KineticAlert[];
   source: string;
 }
+
+// ───────────── 메트릭 소스 / 익스포터 커버리지 매트릭스 (IMP-74) ─────────────
+// Diagnostics(연동 상태)는 외부 의존성 능동 프로브(도달성)이고, 이건 '어떤 신호를 어떤 익스포터가 주고
+// 무엇이 아직 갭인가'를 보여주는 Grafana Entity-catalog / OTel-coverage 방식의 커버리지 인벤토리.
+// mock-first — 실 상태(up{job}+scrape_samples_scraped+last-scrape age)는 IMP-79 spike 로 transport 만 스왑.
+
+// 소스 3단 상태 — up 단독 금지. "타깃 살아있는데 특정 계열 빔"까지 잡으려면 up + 샘플수 + 신선도 필요.
+//  NOT_CONFIGURED    : up=0 (스크레이프 타깃 없음/미구성)
+//  CONFIGURED_NO_DATA: up=1 이지만 scrape_samples_scraped=0 또는 last-scrape age 초과(계열 빔·정체)
+//  HEALTHY           : up=1 · 샘플>0 · 신선(age ≤ 임계)
+export type MetricSourceStatus = "NOT_CONFIGURED" | "CONFIGURED_NO_DATA" | "HEALTHY";
+
+// 소스 프로토콜 — signal-provider 추상(OTel 정합). 향후 OTel Collector 리시버로 흡수 가능.
+export type MetricSourceProtocol = "prometheus" | "otlp";
+
+// 소스 카드 안의 부가 배지 — NVML per-process 미지원처럼 "잘못된 신뢰 방지" 인라인 경고.
+//  NVML 은 독립 카드 금지(DCGM 하위 라이브러리) — DCGM 카드 안 배지로만 표기.
+export interface MetricSourceNote {
+  label: string;   // 배지 텍스트(예: "per-process = 미지원")
+  detail: string;  // 근거 서술(예: "DCGM/NVML 원천 한계 — 이슈 #521")
+  issue?: string;  // 참조 이슈/링크(예: "#521")
+  tone: "warn" | "info";
+}
+
+// scrape 라이브 상태 — mock 은 결정적, 실 스왑은 VictoriaMetrics 값으로 동일 필드 채움(deriveSourceStatus 재사용).
+export interface MetricSourceScrape {
+  job: string;                 // Prometheus job 라벨(예: "node-exporter")
+  up: 0 | 1;                   // up{job} — 타깃 살아있음(단독으론 부족)
+  scrape_samples_scraped: number; // 마지막 스크랩 샘플 수(0 = 계열 빔)
+  last_scrape_age_sec: number; // 마지막 스크랩 경과(초) — 신선도
+}
+
+// 익스포터(소스) 카드 — 제공 메트릭 계열 + 대상 온톨로지 객체 타입 + 상태 + 프로토콜.
+export interface MetricSourceCard {
+  id: string;                    // node_exporter|kube-state-metrics|cadvisor|dcgm-exporter|process-exporter|blackbox-exporter
+  label: string;                 // 표시명
+  role: string;                  // 한 줄 역할(예: "호스트 OS 자원(USE)")
+  protocol: MetricSourceProtocol;
+  families: string[];            // 제공 메트릭 계열(예: node_cpu_seconds_total …)
+  targetTypes: ObjectType[];     // 대상 온톨로지 객체 타입(Node/GpuDevice/Endpoint …) — Model pod 는 Model 로 표기
+  targetNote?: string;           // 대상 보조 설명(예: "Model pod(컨테이너)")
+  status: MetricSourceStatus;    // deriveSourceStatus(scrape) 파생
+  scrape: MetricSourceScrape;    // 라이브 판정 근거(실 스왑 대상)
+  notes: MetricSourceNote[];     // 인라인 갭/경고 배지(DCGM per-process 등)
+}
+
+// 커버리지 셀 — '신호 × 객체'. covered=이 소스가 신호를 준다 / gap=아직 안 잡힘(원천 한계·미배포 익스포터).
+//  GAP 셀은 클릭 → 드릴다운(gpu/nodes/investigate) 또는 추천 익스포터로 연결(IMP-71/72 grounding).
+export interface SignalCoverageCell {
+  signal: string;                // 신호명(예: "per-process GPU memory")
+  objectType: ObjectType;        // 대상 객체 타입
+  objectLabel?: string;          // 표시 보조(예: "Model pod")
+  covered: boolean;              // true=커버 / false=GAP
+  sourceId?: string;             // covered 일 때 제공 소스 id
+  reason?: string;               // GAP 사유 카피(원천 한계·필요 익스포터)
+  recommended?: string;          // 추천 익스포터 id(GAP 해소 경로)
+  issue?: string;                // 참조 이슈(예: "#521")
+  drilldown?: "gpu" | "nodes" | "investigate"; // GAP 셀 클릭 시 이동 대상 화면(스파이크/근거)
+}
+
+// GET /metric-sources 응답 — 소스 카드 축 + 커버리지 매트릭스(covered/gap 셀).
+export interface MetricSourceCoverage {
+  generated_at: string;
+  sources: MetricSourceCard[];
+  coverage: SignalCoverageCell[]; // covered + gap 셀 모두(매트릭스 — 무엇이 되고 무엇이 갭인지)
+  source: string;                 // 데이터 출처 라벨(mock 표식)
+}

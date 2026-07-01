@@ -26,6 +26,7 @@ export const ROUTES: Record<Page, string> = {
   settings: "/settings",
   credentials: "/settings/credentials",
   diagnostics: "/diagnostics",
+  "metric-sources": "/metric-sources",
 };
 
 // 화면 ↔ 필요한 capability(기능 플래그). 배포 프로파일(observe/manage)로 메뉴·접근을 게이팅한다.
@@ -54,6 +55,8 @@ export const PAGE_CAP: Partial<Record<Page, string>> = {
   keys: "keys",
   settings: "users",
   credentials: "credentials",
+  // 메트릭 소스 커버리지(IMP-74) — 읽기 관제 권한이면 노출(양 프로파일 공통 인벤토리 화면).
+  "metric-sources": "dashboard",
 };
 
 // capForPage 는 해당 화면 노출/접근에 필요한 cap(없으면 undefined=항상 허용).
