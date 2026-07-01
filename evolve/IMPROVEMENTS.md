@@ -102,7 +102,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-55 | code | 신규 토폴로지·노드·네트워크 mock 데이터 중복 위험 — 그래프/시계열 mock 팩토리 공통화 | low | M | medium | done | 2026-07-01 |
 | IMP-56 | code | 온톨로지 데이터 모델 계층 신설 — Object/Link/Action 타입을 types.ts+mock.ts에 1급 정의 | high | L | high | done | 2026-07-01 |
 | IMP-57 | ux | Object View 화면 — 단일 엔티티 상세 + 관계 패널 + Action 버튼(kinetic) | high | L | high | done | 2026-07-01 |
-| IMP-58 | ux | Troubleshooting Flow(COP) 화면 — Endpoint→Model→GPU→Node 근본원인 추적 단일 화면 | high | L | high | grounded | 2026-07-01 |
+| IMP-58 | ux | Troubleshooting Flow(COP) 화면 — Endpoint→Model→GPU→Node 근본원인 추적 단일 화면 | high | L | high | accepted | 2026-07-01 |
 | IMP-59 | code | Action(writeback) 프레임워크 — 파라미터 폼 + capability 검증 + optimistic mock 반영 + audit 라인 | high | L | high | done | 2026-07-01 |
 | IMP-60 | ux | 온톨로지 접지 AI Agent 패널 — 로컬 모델 + MCP tool-calling 으로 조회·Action 제안 | high | L | high | grounded | 2026-07-01 |
 | IMP-61 | compete | 관계 그래프 기반 근본원인 추적을 차별화 축으로 — LLM 인프라 관측 경쟁 대비 | medium | M | high | grounded | 2026-07-01 |
