@@ -1339,3 +1339,47 @@ export interface AgentAuditEntry {
   detail: string; // 마스킹된 메타데이터만(원문/시크릿 로깅 금지)
   ts: string;
 }
+
+// ── Kinetic 감지→객체 귀속 파생 레이어(IMP-72) ──────────────────────────────
+// 감지된 이상을 온톨로지 객체(Model/GpuDevice/Node)에 결정적으로 귀속시켜, "어느 객체가 왜 아픈지 +
+// 지금 무엇을 눌러야 하는지" 를 4-슬롯 카드로 낸다. 순수 파생(api/detection.ts), 새 데이터 모델 발명 없음.
+
+// 감지 신호 소스 종류 — 어느 축에서 이상이 왔는지(카드 근거 슬롯의 계열 구분).
+export type DetectionSignalKind =
+  | "alertrule"   // alertrules threshold 크로싱(TTFT p95 / error / block)
+  | "throttle"    // GPU clock-throttle reason 비트(thermal/reliability, IMP-76)
+  | "idleAlloc"   // GPU 유휴 할당 갭(VRAM 점유·util 낮음)
+  | "saturation"  // Node CPU/네트워크 포화
+  | "firstAnomaly"; // buildRootCausePath first-anomaly 시간축(추정 원인 시각)
+
+// 근거(evidence) 슬롯 한 줄 — 어느 신호가 언제 임계 초과했는가 + 인용(objectId/시각).
+export interface DetectionSignal {
+  kind: DetectionSignalKind;
+  label: string;      // 사람용 신호명(예: "TTFT p95 급증")
+  detail: string;     // 임계 대비 값 서술(escape 렌더) — "820ms > 임계 800ms" 등
+  observedAt: string; // 관측 시각 라벨("12분 전" 등, 상대 시간)
+  citation: string;   // 근거 objectId/룰 id(grounding 강제)
+}
+
+// Kinetic 알림 — 4-슬롯 카드의 단일 출처. dedupe/state-transition 억제 후 남은 것만.
+export interface KineticAlert {
+  objectId: string;                 // [슬롯1] 영향 객체 id
+  title: string;                    //         객체 표시명
+  objectType: ObjectType;           //         타입(chip)
+  status: ObjectStatus;             //         현재 상태(crit/warn — ok 는 승격 안 됨)
+  signals: DetectionSignal[];       // [슬롯2] 근거(신호 집계 — dedupe 결과)
+  confidence: "high" | "med";       //         신뢰도(신호 ≥2 → high, 1 → med) — IBM Probable Cause
+  probableCause: string;            // [슬롯3] 추정 원인 경로 서술(first-anomaly 시간축, "추정")
+  hypothesis: string;               //         /agent 로 넘길 가설 intent(pre-fill 마찰 제거)
+  suggestedAction?: {               // [슬롯4] 추천 Action(제안일 뿐 — 실행은 ActionForm confirm)
+    actionType: string;
+    target: string;
+  };
+  breachCount: number;              //         지속 임계초과 카운트(sustained collapse → 배지)
+}
+
+export interface KineticAlertList {
+  generated_at: string;
+  alerts: KineticAlert[];
+  source: string;
+}

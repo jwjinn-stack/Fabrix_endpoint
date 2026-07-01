@@ -102,6 +102,8 @@ export type NavParams = {
   from?: string; // 시간窓 시작(RFC3339) — metric→trace 조인
   to?: string; // 시간窓 끝
   host?: string; // IMP-50: 인프라 host join key(토폴로지 server/gpu 노드 → Gpu/NodeMetrics 드릴다운)
+  entity?: string; // IMP-72: 온톨로지 객체 id — /investigate·/agent 진입점 pre-fill(Kinetic 스트립 '조사 열기')
+  intent?: string; // IMP-72: 자연어 가설 — /agent intent pre-fill(마찰 제거)
 };
 
 // NavFn — 모든 화면이 공유하는 네비게이션 시그니처(필터 컨텍스트 운반).

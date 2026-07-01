@@ -10,6 +10,7 @@ import Alarms from "../components/Alarms";
 import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
+import KineticStrip from "../components/KineticStrip";
 import { RANGES, RangeSelect, useTimeRange } from "../timeRange";
 import { humanizeError } from "../utils/errors";
 import {
@@ -363,6 +364,12 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
       {overview && series && (
         <>
           <HealthBanner overview={overview} />
+          {/* IMP-72 — Kinetic 알림 스트립. 감지→객체 귀속을 4-슬롯 카드로 대시보드 최상단에.
+              대시보드엔 ObjectView 드로어가 없어 객체 chip 은 COP(진입점 지정)로 이동시킨다. */}
+          <KineticStrip
+            onNavigate={onNavigate}
+            onOpenObject={onNavigate ? (id) => onNavigate("investigate", { entity: id }) : undefined}
+          />
           {/* IMP-40: 레이아웃 순서대로 위젯 렌더. 인접한 KPI(StatCard) 위젯은 동일 높이 그리드로 묶는다
               (D-01/D-03 — auto-fit 3~4열). 숨김(hidden) 위젯은 건너뛴다. */}
           {(() => {

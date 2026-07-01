@@ -48,6 +48,7 @@ import type {
   OntologyObject,
   OntologyObjectList,
   OntologyLinkList,
+  KineticAlertList,
   ObjectMetricsReport,
   ObjectMetricTree,
   ActionResult,
@@ -530,6 +531,12 @@ export function fetchOntologyObjects(type?: ObjectType, filter?: string, signal?
   if (filter && filter.trim()) q.set("filter", filter.trim());
   const suffix = q.toString() ? `?${q.toString()}` : "";
   return getJSON<OntologyObjectList>(`/ontology/objects${suffix}`, signal);
+}
+
+// Kinetic 감지→객체 귀속(IMP-72) — 감지 이상을 온톨로지 객체에 결정적으로 귀속한 4-슬롯 알림.
+// VITE_MOCK=off 면 transport 만 스왑(실백엔드로), 응답 스키마는 KineticAlertList 로 고정. read-only.
+export function fetchKineticAlerts(signal?: AbortSignal): Promise<KineticAlertList> {
+  return getJSON<KineticAlertList>(`/ontology/detections`, signal);
 }
 
 export function fetchOntologyLinks(id: string, kind?: LinkKind, signal?: AbortSignal): Promise<OntologyLinkList> {

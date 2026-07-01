@@ -19,8 +19,10 @@ import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
 import InfoTip from "../components/InfoTip";
 import ObjectView, { useObjectView } from "../components/ObjectView";
+import KineticStrip from "../components/KineticStrip";
 import { investigateSchema, useUrlState } from "../urlState";
 import { humanizeError } from "../utils/errors";
+import type { NavFn } from "../router";
 
 // IMP-58 — Troubleshooting Flow(COP) 화면.
 // 느린 Endpoint 하나에서 온톨로지 관계를 따라 원인 후보(Model/GPU/Node, 그 Node 의 다른 영향 Service)까지
@@ -40,7 +42,7 @@ function signalColor(key: string): string {
   return key === "error" ? "var(--amber)" : "var(--primary)";
 }
 
-export default function Investigate() {
+export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
   const [objects, setObjects] = useState<OntologyObject[]>([]);
   const [links, setLinks] = useState<OntologyLink[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,6 +153,14 @@ export default function Investigate() {
           steps={steps}
           stepIdx={Math.min(stepIdx, Math.max(0, steps.length - 1))}
           onStep={setStepIdx}
+        />
+      )}
+
+      {/* IMP-72 — Kinetic 알림 스트립. 감지→객체 귀속을 4-슬롯 카드로. 데모 모드는 seeded fixture 라 제외. */}
+      {!demoOn && (
+        <KineticStrip
+          onNavigate={onNavigate}
+          onOpenObject={(id) => view.open(id)}
         />
       )}
 

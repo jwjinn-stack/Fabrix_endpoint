@@ -113,7 +113,7 @@ function pageContent(
       {effPage === "nodes" && <NodeMetrics />}
       {effPage === "network" && <Network onNavigate={navigate} />}
       {effPage === "topology" && <Topology onNavigate={navigate} />}
-      {effPage === "investigate" && <Investigate />}
+      {effPage === "investigate" && <Investigate onNavigate={navigate} />}
       {effPage === "agent" && <AiAgent onNavigate={navigate} />}
       {effPage === "traffic" && <Traffic />}
       {effPage === "settings" && <Settings />}

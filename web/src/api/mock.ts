@@ -20,7 +20,7 @@ import type {
   ObjectStatus, ObjectType, OntologyLink, OntologyObject, OntologyObjectList, OntologyLinkList,
   ObjectMetricsReport, ObjectMetricSeries,
   ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
-  ActionAuditEntry, ActionOutcome, ActionResult,
+  ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
@@ -30,6 +30,8 @@ import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } f
 import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
 import { runAgentLoop } from "./agent";
+// Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
+import { attributeDetections } from "./detection";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -1148,6 +1150,19 @@ function runAgentMock(body: Record<string, unknown>): import("./types").AgentRun
   return run;
 }
 
+// GET /ontology/detections — 감지 이상을 온톨로지 객체에 귀속시킨 Kinetic 알림(IMP-72).
+// buildOntology() 메모이즈 스냅샷(IMP-81) 재사용 후 attributeDetections(순수) 호출. read-only.
+//  - 노이즈 억제(dedupe/state-transition/sustained collapse)는 파생 레이어(detection.ts) 내장.
+//  - sustained collapse: 직전 호출에서 이미 승격됐던 객체는 breachCount=2(지속 임계초과)로 접는다.
+//    (요청 사이의 "살아있는" 상태 — SNAPSHOT_CACHE 는 요청 경계마다 무효화되나 이 집합은 유지된다.)
+let PREV_ALERT_IDS: Set<string> = new Set();
+function ontologyDetections(): KineticAlertList {
+  const { objects, links } = buildOntology(); // 공유 스냅샷(재구성 중복 없음).
+  const alerts = attributeDetections(objects, links, { previousObjectIds: PREV_ALERT_IDS });
+  PREV_ALERT_IDS = new Set(alerts.map((a) => a.objectId));
+  return { generated_at: new Date().toISOString(), alerts, source: "ontology detection (mock)" };
+}
+
 // GET /ontology/objects?type=&filter= — type(ObjectType) + filter(title/id 부분일치).
 function ontologyObjects(type?: string, filter?: string): OntologyObjectList {
   const { objects } = buildOntology();
@@ -1886,6 +1901,8 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /alerts/rules": return ok(createAlertRuleMock(body as Record<string, unknown>));
     // 온톨로지(IMP-56) — Object/Link 그래프 조회(후속 IMP-57/58/59/60/63 이 소비).
     case "GET /ontology/objects": return ok(ontologyObjects(q.get("type") ?? undefined, q.get("filter") ?? undefined));
+    // Kinetic 감지→객체 귀속(IMP-72) — 감지 이상을 객체에 결정적으로 귀속한 4-슬롯 알림(read-only).
+    case "GET /ontology/detections": return ok(ontologyDetections());
     // AI Agent(IMP-60) — 온톨로지 접지 ReAct 실행. read tool 자동, mutation 은 별도 ActionForm confirm(포함 안 함).
     case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
   }
