@@ -10,6 +10,7 @@ import {
   type Hop,
   type RootCausePath,
 } from "../api/investigate";
+import { buildDemoScenario, type DemoStep } from "../api/demoScenario";
 import Gauge from "../components/Gauge";
 import Sparkline from "../components/Sparkline";
 import Badge, { type BadgeTone } from "../components/Badge";
@@ -55,6 +56,14 @@ export default function Investigate() {
   const [urlSt, patchUrl] = useUrlState(investigateSchema);
   const view = useObjectView(); // RIGHT: hop 클릭 → ObjectView(IMP-57) + inline Action(IMP-59)
 
+  // IMP-61 — 내장 데모 시나리오 재생 모드. demo="1" 이면 mock seeded fixture 로 경로를 대체하고
+  // 순서 있는 step 을 하이라이트한다(thin layer — traversal 재구현 없이 buildRootCausePath 재사용).
+  const demoOn = urlSt.demo === "1";
+  const demo = useMemo(() => (demoOn ? buildDemoScenario() : null), [demoOn]);
+  const [stepIdx, setStepIdx] = useState(0);
+  // 데모를 켜거나 끌 때 step 을 처음으로 되감는다(결정적 시작).
+  useEffect(() => { setStepIdx(0); }, [demoOn]);
+
   // 온톨로지 그래프 로드(IMP-56 client). 링크는 전 객체의 links 를 모아 dedup(경로 traverse 용).
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -98,13 +107,20 @@ export default function Investigate() {
     return objects.length ? defaultEntry(objects) ?? "" : "";
   }, [urlSt.entity, objects]);
 
-  // 근본원인 경로(순수 traverse). objects/links 준비 전엔 빈 경로.
+  // 근본원인 경로(순수 traverse). 데모 모드면 seeded fixture 의 경로를 그대로 쓴다(evidence surface 재사용).
+  // objects/links 준비 전엔 빈 경로.
   const path = useMemo<RootCausePath>(
-    () => buildRootCausePath(objects, links, entryId),
-    [objects, links, entryId],
+    () => (demo ? demo.path : buildRootCausePath(objects, links, entryId)),
+    [demo, objects, links, entryId],
   );
 
+  // 데모 step 배열 + 현재 step(경계 clamp). 데모 아닐 땐 빈 배열.
+  const steps: DemoStep[] = demo ? demo.steps : [];
+  const activeStep = steps.length ? steps[Math.min(stepIdx, steps.length - 1)] : null;
+  const activeStepId = activeStep?.id ?? null;
+
   const selectEntry = useCallback((id: string) => patchUrl({ entity: id }), [patchUrl]);
+  const toggleDemo = useCallback(() => patchUrl({ demo: demoOn ? "" : "1" }), [demoOn, patchUrl]);
 
   return (
     <>
@@ -116,49 +132,99 @@ export default function Investigate() {
           시간축은 "먼저 무너진 것" 기준이며, 표시는 <b>추정 근본원인 / 영향 경로</b> — 상관이 곧 인과는 아닙니다.
         </InfoTip>
         <div className="spacer" />
+        {/* IMP-61 — 내장 데모 시나리오 재생 토글(mock seeded walkthrough). */}
+        <button
+          type="button"
+          className={`refresh-btn demo-toggle ${demoOn ? "active" : ""}`}
+          onClick={toggleDemo}
+          aria-pressed={demoOn}
+          title="느린 엔드포인트 → 포화 GPU/핫 노드 → cordon+scale 을 단계별로 재생(mock)"
+        >
+          <span aria-hidden="true">▶</span>
+          {demoOn ? "데모 종료" : "데모 시나리오 재생"}
+        </button>
         <DataFreshness updatedAt={lastLoaded} intervalMs={REFRESH_MS} />
-        <button type="button" className="refresh-btn" onClick={() => load()} aria-label="근본원인 경로 새로고침">
+        <button type="button" className="refresh-btn" onClick={() => load()} disabled={demoOn} aria-label="근본원인 경로 새로고침">
           <span className="spin" aria-hidden="true">⟳</span>
           새로고침
         </button>
       </div>
 
-      {error && <div className="state error" role="alert">온톨로지 그래프를 불러오지 못했습니다. ({error})</div>}
-      {!error && loading && !objects.length && <SkeletonCards count={4} />}
+      {/* IMP-61 — 데모 컨트롤 바(재생 모드에서만). 순서 있는 step 을 이전/다음으로 이동. */}
+      {demoOn && (
+        <DemoBar
+          steps={steps}
+          stepIdx={Math.min(stepIdx, Math.max(0, steps.length - 1))}
+          onStep={setStepIdx}
+        />
+      )}
 
-      {!error && !loading && (
+      {error && !demoOn && <div className="state error" role="alert">온톨로지 그래프를 불러오지 못했습니다. ({error})</div>}
+      {!error && !demoOn && loading && !objects.length && <SkeletonCards count={4} />}
+
+      {/* 데모 모드는 seeded fixture 라 로딩/에러 게이트를 통과하지 않고 즉시 렌더한다. */}
+      {(demoOn || (!error && !loading)) && (
         <div className="cop-grid">
-          {/* LEFT — 진입 Object 후보 */}
-          <aside className="cop-entry" aria-label="진입 대상">
-            <div className="cop-panel-h">진입 대상</div>
-            <p className="cop-hint">문제 Endpoint 또는 발생 인시던트를 골라 경로를 추적합니다.</p>
-            {candidates.length === 0 ? (
-              <div className="empty">추적할 대상이 없습니다.</div>
-            ) : (
-              <ul className="cop-cands">
-                {candidates.map((c) => (
-                  <li key={c.id}>
-                    <button
-                      type="button"
-                      className={`cop-cand ${c.id === entryId ? "active" : ""}`}
-                      aria-current={c.id === entryId ? "true" : undefined}
-                      onClick={() => selectEntry(c.id)}
-                      title={c.reason}
-                    >
-                      <span className="cop-cand-glyph" aria-hidden="true">{TYPE_GLYPH[c.type]}</span>
-                      <span className="cop-cand-body">
-                        <span className="cop-cand-title">{c.title}</span>
-                        <span className="cop-cand-reason">{c.reason}</span>
-                      </span>
-                      <span className={`ov-dot ov-dot-${c.status}`} aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </aside>
+          {/* LEFT — 데모: 순서 있는 step 목록 / 일반: 진입 Object 후보 */}
+          {demoOn ? (
+            <aside className="cop-entry" aria-label="데모 단계">
+              <div className="cop-panel-h">데모 단계</div>
+              <p className="cop-hint">느린 엔드포인트 → 포화 GPU/핫 노드 → 권장 조치(cordon+scale)를 단계별로 따라갑니다. <b>mock 데모</b>입니다.</p>
+              {steps.length === 0 ? (
+                <div className="empty">데모 시나리오를 불러오지 못했습니다.</div>
+              ) : (
+                <ol className="cop-steps">
+                  {steps.map((st, i) => (
+                    <li key={st.id}>
+                      <button
+                        type="button"
+                        className={`cop-step ${i === stepIdx ? "active" : ""}`}
+                        aria-current={i === stepIdx ? "true" : undefined}
+                        onClick={() => setStepIdx(i)}
+                      >
+                        <span className="cop-step-n" aria-hidden="true">{i + 1}</span>
+                        <span className="cop-step-body">
+                          <span className="cop-step-title">{st.title}</span>
+                          {st.action && <span className="cop-step-action">권장: {st.action.label}</span>}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </aside>
+          ) : (
+            <aside className="cop-entry" aria-label="진입 대상">
+              <div className="cop-panel-h">진입 대상</div>
+              <p className="cop-hint">문제 Endpoint 또는 발생 인시던트를 골라 경로를 추적합니다.</p>
+              {candidates.length === 0 ? (
+                <div className="empty">추적할 대상이 없습니다.</div>
+              ) : (
+                <ul className="cop-cands">
+                  {candidates.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        className={`cop-cand ${c.id === entryId ? "active" : ""}`}
+                        aria-current={c.id === entryId ? "true" : undefined}
+                        onClick={() => selectEntry(c.id)}
+                        title={c.reason}
+                      >
+                        <span className="cop-cand-glyph" aria-hidden="true">{TYPE_GLYPH[c.type]}</span>
+                        <span className="cop-cand-body">
+                          <span className="cop-cand-title">{c.title}</span>
+                          <span className="cop-cand-reason">{c.reason}</span>
+                        </span>
+                        <span className={`ov-dot ov-dot-${c.status}`} aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </aside>
+          )}
 
-          {/* CENTER — 근본원인 PATH(자동확장 hop 스택) */}
+          {/* CENTER — 근본원인 PATH(자동확장 hop 스택). 데모면 현재 step 의 hop 을 하이라이트. */}
           <section className="cop-path" aria-label="근본원인 경로">
             <div className="cop-panel-h">
               추정 근본원인 · 영향 경로
@@ -166,7 +232,9 @@ export default function Investigate() {
             </div>
             {!path.found ? (
               <div className="empty" role="status">
-                대상을 찾을 수 없습니다{entryId ? <>: <code>{entryId}</code></> : null}. 좌측에서 진입 대상을 선택하세요.
+                {demoOn
+                  ? <>데모 시나리오를 불러오지 못했습니다.</>
+                  : <>대상을 찾을 수 없습니다{entryId ? <>: <code>{entryId}</code></> : null}. 좌측에서 진입 대상을 선택하세요.</>}
               </div>
             ) : (
               <ol className="cop-hops">
@@ -178,6 +246,8 @@ export default function Investigate() {
                     isLast={i === path.hops.length - 1}
                     onOpen={() => view.open(h.id)}
                     active={view.objectId === h.id}
+                    demoActive={demoOn && h.id === activeStepId}
+                    demoStep={demoOn && h.id === activeStepId ? activeStep : null}
                   />
                 ))}
               </ol>
@@ -193,18 +263,23 @@ export default function Investigate() {
 }
 
 // hop 카드 — edge-type badge + 글리프/title + 상태 + first-anomaly time + 골든시그널(Gauge+Sparkline).
+// demoActive: 데모 재생 중 현재 step 의 hop 이면 강조 + narration/권장 조치 요약을 얹는다(IMP-61).
 function HopCard({
   hop,
   index,
   isLast,
   onOpen,
   active,
+  demoActive = false,
+  demoStep = null,
 }: {
   hop: Hop;
   index: number;
   isLast: boolean;
   onOpen: () => void;
   active: boolean;
+  demoActive?: boolean;
+  demoStep?: DemoStep | null;
 }) {
   const meta = { glyph: TYPE_GLYPH[hop.object.type], label: TYPE_LABEL[hop.object.type] };
   return (
@@ -218,9 +293,9 @@ function HopCard({
       )}
       <button
         type="button"
-        className={`cop-hop ${hop.critical ? "crit" : ""} ${hop.blastRadius ? "blast" : ""} ${active ? "active" : ""}`}
+        className={`cop-hop ${hop.critical ? "crit" : ""} ${hop.blastRadius ? "blast" : ""} ${active ? "active" : ""} ${demoActive ? "demo-active" : ""}`}
         onClick={onOpen}
-        aria-current={active ? "true" : undefined}
+        aria-current={active || demoActive ? "true" : undefined}
         title={`${meta.label} · ${hop.id} — 상세/조치 열기`}
       >
         <div className="cop-hop-top">
@@ -260,9 +335,53 @@ function HopCard({
             </div>
           ))}
         </div>
+
+        {/* 데모 재생 — 현재 step 의 narration + 권장 조치 요약(조치 실행은 카드를 열면 ObjectView 의 confirm 게이팅으로만). */}
+        {demoActive && demoStep && (
+          <div className="cop-demo-note" role="note">
+            <p className="cop-demo-narration">{demoStep.narration}</p>
+            {demoStep.action && (
+              <p className="cop-demo-action">
+                권장 조치: <b>{demoStep.action.label}</b> — {demoStep.action.reason}
+                <span className="cop-demo-action-hint"> (카드를 열어 확인 후 실행 · 권한 없으면 비활성)</span>
+              </p>
+            )}
+          </div>
+        )}
       </button>
 
-      {isLast && <p className="cop-foot-note">경로는 척추(serves→runsOn→hostedBy) 종점 이후 한 hop 을 더 펼쳐 조기 종결을 방지합니다.</p>}
+      {isLast && !demoActive && <p className="cop-foot-note">경로는 척추(serves→runsOn→hostedBy) 종점 이후 한 hop 을 더 펼쳐 조기 종결을 방지합니다.</p>}
     </li>
+  );
+}
+
+// IMP-61 — 데모 컨트롤 바. 순서 있는 step 을 이전/다음/처음으로 이동(결정적 재생).
+function DemoBar({
+  steps,
+  stepIdx,
+  onStep,
+}: {
+  steps: DemoStep[];
+  stepIdx: number;
+  onStep: (i: number) => void;
+}) {
+  if (steps.length === 0) return null;
+  const cur = steps[stepIdx];
+  const atFirst = stepIdx <= 0;
+  const atLast = stepIdx >= steps.length - 1;
+  return (
+    <div className="demo-bar" role="region" aria-label="데모 시나리오 컨트롤">
+      <span className="demo-bar-tag">데모</span>
+      <span className="demo-bar-title">느린 엔드포인트 → 포화 GPU/핫 노드 → cordon+scale</span>
+      <span className="demo-bar-progress" aria-live="polite">
+        단계 {stepIdx + 1}/{steps.length} · <b>{cur.title}</b>
+      </span>
+      <div className="spacer" />
+      <div className="demo-bar-ctrls" role="group" aria-label="단계 이동">
+        <button type="button" className="btn-ghost btn-sm" onClick={() => onStep(0)} disabled={atFirst} aria-label="처음으로">처음</button>
+        <button type="button" className="btn-ghost btn-sm" onClick={() => onStep(Math.max(0, stepIdx - 1))} disabled={atFirst} aria-label="이전 단계">← 이전</button>
+        <button type="button" className="btn-primary btn-sm" onClick={() => onStep(Math.min(steps.length - 1, stepIdx + 1))} disabled={atLast} aria-label="다음 단계">다음 →</button>
+      </div>
+    </div>
   );
 }

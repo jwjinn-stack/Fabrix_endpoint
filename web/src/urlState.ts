@@ -63,8 +63,10 @@ export const objectViewSchema = {
 
 // Investigate COP(IMP-58) deep-link 스키마 — entity=진입 Object id(문제 Endpoint/Incident).
 // 빈 문자열이면 기본 진입(가장 아픈 후보)을 페이지가 결정한다.
+// demo="1" 이면 내장 데모 시나리오(IMP-61) 재생 모드 — mock seeded fixture 로 경로를 대체(deep-link 가능).
 export const investigateSchema = {
   entity: strField(""),
+  demo: strField(""),
 } as const;
 
 // AI Agent(IMP-60) deep-link 스키마 — entity=접지 진입 Object id(옵션), intent=자연어 의도(옵션).

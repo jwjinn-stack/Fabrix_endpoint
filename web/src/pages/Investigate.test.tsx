@@ -168,3 +168,56 @@ describe("Investigate — 진입 전환", () => {
     });
   });
 });
+
+// IMP-61 — 내장 데모 시나리오 재생(UI 어포던스). seeded fixture 라 fetch 결과와 무관하게 즉시 렌더.
+describe("Investigate — 데모 시나리오 재생(IMP-61)", () => {
+  it("토글을 켜면 데모 컨트롤 바 + 순서 있는 단계 목록이 나타난다", async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText("진입 대상")).toBeInTheDocument());
+    // 데모 토글(page-head) 클릭.
+    fireEvent.click(screen.getByRole("button", { name: /데모 시나리오 재생/ }));
+    // 데모 컨트롤 바(region) + 단계 목록(aside "데모 단계").
+    await waitFor(() => expect(screen.getByRole("region", { name: "데모 시나리오 컨트롤" })).toBeInTheDocument());
+    expect(screen.getByRole("complementary", { name: "데모 단계" })).toBeInTheDocument();
+    // 데모 fixture 의 hop(포화 GPU / 핫 노드)이 경로에 렌더된다(제목·narration 등 여러 곳에 등장).
+    expect(screen.getAllByText(/demo-node-a/).length).toBeGreaterThan(0);
+  });
+
+  it("?demo=1 deep-link 로 바로 데모 모드로 진입한다", async () => {
+    window.history.replaceState(null, "", "/investigate?demo=1");
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("region", { name: "데모 시나리오 컨트롤" })).toBeInTheDocument());
+    // 진행 표시 — 단계 1/N.
+    expect(screen.getByText(/단계 1\//)).toBeInTheDocument();
+  });
+
+  it("다음 단계로 이동하면 진행 표시가 갱신되고 최종 단계에서 cordon+scale 권장이 노출된다", async () => {
+    window.history.replaceState(null, "", "/investigate?demo=1");
+    const { container } = renderPage();
+    const region = await screen.findByRole("region", { name: "데모 시나리오 컨트롤" });
+    expect(within(region).getByText(/단계 1\//)).toBeInTheDocument();
+    // "다음 →" 을 여러 번 눌러 핫 노드(cordon 권장) 단계까지 이동(Endpoint→Model→GPU→Node = index 3).
+    const nextBtn = within(region).getByRole("button", { name: "다음 단계" });
+    for (let i = 0; i < 3; i++) fireEvent.click(nextBtn);
+    // 진행 표시가 4단계로 갱신됨.
+    await waitFor(() => expect(within(region).getByText(/단계 4\//)).toBeInTheDocument());
+    // 현재 hop 카드(.cop-demo-action)에 권장 조치(cordon)가 노출.
+    await waitFor(() => {
+      const action = container.querySelector(".cop-demo-action");
+      expect(action?.textContent).toMatch(/노드 cordon/);
+    });
+    // 좌측 단계 목록에 cordon/scale 권장 라벨이 모두 존재(시나리오가 두 조치를 담음).
+    expect(screen.getByText(/권장: 노드 cordon/)).toBeInTheDocument();
+    expect(screen.getByText(/권장: 레플리카 조정/)).toBeInTheDocument();
+  });
+
+  it("데모를 끄면 일반 진입 대상 목록으로 복귀한다", async () => {
+    window.history.replaceState(null, "", "/investigate?demo=1");
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("complementary", { name: "데모 단계" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /데모 종료/ }));
+    // 일반 모드 — 진입 대상 aside 복귀, 데모 컨트롤 바 사라짐.
+    await waitFor(() => expect(screen.getByRole("complementary", { name: "진입 대상" })).toBeInTheDocument());
+    expect(screen.queryByRole("region", { name: "데모 시나리오 컨트롤" })).toBeNull();
+  });
+});

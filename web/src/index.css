@@ -2568,6 +2568,50 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 .cop-foot-note { font-size: var(--fs-xs); color: var(--text-faint); margin: var(--sp-3) 0 0; line-height: var(--lh-body); }
 
+/* ───────────── 내장 데모 시나리오(IMP-61) — mock seeded walkthrough ───────────── */
+/* page-head 토글 버튼(재생 중이면 스틸블루 강조). */
+.demo-toggle.active { border-color: var(--primary); color: var(--primary-strong); background: var(--primary-weak); }
+
+/* 데모 컨트롤 바 — 진행 상태 + 이전/다음. 라이트+스틸블루, 네온 금지. */
+.demo-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2);
+  margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--primary); border-left-width: 3px; border-radius: var(--radius);
+  background: var(--primary-weak);
+}
+.demo-bar-tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #fff; background: var(--primary); border-radius: 999px; padding: 2px 8px; }
+.demo-bar-title { font-size: var(--fs-sm); font-weight: 600; color: var(--primary-strong); }
+.demo-bar-progress { font-size: var(--fs-xs); color: var(--text-dim); }
+.demo-bar-ctrls { display: flex; gap: var(--sp-2); }
+
+/* 데모 단계 목록(LEFT) — cop-cand 패턴 재사용. */
+.cop-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cop-step {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+  padding: var(--sp-2) var(--sp-3);
+}
+.cop-step:hover { border-color: var(--border-strong); }
+.cop-step.active { border-color: var(--primary); background: var(--primary-weak); }
+.cop-step-n {
+  flex: none; width: 20px; height: 20px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+.cop-step.active .cop-step-n { color: #fff; background: var(--primary); border-color: var(--primary); }
+.cop-step-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.cop-step-title { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cop-step-action { font-size: var(--fs-xs); color: var(--primary-strong); }
+
+/* 현재 step 의 hop 카드 강조(스틸블루 ring). crit/blast 배경과 공존. */
+.cop-hop.demo-active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-weak), var(--shadow-card-hover); }
+
+/* hop 카드 안 narration + 권장 조치 요약(데모 재생 시). */
+.cop-demo-note { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px dashed var(--border); }
+.cop-demo-narration { font-size: var(--fs-sm); color: var(--text); margin: 0; line-height: var(--lh-body); }
+.cop-demo-action { font-size: var(--fs-sm); color: var(--text-dim); margin: var(--sp-2) 0 0; line-height: var(--lh-body); }
+.cop-demo-action-hint { color: var(--text-faint); font-size: var(--fs-xs); }
+
 /* ───────────── AI Agent(IMP-60) — 온톨로지 접지 ReAct 패널 ───────────── */
 /* intent 입력 + ReAct 타임라인(LEFT) + RCA 후보/runbook(RIGHT) 2열. 좁은 폭에선 세로 스택. */
 .agent-intent { display: flex; gap: var(--sp-2); align-items: center; margin: var(--sp-2) 0; }
