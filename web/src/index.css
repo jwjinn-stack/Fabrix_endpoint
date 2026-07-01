@@ -2865,6 +2865,67 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .onto-edge-card { margin-top: var(--sp-3); }
 .onto-side { background: var(--surface-2); }
 
+/* ───────────── 운영 준비도 스코어카드 (IMP-68) ───────────── */
+/* /ontology 정문 — 타입 카탈로그 대신 "지금 무엇이 주의를 요하나" pass/fail 채점(Datadog Scorecards). */
+.onto-tabs { margin-top: var(--sp-3); }
+
+/* "주의 요약" 카드 — at-risk 면 red 톤 좌측 강조, all-pass 면 green, 그 외 중립. */
+.onto-attn { padding: var(--sp-4); border-left: 3px solid var(--border); }
+.onto-attn-risk { border-left-color: var(--red); background: var(--red-weak); }
+.onto-attn-ok { border-left-color: var(--green); background: var(--green-weak); }
+.onto-attn-headline { display: flex; align-items: center; gap: var(--sp-3); }
+.onto-attn-glyph { font-size: 22px; line-height: 1; color: var(--text-dim); flex: none; }
+.onto-attn-glyph-risk { color: var(--red); }
+.onto-attn-headline-ok .onto-attn-glyph { color: var(--green); }
+.onto-attn-title { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-attn-num { color: var(--red); font-size: var(--fs-lg, 18px); }
+.onto-attn-headline-ok .onto-attn-num { color: var(--green); }
+.onto-attn-sub { font-size: var(--fs-sm); color: var(--text-dim); margin-top: 2px; }
+
+/* 그룹별 pass/total 미니 바 — 3그룹 나란히. */
+.onto-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-3);
+  margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.onto-group-stat { display: flex; flex-direction: column; gap: 4px; }
+.onto-group-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; }
+.onto-group-nums { font-size: var(--fs-body); font-weight: 700; color: var(--green); }
+.onto-group-nums-fail { color: var(--amber); }
+.onto-group-bar { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; display: block; }
+.onto-group-bar-fill { display: block; height: 100%; background: var(--green); border-radius: 3px; }
+.onto-group-bar-fill-fail { background: var(--amber); }
+
+/* 인스턴스 스코어 목록 — at-risk 우선(정렬은 buildScorecard). */
+.onto-scorelist { list-style: none; margin: var(--sp-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.onto-scorerow { padding: var(--sp-3); border-left: 3px solid var(--border); }
+.onto-scorerow-risk { border-left-color: var(--red); }
+.onto-scorerow-main { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.onto-scorerow-main .spacer { flex: 1 1 auto; }
+.onto-scorerow-chip { flex: none; }
+.onto-scorerow-title { font-size: var(--fs-body); font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+.onto-scorerow-fails { font-size: var(--fs-sm); color: var(--green); font-weight: 600; }
+.onto-scorerow-fails-bad { color: var(--red); }
+
+/* 3그룹 pass/fail 셀. */
+.onto-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--sp-2);
+  margin-top: var(--sp-3); }
+.onto-cell { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  padding: 6px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); }
+.onto-cell-ok { border-color: var(--green); background: var(--green-weak); }
+.onto-cell-fail { border-color: var(--amber-border); background: var(--amber-weak); }
+.onto-cell-label { font-size: var(--fs-xs); color: var(--text-dim); font-weight: 600; }
+.onto-cell-nums { font-size: var(--fs-sm); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.onto-cell-ok .onto-cell-nums { color: var(--green); }
+.onto-cell-fail .onto-cell-nums { color: var(--amber); }
+.onto-cell-mark { font-size: 12px; line-height: 1; }
+
+/* 실패 규칙 목록 — 어느 규칙이 왜 fail 인지(과업 연결 카피). */
+.onto-fail-list { list-style: none; margin: var(--sp-3) 0 0; padding: var(--sp-2) var(--sp-3) 0;
+  border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px; }
+.onto-fail-item { display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-sm); flex-wrap: wrap; }
+.onto-fail-mark { color: var(--red); font-size: 12px; line-height: 1; flex: none; }
+.onto-fail-label { font-weight: 700; color: var(--text); flex: none; }
+.onto-fail-hint { color: var(--text-dim); }
+
 /* ───────────── 엔티티-앵커 Metric Explorer (IMP-71) ───────────── */
 /* ObjectView 탭 재사용(.me-tabs 는 .modality-tabs 위계). SlidePanel 은 <details> disclosure(.me-disclosure). */
 .me-tabs { margin-top: var(--sp-3); margin-bottom: var(--sp-3); }
