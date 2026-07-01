@@ -3102,9 +3102,67 @@ tr.row-sel { background: var(--primary-weak) !important; }
   background-size: 400% 100%; animation: skel-shimmer 1.4s ease infinite;
 }
 .me-loading-text { font-size: var(--fs-xs); color: var(--text-faint); }
+/* ── IMP-80 — 객체 상세 3층 위계 레이아웃(요약 스트립 → 카테고리 카드 그리드 → 전체 메트릭) ──
+   Palantir Object View 360° / Datadog Host·GPU / Grafana 패널 그리드 밀도·위계.
+   라이트 + 스틸블루, 네온 금지. 상태색+텍스트 병기(WCAG 1.4.1). 밀도 토큰(sp·fs) 사용. */
+
+/* 상세 상단 라인 — 상태 배지 + 데이터 출처(요약 스트립 위). */
+.metric-detail-top { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.metric-detail-src { font-size: var(--fs-xs); color: var(--text-faint); }
+.metric-detail-src code { font-size: var(--fs-xs); }
+
+/* (Tier 1) 요약 스트립 — 핵심 KPI 게이지/값. 반응형 그리드(좁으면 자동 줄바꿈). */
+.metric-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-3); margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-card);
+}
+.metric-kpi { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.metric-kpi-label { font-size: var(--fs-xs); color: var(--text-faint); font-weight: 600; letter-spacing: .01em; }
+.metric-kpi-val { font-size: var(--fs-metric); font-size: clamp(18px, 4vw, 22px); font-weight: 700; color: var(--text); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.metric-kpi-flag { font-size: var(--fs-xs); font-weight: 600; }
+.metric-kpi .gauge { margin-top: 2px; }
+
+/* (Tier 2) 카테고리 카드 그리드 — 반응형 2~3열(좁으면 1열). */
+.metric-cat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--sp-3); margin-bottom: var(--sp-3);
+}
+/* 하드웨어 등 넓은 섹션은 전체 폭 차지. */
+.metric-cat-span { grid-column: 1 / -1; }
+.metric-cat-card { padding: 0; overflow: hidden; }
+/* 카테고리 최악 상태 → 좌측 accent bar(색+헤더 배지 텍스트 병기). */
+.metric-cat-card { border-left: 3px solid transparent; }
+.metric-cat-warn { border-left-color: var(--amber); }
+.metric-cat-crit { border-left-color: var(--red); }
+/* 카드 헤더 — 접이식(caret) + 제목 + 상태 배지 + mini 스파크라인. */
+.metric-cat-head {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: var(--sp-2) var(--sp-3); background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); text-align: left;
+}
+.metric-cat-head:hover { color: var(--text); }
+.metric-cat-head:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.metric-cat-caret { color: var(--text-faint); transition: transform var(--ease); display: inline-block; flex: none; }
+.metric-cat-caret.open { transform: rotate(90deg); }
+.metric-cat-title { flex: 1; min-width: 0; }
+.metric-cat-badge { flex: none; margin-right: 0; }
+.metric-cat-spark { flex: none; display: inline-flex; align-items: center; opacity: .9; }
+.metric-cat-spark .sparkline { display: block; }
+/* 카드 body — 신호 행(node-dd-row / DetailRow). 헤더와 구분선. */
+.metric-cat-body { padding: 0 var(--sp-3) var(--sp-2); border-top: 1px solid var(--border); }
+.metric-cat-body .detail-row:first-child,
+.metric-cat-body .node-dd-row:first-child { padding-top: var(--sp-2); }
+.metric-cat-body .node-dd-row:first-child { margin-top: var(--sp-2); }
+/* 카드 안 node-dd-row 라벨 폭은 카드 폭에 맞춰 축소(그리드 셀이 좁을 수 있음). */
+.metric-cat-body .node-dd-label { width: 72px; }
+.metric-cat-body .node-dd-cur { width: auto; min-width: 64px; }
+
 @media (prefers-reduced-motion: reduce) {
   .me-skel { animation: none; }
-  .me-caret, .me-disclosure-caret { transition: none; }
+  .me-caret, .me-disclosure-caret, .metric-cat-caret { transition: none; }
 }
 
 /* ── IMP-72 — Kinetic 알림 스트립(감지→객체 위 즉시 Action, Probable Cause 4-슬롯) ──

@@ -7,6 +7,8 @@ import SlidePanel, { DetailRow } from "../components/SlidePanel";
 import GpuHardwareSection from "../components/GpuHardwareSection";
 import MetricExplorer from "../components/MetricExplorer";
 import Sparkline from "../components/Sparkline";
+import { SummaryStrip, CategoryGrid, MetricCategoryCard } from "../components/MetricLayout";
+import type { SummaryKPI, MetricStatus3 } from "../components/MetricLayout";
 import GpuLedGrid from "../components/GpuLedGrid";
 import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
@@ -37,6 +39,19 @@ function barColor(v: number): string {
   if (v >= 0.85) return "var(--red)";
   if (v >= 0.6) return "var(--amber)";
   return "var(--primary)";
+}
+
+// IMP-80 — 요약 스트립·카테고리 카드용 상태(색+텍스트 병기, MetricStatus3). 임계는 위 셀 색 관례와 동일 출처.
+// 사용률/메모리(higher-is-worse): ≥0.9 위험, ≥0.6 주의. 온도: ≥87 위험, ≥80 주의.
+function utilStatus(v: number): MetricStatus3 {
+  if (v >= 0.9) return "crit";
+  if (v >= 0.6) return "warn";
+  return "ok";
+}
+function tempStatus(t: number): MetricStatus3 {
+  if (t >= 87) return "crit";
+  if (t >= 80) return "warn";
+  return "ok";
 }
 
 // GPU/MIG 관제(문서 4-4) + MIG 효율 스코어(3-4). DCGM 실측 per-GPU.
@@ -189,46 +204,83 @@ export default function Gpu() {
       >
         {detail && (
           <>
-            <div className="gpu-dd-series">
-              {tsLoading && <p className="rank-empty">시계열을 불러오는 중…</p>}
-              {!tsLoading && ts && ts.points.length > 1 && (
+            {/* IMP-80 3층 위계: (1)요약 스트립 → (2)카테고리 카드 그리드(+하드웨어) → (3)전체 메트릭. */}
+            {(() => {
+              // 시계열(최근 60분)이 충분하면 카드 헤더 mini 스파크라인에 쓴다. 부족하면 스파크라인 생략(값은 항상 표시).
+              const hasTs = !!ts && ts.points.length > 1;
+              const utilPts = hasTs ? ts!.points.map((p) => p.util) : [];
+              const memPts = hasTs ? ts!.points.map((p) => p.mem) : [];
+              const tempPts = hasTs ? ts!.points.map((p) => p.temp_c) : [];
+              const powerPts = hasTs ? ts!.points.map((p) => p.power_w) : [];
+              const uSt = utilStatus(detail.util_perc);
+              const mSt = utilStatus(detail.mem_perc);
+              const tSt = tempStatus(detail.temp_c);
+              const kpis: SummaryKPI[] = [
+                { label: "사용률", valueText: pct(detail.util_perc), status: uSt, gauge: { value: detail.util_perc, warn: 0.6, crit: 0.9, max: 1 } },
+                { label: "VRAM", valueText: pct(detail.mem_perc), status: mSt, gauge: { value: detail.mem_perc, warn: 0.6, crit: 0.9, max: 1 } },
+                { label: "온도", valueText: `${detail.temp_c}°C`, status: tSt, gauge: { value: detail.temp_c, warn: 80, crit: 87, max: 100 } },
+                { label: "전력", valueText: `${detail.power_w}W`, status: "ok" },
+              ];
+              return (
                 <>
-                  <div className="gpu-dd-row">
-                    <span className="gpu-dd-label">사용률</span>
-                    <Sparkline values={ts.points.map((p) => p.util)} color="var(--primary)" width={260} height={34} />
-                    <span className="gpu-dd-cur">{pct(detail.util_perc)}</span>
-                  </div>
-                  <div className="gpu-dd-row">
-                    <span className="gpu-dd-label">VRAM</span>
-                    <Sparkline values={ts.points.map((p) => p.mem)} color="var(--teal)" width={260} height={34} />
-                    <span className="gpu-dd-cur">{pct(detail.mem_perc)}</span>
-                  </div>
-                  <div className="gpu-dd-row">
-                    <span className="gpu-dd-label">온도</span>
-                    <Sparkline values={ts.points.map((p) => p.temp_c)} color="var(--amber)" width={260} height={34} />
-                    <span className="gpu-dd-cur">{detail.temp_c}°C</span>
-                  </div>
-                  <div className="gpu-dd-row">
-                    <span className="gpu-dd-label">전력</span>
-                    <Sparkline values={ts.points.map((p) => p.power_w)} color="var(--pink)" width={260} height={34} />
-                    <span className="gpu-dd-cur">{detail.power_w}W</span>
-                  </div>
+                  {tsLoading && <p className="rank-empty">시계열을 불러오는 중…</p>}
+
+                  {/* (Tier 1) 요약 스트립 — 핵심 KPI 게이지/값(색+텍스트 병기). */}
+                  <SummaryStrip items={kpis} />
+
+                  {/* (Tier 2) 카테고리 카드 그리드 — Utilization / Memory / Thermal·Power. mini 스파크라인 + 임계 밴드. */}
+                  <CategoryGrid>
+                    <MetricCategoryCard
+                      title="사용량 (Utilization)"
+                      status={uSt}
+                      spark={hasTs ? { values: utilPts, status: uSt } : undefined}
+                    >
+                      <DetailRow label="GPU 사용률">{pct(detail.util_perc)}</DetailRow>
+                      <DetailRow label="SM Active">{pct(detail.sm_active)}</DetailRow>
+                      <DetailRow label="Tensor Active">{pct(detail.tensor_active)}</DetailRow>
+                      <DetailRow label="GR_ENGINE 효율">{detail.mig_efficiency.toFixed(3)}</DetailRow>
+                    </MetricCategoryCard>
+
+                    <MetricCategoryCard
+                      title="메모리 (Memory)"
+                      status={mSt}
+                      spark={hasTs ? { values: memPts, status: mSt } : undefined}
+                    >
+                      <DetailRow label="VRAM 사용률">{pct(detail.mem_perc)}</DetailRow>
+                      <DetailRow label="VRAM 용량">{nf.format(detail.mem_used_mb)} / {nf.format(detail.mem_total_mb)} MB</DetailRow>
+                    </MetricCategoryCard>
+
+                    <MetricCategoryCard
+                      title="온도·전력 (Thermal·Power)"
+                      status={tSt}
+                      spark={hasTs ? { values: tempPts, status: tSt } : undefined}
+                    >
+                      <DetailRow label="온도">{detail.temp_c}°C{tSt !== "ok" && <span className="node-dd-flag"> · {tSt === "crit" ? "위험" : "주의"}</span>}</DetailRow>
+                      <DetailRow label="전력">{detail.power_w}W</DetailRow>
+                      {hasTs && (
+                        <div className="node-dd-row">
+                          <span className="node-dd-label">전력 추세</span>
+                          <Sparkline values={powerPts} color="var(--pink)" width={200} height={28} />
+                          <span className="node-dd-cur">{detail.power_w}W</span>
+                        </div>
+                      )}
+                    </MetricCategoryCard>
+
+                    <MetricCategoryCard title="식별 (Identity)" defaultOpen={false}>
+                      <DetailRow label="모델">{detail.model}</DetailRow>
+                      <DetailRow label="UUID"><code>{detail.uuid}</code></DetailRow>
+                    </MetricCategoryCard>
+
+                    {/* 풀-피델리티 하드웨어(IMP-76) — XID·throttle·NVLink·PCIe·ECC·clock. hw 있을 때만. Tier 2 그리드 안에 병렬 배치. */}
+                    {detail.hw && (
+                      <div className="metric-cat-span">
+                        <GpuHardwareSection hw={detail.hw} />
+                      </div>
+                    )}
+                  </CategoryGrid>
                 </>
-              )}
-              {!tsLoading && (!ts || ts.points.length <= 1) && (
-                <p className="rank-empty">이 GPU의 시계열 데이터가 아직 충분하지 않습니다.</p>
-              )}
-            </div>
-
-            <DetailRow label="모델">{detail.model}</DetailRow>
-            <DetailRow label="UUID"><code>{detail.uuid}</code></DetailRow>
-            <DetailRow label="메모리">{pct(detail.mem_perc)} ({nf.format(detail.mem_used_mb)} / {nf.format(detail.mem_total_mb)} MB)</DetailRow>
-            <DetailRow label="SM Active">{pct(detail.sm_active)}</DetailRow>
-            <DetailRow label="Tensor Active">{pct(detail.tensor_active)}</DetailRow>
-            <DetailRow label="GR_ENGINE 효율">{detail.mig_efficiency.toFixed(3)}</DetailRow>
-
-            {/* 풀-피델리티 하드웨어(IMP-76) — XID·throttle·NVLink·PCIe·ECC·clock. hw 있을 때만. */}
-            {detail.hw && <GpuHardwareSection hw={detail.hw} />}
+              );
+            })()}
 
             {/* MIG 슬라이스 — 현재 클러스터는 미파티션(전체 GPU 모드). 사실대로 표시. */}
             <div className="gpu-mig-note">

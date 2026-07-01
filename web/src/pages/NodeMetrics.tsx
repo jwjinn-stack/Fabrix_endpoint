@@ -6,8 +6,10 @@ import Sparkline from "../components/Sparkline";
 import MetricExplorer from "../components/MetricExplorer";
 import StatMini from "../components/StatMini";
 import Gauge from "../components/Gauge";
+import { SummaryStrip, CategoryGrid, MetricCategoryCard } from "../components/MetricLayout";
+import type { SummaryKPI } from "../components/MetricLayout";
 import { SkeletonCards } from "../components/Skeleton";
-import SlidePanel, { DetailRow } from "../components/SlidePanel";
+import SlidePanel from "../components/SlidePanel";
 import InfoTip from "../components/InfoTip";
 import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
@@ -242,40 +244,77 @@ function HostCard({ m, status, onOpen }: { m: NodeMetrics; status: NodeStatus; o
   );
 }
 
-// per-host 상세 — USE 그룹별 전체 신호(스파크라인 + 최신값 + 임계 색·텍스트).
+// per-host 상세 — IMP-80 3층 위계: (1)요약 스트립 → (2)USE 카테고리 카드 그리드 → (3)전체 메트릭.
+// 각 카드 body 는 기존 node-dd-row(스파크라인+값+상태 텍스트)를 그대로 유지(WCAG·IMP-25 회귀 없음).
 function HostDetail({ m, status }: { m: NodeMetrics; status: NodeStatus }) {
   if (m.points.length === 0) {
     return <p className="rank-empty">이 노드의 시계열 데이터가 아직 충분하지 않습니다.</p>;
   }
   const groups: Signal["group"][] = ["util", "saturation", "errors", "traffic"];
+
+  // (Tier 1) 요약 스트립 — 상태 + 대표 포화(Load) + 핵심 사용량(CPU·메모리) 게이지. IMP-54 Gauge.
+  const summaryKeys: Signal["key"][] = ["load1", "cpu_util", "mem_util"];
+  const kpis: SummaryKPI[] = summaryKeys.map((k) => {
+    const sig = SIGNALS.find((s) => s.key === k)!;
+    const v = lastVal(m, k);
+    return {
+      label: sig.label,
+      valueText: sig.fmt(v),
+      status: statusFromThresholds(v, sig.warn, sig.crit),
+      gauge: { value: v, warn: sig.warn, crit: sig.crit },
+    };
+  });
+
   return (
     <>
-      <DetailRow label="상태">
+      {/* (Tier 1) 요약 스트립 — 상태 배지 + 핵심 KPI 게이지. */}
+      <div className="metric-detail-top">
         <span className={`tag tag-${STATUS_TAG[status]}`}>{STATUS_LABEL[status]}</span>
-      </DetailRow>
-      <DetailRow label="데이터 출처"><code>{m.source}</code></DetailRow>
-      {groups.map((g) => (
-        <div key={g} className="node-dd-group">
-          <h4 className="node-dd-gtitle">{GROUP_LABEL[g]}</h4>
-          {SIGNALS.filter((s) => s.group === g).map((s) => {
-            const v = lastVal(m, s.key);
-            const color = cellColor(v, s.warn, s.crit);
-            const st = statusFromThresholds(v, s.warn, s.crit);
-            const sparkColor = st === "crit" ? "var(--red)" : st === "warn" ? "var(--amber)" : "var(--primary)";
-            return (
-              <div className="node-dd-row" key={s.key}>
-                <span className="node-dd-label">{s.label}</span>
-                <Sparkline values={series(m, s.key)} color={sparkColor} width={240} height={30} warnValue={s.warn} critValue={s.crit} />
-                <span className="node-dd-cur" style={color ? { color, fontWeight: 600 } : undefined}>
-                  {s.fmt(v)}
-                  {/* 색-only 금지: 임계 시 상태 텍스트 병기(WCAG 1.4.1). */}
-                  {st !== "ok" && <span className="node-dd-flag"> · {STATUS_LABEL[st]}</span>}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      ))}
+        <span className="metric-detail-src">데이터 출처 <code>{m.source}</code></span>
+      </div>
+      <SummaryStrip items={kpis} />
+
+      {/* (Tier 2) USE 카테고리 카드 그리드 — 반응형 2~3열. 카드 헤더 = 최악 상태 배지 + 대표 신호 mini 스파크라인. */}
+      <CategoryGrid>
+        {groups.map((g) => {
+          const sigs = SIGNALS.filter((s) => s.group === g);
+          // 카테고리 최악 상태 + 대표 신호(그룹 첫 신호)로 헤더 스파크라인.
+          const worst = worstStatus(sigs.map((s) => statusFromThresholds(lastVal(m, s.key), s.warn, s.crit)));
+          const lead = sigs[0];
+          return (
+            <MetricCategoryCard
+              key={g}
+              title={GROUP_LABEL[g]}
+              status={worst}
+              spark={{
+                values: series(m, lead.key),
+                status: statusFromThresholds(lastVal(m, lead.key), lead.warn, lead.crit),
+                warnValue: lead.warn,
+                critValue: lead.crit,
+              }}
+            >
+              {sigs.map((s) => {
+                const v = lastVal(m, s.key);
+                const color = cellColor(v, s.warn, s.crit);
+                const st = statusFromThresholds(v, s.warn, s.crit);
+                const sparkColor = st === "crit" ? "var(--red)" : st === "warn" ? "var(--amber)" : "var(--primary)";
+                return (
+                  <div className="node-dd-row" key={s.key}>
+                    <span className="node-dd-label">{s.label}</span>
+                    <Sparkline values={series(m, s.key)} color={sparkColor} width={240} height={30} warnValue={s.warn} critValue={s.crit} />
+                    <span className="node-dd-cur" style={color ? { color, fontWeight: 600 } : undefined}>
+                      {s.fmt(v)}
+                      {/* 색-only 금지: 임계 시 상태 텍스트 병기(WCAG 1.4.1). */}
+                      {st !== "ok" && <span className="node-dd-flag"> · {STATUS_LABEL[st]}</span>}
+                    </span>
+                  </div>
+                );
+              })}
+            </MetricCategoryCard>
+          );
+        })}
+      </CategoryGrid>
+
       <p className="node-dd-hint">
         <InfoTip>Saturation(Load·Swap·Disk IO)은 병목을 가장 먼저 예고하는 신호라 강조합니다.</InfoTip>
         {" "}USE = Utilization·Saturation·Errors. 큐레이션 세트(전량 나열 아님).
