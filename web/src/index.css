@@ -2603,6 +2603,80 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ev-dense .ev-lines { gap: 6px; }
 .ev-dense .ev-line { padding: 6px var(--sp-2); }
 
+/* ── 근거 evidence 타임라인 — IMP-100. 신호→추정원인→영향을 세로 timeline 시각언어로.
+      first-anomaly(앵커)→now 순서, severity 색 마커 + 경과시간 + 추정원인 강조 노드 + 인과 연결선.
+      단일 재사용 컴포넌트(EvidenceTimeline) — EvidencePanel(ObjectView/COP hop) + KineticStrip 공유.
+      Backend.AI 라이트 + 스틸블루 토큰(NO neon). motion-reduce 는 전역 @media 규칙이 처리. ── */
+.ev-tl {
+  list-style: none; margin: var(--sp-2) 0 0; padding: 0;
+  position: relative; display: flex; flex-direction: column;
+}
+/* 세로 rail — 마커 dot 중심(좌측 8px)을 잇는 축. 첫 마커 상단~마지막 마커 하단에서 멈춘다. */
+.ev-tl-item {
+  position: relative; padding: 0 0 var(--sp-3) 22px; /* 좌측 여백 = rail(8px) + gap */
+}
+.ev-tl-item:last-child { padding-bottom: 0; }
+/* rail 선 — item 왼쪽 8px 지점에 세로선. ::before 로 그려 마커와 겹치게. */
+.ev-tl-item::before {
+  content: ""; position: absolute; left: 7px; top: 4px; bottom: 0;
+  width: 2px; background: var(--border-strong);
+}
+.ev-tl-item:last-child::before { display: none; } /* 마지막 마커 아래로는 rail 없음 */
+/* severity 마커 dot — rail 위에 얹는다. 색-only 금지(옆에 severity 텍스트 병기). */
+.ev-tl-marker {
+  position: absolute; left: 2px; top: 3px; width: 12px; height: 12px;
+  border-radius: 999px; background: var(--surface); border: 2px solid var(--border-strong);
+  box-sizing: border-box; z-index: 1;
+}
+.ev-tl-sev-crit > .ev-tl-marker { border-color: var(--red); background: var(--red-weak); }
+.ev-tl-sev-warn > .ev-tl-marker { border-color: var(--amber); background: var(--amber-weak); }
+.ev-tl-sev-info > .ev-tl-marker { border-color: var(--primary); background: var(--primary-weak); }
+/* first-anomaly 앵커 — rail 시작점을 스틸블루로 채워 "가장 이른 이상"을 강조. */
+.ev-tl-anchor > .ev-tl-marker { background: var(--primary); border-color: var(--primary-strong); }
+
+.ev-tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ev-tl-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+/* 계열 배지 — severity 색조. pill. */
+.ev-tl-kind {
+  flex: none; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+.ev-tl-kind-crit { color: var(--red); background: var(--red-weak); border-color: var(--red-border); }
+.ev-tl-kind-warn { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
+.ev-tl-kind-info { color: var(--primary-strong); background: var(--primary-weak); border-color: var(--primary-weak); }
+/* severity 텍스트(색-only 금지 병기). */
+.ev-tl-sev-text { font-size: 10px; font-weight: 700; color: var(--text-faint); }
+.ev-tl-sev-crit > .ev-tl-body .ev-tl-sev-text { color: var(--red); }
+.ev-tl-sev-warn > .ev-tl-body .ev-tl-sev-text { color: var(--amber); }
+.ev-tl-when { font-size: var(--fs-xs); color: var(--text-faint); }
+.ev-tl-anchor-tag {
+  font-size: 10px; font-weight: 700; color: var(--primary-strong);
+  background: var(--primary-weak); border-radius: 3px; padding: 0 5px;
+}
+.ev-tl-title { margin: 0; font-size: var(--fs-body); font-weight: 600; color: var(--text); line-height: 1.35; }
+.ev-tl-detail { margin: 0; font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.35; }
+
+/* 추정 원인(강조 노드) → 영향. 인과 연결선(스틸블루)으로 신호에서 원인으로 잇는다. */
+.ev-tl-cause { position: relative; margin-top: 3px; padding-left: 12px; }
+.ev-tl-connector {
+  position: absolute; left: 0; top: 2px; bottom: 4px; width: 2px;
+  background: var(--primary); border-radius: 2px;
+}
+.ev-tl-cause-body { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-sm); }
+.ev-tl-cause-label {
+  font-size: 10px; font-weight: 700; color: var(--primary-strong);
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.ev-tl-cause-text { color: var(--text-dim); line-height: 1.4; }
+.ev-tl-impact { color: var(--text); line-height: 1.4; }
+.ev-tl-arrow { color: var(--primary); font-weight: 700; margin-right: 4px; }
+/* 인용(IMP-93) — ev-cite/ev-cite-link 규약 재사용 + 타임라인 배치 여백. */
+.ev-tl-cite { align-self: flex-start; margin-top: 3px; }
+
+/* compact 변형(KineticStrip 슬롯2 등) — 여백 축소, 타입 한 단계 작게. */
+.ev-tl-compact .ev-tl-item { padding-bottom: var(--sp-2); padding-left: 20px; }
+.ev-tl-compact .ev-tl-title { font-size: var(--fs-sm); }
+
 /* (3) Related — 목록/그래프 토글(IMP-84). 목록=a11y-safe 기본, 그래프=클릭형 토폴로지. */
 .ov-rel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .ov-rel-head .ov-h { margin: 0; }

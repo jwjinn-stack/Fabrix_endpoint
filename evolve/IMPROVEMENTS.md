@@ -144,7 +144,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-97 | ux | 인시던트 화면 '읽는 법' 온보딩 + 상태 InfoTip(triggered/NotReady/backpressure) — 정보폭탄 없이(default-collapsed·1회 dismiss·first-anomaly 타임라인은 drill-down 층) | medium | M | high | grounded | 2026-07-02 |
 | IMP-98 | compete | 복합 진단 read-only MCP tool — get_incident_context/get_pod_diagnostics로 원인 컨텍스트를 한 호출에(원자 tool 유지 하이브리드·buildIncidentEvidence seam 재사용) | medium | L | high | grounded | 2026-07-02 |
 | IMP-99 | code | 근거 파생 seam 통합 — objectId→상관 K8sPod/K8sEvent/큐신호→신호→추정원인→영향 구조체를 detection/investigate/ObjectView/MCP가 공유하는 단일 순수 함수 | medium | M | medium | done | 2026-07-02 |
-| IMP-100 | aesthetic | 근거 타임라인 시각언어 — 신호→추정원인→영향을 세로 evidence timeline으로(first-anomaly부터 severity 색·경과시간·인과 연결선, Datadog Watchdog/incident.io 수준) | medium | M | medium | proposed | 2026-07-02 |
+| IMP-100 | aesthetic | 근거 타임라인 시각언어 — 신호→추정원인→영향을 세로 evidence timeline으로(first-anomaly부터 severity 색·경과시간·인과 연결선, Datadog Watchdog/incident.io 수준) | medium | M | medium | done | 2026-07-02 |
 | IMP-101 | platform | 파드 상태·재시작·waiting reason·OOM 근거 수집을 kube-state-metrics + cAdvisor로 표준화 + 스케줄러/큐 메트릭 매핑(IMP-79/74 확장, 실수집 spike park) | medium | L | medium | spike-needed | 2026-07-02 |
 
 ## Details

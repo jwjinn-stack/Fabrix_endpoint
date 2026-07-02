@@ -14,7 +14,7 @@
 //   confirm 게이팅으로만. 이 컴포넌트에 자동 mutation 경로 없음(추천은 "제안"일 뿐). 고정 카피 "상관≠인과, 근거로 확인".
 import { useState } from "react";
 import { fetchKineticAlerts } from "../api/client";
-import type { KineticAlert, DetectionSignal, ObjectStatus } from "../api/types";
+import type { KineticAlert, ObjectStatus } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
 import { getActionSpec } from "../actions/registry";
 import { useCap } from "../capabilities";
@@ -24,6 +24,8 @@ import DataFreshness from "./DataFreshness";
 import PauseToggle from "./PauseToggle";
 import ActionForm from "./ActionForm";
 import { ActionInfoTip, ReversibleChip } from "./ActionInfoTip";
+// IMP-100 — 근거 슬롯을 세로 evidence timeline 시각언어로(단일 재사용 컴포넌트 + signals→마커 어댑터).
+import EvidenceTimeline, { markersFromSignals } from "./EvidenceTimeline";
 import type { NavFn } from "../router";
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
@@ -31,15 +33,7 @@ const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의
 const CONF_LABEL: Record<KineticAlert["confidence"], string> = { high: "높음", med: "보통" };
 const CONF_TONE: Record<KineticAlert["confidence"], BadgeTone> = { high: "red", med: "amber" };
 
-// 감지 신호 계열 → 근거 슬롯 접두 라벨(사람용).
-const SIGNAL_KIND_LABEL: Record<DetectionSignal["kind"], string> = {
-  alertrule: "알림 룰",
-  throttle: "하드웨어",
-  idleAlloc: "유휴 갭",
-  saturation: "포화",
-  backpressure: "큐 적체",
-  firstAnomaly: "시간축",
-};
+// 감지 신호 계열 → 근거 접두 라벨은 IMP-100 EvidenceTimeline(단일 규약)으로 이관.
 
 export interface KineticStripProps {
   onNavigate?: NavFn;               // 조사/ack rung — /agent·/investigate 딥링크(없으면 rung 숨김)
@@ -147,25 +141,11 @@ function KineticCard({
         </div>
       </div>
 
-      {/* ── [슬롯 2] 근거(evidence) — 어느 신호가 언제 임계 초과 + objectId/시각 인용 ── */}
+      {/* ── [슬롯 2] 근거(evidence) — IMP-100 세로 evidence timeline(first-anomaly→now, severity 색·경과시간).
+          신호 순서·인용(citation)은 그대로 유지. cause/impact 는 슬롯3(추정 원인)에 있어 마커엔 생략(중복 회피). ── */}
       <div className="kinetic-slot kinetic-slot-evidence">
         <span className="kinetic-slot-h">근거</span>
-        <ul className="kinetic-signals">
-          {alert.signals.map((s, i) => (
-            <li className="kinetic-signal" key={`${s.kind}-${i}`}>
-              <span className={`kinetic-sig-kind kind-${s.kind}`}>{SIGNAL_KIND_LABEL[s.kind]}</span>
-              <span className="kinetic-sig-body">
-                <span className="kinetic-sig-label">{s.label}</span>
-                <span className="kinetic-sig-detail">{s.detail}</span>
-                <span className="kinetic-sig-cite">
-                  <time className="kinetic-sig-when">{s.observedAt}</time>
-                  <span className="kinetic-sig-sep" aria-hidden="true">·</span>
-                  <code className="kinetic-sig-src" title="근거 인용(objectId/룰)">{s.citation}</code>
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
+        <EvidenceTimeline markers={markersFromSignals(alert.signals)} onCite={onOpenObject} compact />
       </div>
 
       {/* ── [슬롯 3] 추정 원인 경로(Probable Cause) + confidence ── */}

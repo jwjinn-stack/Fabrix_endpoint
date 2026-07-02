@@ -16,21 +16,13 @@ import { useMemo, useState } from "react";
 import type { OntologyLink, OntologyObject } from "../api/types";
 import { buildIncidentEvidence, type EvidenceLine } from "../api/incidentEvidence";
 import { buildK8sSnapshot } from "../api/k8sSnapshot";
+// IMP-100 — 근거를 세로 evidence timeline 시각언어로 렌더(단일 재사용 컴포넌트 + seam→마커 어댑터).
+import EvidenceTimeline, { markersFromEvidence } from "./EvidenceTimeline";
 
 // 기본 노출 줄 수(상위 고신호) — 나머지는 expander. NNG progressive disclosure.
 const DEFAULT_VISIBLE = 2;
 
-// 온톨로지 objectId 형태(type:id)인지 — 인용 클릭 대상 판별. pod/node/deployment ref 는 제외.
-//  detection citation 은 "rule_a1b2 · endpoint:e1" 처럼 접미로 objectId 를 담기도 하므로 토큰 분해로 탐색.
-function objectIdFromRef(ref: string): string | null {
-  // 공백/·(middle dot) 로 나눠 type:id 토큰을 찾는다. pod/… node/… deployment/… 는 '/' 라 매칭 안 됨.
-  const tokens = ref.split(/[\s·]+/).filter(Boolean);
-  for (const t of tokens) {
-    // type:id — 콜론 하나, '/' 없음(k8s ref 배제).
-    if (/^[A-Za-z]+:[^\s/]+$/.test(t)) return t;
-  }
-  return null;
-}
+// 인용(citation) objectId 판별·클릭 렌더는 IMP-100 EvidenceTimeline 로 이관(단일 규약) — 여기선 confidence 만.
 
 // confidence 배지 텍스트(색-only 금지 — 텍스트 병기). high=상관 근거 충분, med=보강 필요.
 const CONF_LABEL: Record<EvidenceLine["confidence"], string> = { high: "높음", med: "보통" };
@@ -83,24 +75,9 @@ export default function EvidencePanel({ objectId, objects, links, onCite, dense 
         <p className="ev-empty" role="status">{evidence.emptyReason ?? "수집된 이벤트 없음"}</p>
       ) : (
         <>
-          <ol className="ev-lines">
-            {visible.map((l) => (
-              <li key={l.id} className={`ev-line ev-line-${l.kind}`}>
-                {/* 신호 → 추정원인 → 영향 (한 줄 인과 체인). 각 조각은 escape 텍스트. */}
-                <div className="ev-signal">
-                  <span className="ev-what">{l.signal.what}</span>
-                  <span className="ev-when" aria-label="관측 시각">{l.signal.when}</span>
-                  <Citation ref={l.signal.sourceRef} onCite={onCite} />
-                </div>
-                <div className="ev-chain">
-                  <span className="ev-arrow" aria-hidden="true">→</span>
-                  <span className="ev-cause">{l.probableCause}</span>
-                  <span className="ev-arrow" aria-hidden="true">→</span>
-                  <span className="ev-impact">{l.impact}</span>
-                </div>
-              </li>
-            ))}
-          </ol>
+          {/* IMP-100 — 신호→추정원인→영향을 세로 evidence timeline 으로(first-anomaly→now, severity 색·경과시간·인과 연결선).
+              데이터는 IMP-99 seam 그대로(재파생 없음), 인용은 IMP-93 규약 유지. progressive disclosure(visible)는 그대로. */}
+          <EvidenceTimeline markers={markersFromEvidence(visible)} onCite={onCite} compact={dense} />
 
           {/* progressive disclosure — 상위 N 개 외 나머지는 expander. ≤N 줄이면 미표시. */}
           {lines.length > DEFAULT_VISIBLE && (
@@ -118,22 +95,4 @@ export default function EvidencePanel({ objectId, objects, links, onCite, dense 
       )}
     </section>
   );
-}
-
-// 인용 — 온톨로지 objectId 형태면 클릭 가능 버튼(navigate/highlight), 아니면 텍스트(escape).
-function Citation({ ref, onCite }: { ref: string; onCite?: (objectId: string) => void }) {
-  const objId = objectIdFromRef(ref);
-  if (objId && onCite) {
-    return (
-      <button
-        type="button"
-        className="ev-cite ev-cite-link"
-        onClick={() => onCite(objId)}
-        title={`${objId} 로 이동`}
-      >
-        {ref}
-      </button>
-    );
-  }
-  return <span className="ev-cite" title="근거 출처">{ref}</span>;
 }
