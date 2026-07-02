@@ -2206,6 +2206,36 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .streaming-log .sl-caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: var(--primary); animation: blink-caret 1s step-end infinite; }
 @media (prefers-reduced-motion: reduce) { .streaming-log .sl-caret { animation: none; } }
 
+/* ══════════════════ IMP-103 — 전역 in-context Assist(⌘/ 무엇이든 물어보기) ══════════════════ */
+/* 헤더 스파클 트리거 — cmdk-trigger 와 톤 통일(오렌지 상단 바 위 반투명 흰). 발견성: 단축키 노출. */
+.assist-trigger { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 8px 0 10px; border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.14); color: #fff; border-radius: var(--radius-sm); cursor: pointer; font: inherit; font-size: var(--fs-sm); }
+.assist-trigger:hover { background: rgba(255,255,255,0.24); }
+.assist-trigger:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.assist-trigger-label { opacity: 0.92; }
+.assist-trigger kbd { font-size: 10px; font-family: inherit; background: rgba(255,255,255,0.25); border-radius: 3px; padding: 1px 5px; letter-spacing: 0.3px; }
+@media (max-width: 720px) { .assist-trigger-label { display: none; } }
+
+/* 모달 오버레이 — 배경 어둡힘(scrim). 상단 근처 정렬(cmdk-overlay 정합). */
+.assist-overlay { position: fixed; inset: 0; background: rgba(16,24,40,0.45); display: flex; justify-content: center; align-items: flex-start; padding: 10vh var(--sp-4) var(--sp-4); z-index: 62; }
+.assist-panel { display: flex; flex-direction: column; gap: var(--sp-3); width: min(560px, 96vw); max-height: 78vh; background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-md, 12px); box-shadow: var(--shadow-card-hover); padding: var(--sp-4); box-sizing: border-box; }
+.assist-head { display: flex; align-items: center; gap: var(--sp-2); }
+.assist-title { margin: 0; font-size: var(--fs-md, 15px); font-weight: 700; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+.assist-spark { color: var(--primary); }
+.assist-head .icon { border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); border-radius: var(--radius-sm); cursor: pointer; font: inherit; }
+.assist-head .icon:hover { background: var(--surface-2); }
+/* 자동 화면-컨텍스트 배너(킬러) — 현재 화면 + 마운트 위젯. */
+.assist-ctx { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: var(--sp-2) var(--sp-3); background: var(--primary-weak); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.assist-ctx-badge { font-size: var(--fs-xs); font-weight: 700; color: var(--primary-strong); text-transform: uppercase; letter-spacing: 0.03em; }
+.assist-ctx-name { font-weight: 700; color: var(--text); }
+.assist-ctx-widgets { font-size: var(--fs-xs); }
+.assist-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.assist-presets .assist-explain { font-weight: 700; }
+.assist-panel .streaming-log { flex: 1 1 auto; min-height: 96px; max-height: 40vh; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.assist-form { display: flex; gap: var(--sp-2); }
+.assist-input { flex: 1 1 auto; height: 36px; padding: 0 var(--sp-3); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font: inherit; }
+.assist-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.assist-foot { font-size: var(--fs-xs); margin: 0; }
+
 /* ══════════════════ 공용 UX 유틸 (Round P5 — agent/스트리밍/관측성) ══════════════════ */
 /* 스트리밍 캐럿 — 어시스턴트 응답 토큰 뒤 깜빡이는 막대(§6.3) */
 .stream-caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: var(--primary); animation: blink-caret 1s step-end infinite; }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from "react";
 import NotificationsDrawer from "./Notifications";
 import CommandPalette, { type Command } from "./CommandPalette";
 import { useSearchAround } from "./useSearchAround";
@@ -6,6 +6,11 @@ import { useObjectView } from "./ObjectView";
 import { useCap } from "../capabilities";
 import { useBrand } from "../theme";
 import { capForPage } from "../router";
+import { useGlobalShortcutGuard } from "../a11y";
+
+// IMP-103 — 전역 in-context Assist 패널(⌘/ '무엇이든 물어보기'). lazy import 로 초기 번들 0
+//   (미오픈 시 청크 미로딩). 패널 제거해도 앱은 동작한다(IMP-88 격리 — 셸-로컬 상태 + 조건부 렌더).
+const AssistPanel = lazy(() => import("./AssistPanel"));
 
 export type Page =
   | "dashboard"
@@ -140,6 +145,8 @@ export default function Layout({
 
   const [notifOpen, setNotifOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  // IMP-103 — 전역 Assist 패널 오픈 상태(셸-로컬 — 전역 provider 리렌더 회피).
+  const [assistOpen, setAssistOpen] = useState(false);
   // page 없는 그룹(예: 인프라·관측)의 수동 확장/접힘 상태. label 키로 토글한다.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [dark, setDark] = useState(() => {
@@ -160,6 +167,10 @@ export default function Layout({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // IMP-103 — ⌘/(primary) · '?'(secondary)로 Assist 패널 열기(IMP-102 useGlobalShortcutGuard).
+  //   input/textarea/contenteditable·IME 조합 중엔 무시. ⌘K(IMP-75)와 다른 키라 충돌 없음.
+  useGlobalShortcutGuard({ onTrigger: () => setAssistOpen(true) });
 
   // IMP-57 — ObjectView 는 urlState(obj) 를 단일 출처로 페이지 무관하게 열린다. 팔레트의 Search Around
   //  런처가 객체를 열 때 이 open(id) 을 쓴다(팔레트는 mutate 하지 않고 ObjectView 로 유도 — trust boundary).
@@ -228,6 +239,12 @@ export default function Layout({
           <span aria-hidden="true">⌕</span>
           <span className="cmdk-trigger-label">검색·이동</span>
           <kbd>⌘K</kbd>
+        </button>
+        {/* IMP-103 — 전역 Assist 진입점(스파클 트리거). 단축키를 툴팁/라벨에 노출(발견성). */}
+        <button type="button" className="assist-trigger" aria-label="무엇이든 물어보기 (⌘/)" title="무엇이든 물어보기 (⌘/)" onClick={() => setAssistOpen(true)}>
+          <span aria-hidden="true">✦</span>
+          <span className="assist-trigger-label">물어보기</span>
+          <kbd>⌘/</kbd>
         </button>
         <button type="button" className="icon" aria-label="알림" title="알림" onClick={() => setNotifOpen((v) => !v)}>
           🔔
@@ -308,6 +325,13 @@ export default function Layout({
         onQueryChange={sa.onQueryChange}
         modeKey={sa.modeKey}
       />
+      {/* IMP-103 — 전역 Assist 패널. lazy(미오픈 시 청크 미로딩) + 조건부 마운트(격리·성능).
+          현재 page 를 넘겨 자동 화면-컨텍스트 주입(IMP-105/106 seam). Suspense fallback 은 무음(오버레이 로드는 순간). */}
+      {assistOpen && (
+        <Suspense fallback={null}>
+          <AssistPanel open={assistOpen} onClose={() => setAssistOpen(false)} route={page} />
+        </Suspense>
+      )}
     </div>
   );
 }
