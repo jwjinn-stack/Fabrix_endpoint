@@ -152,7 +152,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-105 | ux | 위젯·영역 메타 선언(widgetMeta.ts, 무엇을 보여주는지) + '이 숫자 좋은가/나쁜가' IMP-7 임계 참조로 파생 + get_screen_context/describe_widget 근거 인용 | medium | M | high | grounded | 2026-07-02 |
 | IMP-106 | code | read-only assist context seam — glossary/widget은 MCP RESOURCE(glossary://·widget://), get_screen_context는 read-only TOOL로 분할(IMP-73 레지스트리 파생·IMP-2 게이팅) | medium | M | high | grounded | 2026-07-02 |
 | IMP-107 | compete | 다음 액션 제안형 in-context 어시스트 — 읽기전용 딥링크 카드(근거 1줄 첨부) + mutating은 ActionForm confirm 게이팅(ZERO auto-mutation·observe 정합) | medium | M | high | grounded | 2026-07-02 |
-| IMP-108 | code | statusGlossary를 전역 glossary-as-data로 승격(category/aliases/relatedKeys) — 도메인 용어(TTFT/p95/prefill/blast) 선언적 단일 출처, StatusInfoTip 회귀 0 | medium | M | high | proposed | 2026-07-02 |
+| IMP-108 | code | statusGlossary를 전역 glossary-as-data로 승격(category/aliases/relatedKeys) — 도메인 용어(TTFT/p95/prefill/blast) 선언적 단일 출처, StatusInfoTip 회귀 0 | medium | M | high | done | 2026-07-02 |
 | IMP-109 | aesthetic | 전역 Assist 패널 시각 완성도 — 스트리밍 caret·인용 chip(EvidenceTimeline 재사용)·메시지 밀도를 Linear/Vercel v0/Datadog Bits 수준으로(토큰 수렴·motion-reduce) | medium | M | medium | proposed | 2026-07-02 |
 | IMP-110 | ux | 어시스트 실모델 스트리밍(TTFT) + mock 시 'rule-based (no model)' 정직 표기 + 경량 세션 히스토리(IMP-82 연결 재사용·SSE/ReadableStream·AbortSignal) | medium | L | medium | proposed | 2026-07-02 |
 | IMP-111 | platform | 어시스트+RCA 추론을 인클러스터 LLM 게이트웨이(LiteLLM)로 백킹 — 라우팅·타임아웃·토큰 관측 위임, IMP-33과 인프라 공유(경량 설명모델 vs 대형 RCA) | low | L | medium | spike-needed | 2026-07-02 |
