@@ -21,6 +21,7 @@ import Badge, { type BadgeTone } from "./Badge";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
 import EvidencePanel from "./EvidencePanel";
+import CausePanel from "./CausePanel";
 import GpuHardwareSection from "./GpuHardwareSection";
 import MetricExplorer from "./MetricExplorer";
 import type { GpuHardware } from "../api/types";
@@ -466,6 +467,16 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
           {/* (2c) 근거(Evidence) — IMP-93: 채팅 없이 신호→추정원인→영향 접지. 순수 파생(IMP-99 seam).
               인용 클릭 → 같은 패널에서 참조 객체로 in-place traverse(그래프에 있을 때). 채팅은 별도 화면(보조). */}
           <EvidencePanel
+            objectId={obj.id}
+            objects={objectsArr}
+            links={links}
+            onCite={(id) => { if (index[id]) traverse(id); }}
+          />
+
+          {/* (2d) AI 원인 설명(IMP-95) — 채팅 없이 '무엇이/왜/영향/다음 조치' 자동 생성(OPT-IN·staged·HARD grounding).
+              동일 IMP-99 seam 을 소비(get_incident_context)해 근거 인용을 자연어화. 인용 클릭 → 같은 패널 traverse.
+              룰기반 폴백 badge(mock 시), zero auto-mutation — 실행은 아래 Actions 섹션(ActionForm confirm)만. */}
+          <CausePanel
             objectId={obj.id}
             objects={objectsArr}
             links={links}

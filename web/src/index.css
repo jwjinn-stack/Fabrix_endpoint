@@ -2603,6 +2603,39 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ev-dense .ev-lines { gap: 6px; }
 .ev-dense .ev-line { padding: 6px var(--sp-2); }
 
+/* ── AI 원인 설명 패널 — IMP-95. 채팅 없이 '무엇이/왜/영향/다음 조치' 4 섹션 자동 생성(OPT-IN·staged).
+      HARD grounding(인용 없는 claim 은 seam 이 드롭) + 클릭형 인용 + 룰기반 폴백 badge.
+      Backend.AI 라이트 + 스틸블루 토큰(NO neon). ── */
+.cause-panel { }
+.cause-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cause-sub { font-size: var(--fs-xs); margin: 2px 0 var(--sp-2); }
+.cause-optin { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.cause-generate { white-space: nowrap; }
+.cause-auto-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-dim); cursor: pointer; }
+.cause-stage { font-size: var(--fs-xs); color: var(--primary); margin: var(--sp-2) 0; font-weight: 600; }
+.cause-empty { font-size: var(--fs-sm); color: var(--text-dim); margin: var(--sp-2) 0; }
+.cause-sections { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-2); }
+.cause-sec {
+  border-left: 3px solid var(--border); padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+}
+/* '왜'(추정 근본원인)는 스틸블루 rail 로 먼저 읽히게. '다음 조치'는 teal 힌트. */
+.cause-sec-why { border-left-color: var(--primary); }
+.cause-sec-next { border-left-color: var(--border); }
+.cause-sec-title {
+  display: inline-block; font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px;
+}
+.cause-sec-empty { font-size: var(--fs-xs); margin: 2px 0 0; }
+.cause-claims { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cause-claim { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: var(--fs-sm); }
+.cause-claim-text { color: var(--text); }
+.cause-claim-cites { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+/* 인용 — objectId 형태면 클릭 가능(navigate/highlight), 아니면 텍스트. ev-cite 규약 재사용. */
+.cause-cite { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; background: none; }
+.cause-cite-link { color: var(--primary); cursor: pointer; }
+.cause-cite-link:hover { background: var(--primary-weak); border-color: var(--primary); color: var(--primary-strong); }
+.cause-source { font-size: var(--fs-xs); margin: var(--sp-2) 0 0; }
+
 /* ── 근거 evidence 타임라인 — IMP-100. 신호→추정원인→영향을 세로 timeline 시각언어로.
       first-anomaly(앵커)→now 순서, severity 색 마커 + 경과시간 + 추정원인 강조 노드 + 인과 연결선.
       단일 재사용 컴포넌트(EvidenceTimeline) — EvidencePanel(ObjectView/COP hop) + KineticStrip 공유.
