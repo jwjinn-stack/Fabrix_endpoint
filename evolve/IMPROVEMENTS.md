@@ -129,7 +129,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-82 | ux | AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드(엔드포인트·모델·타임아웃, Dynamo :8000 프리셋, /health·/v1/models 프로브) | high | M | high | done | 2026-07-02 |
 | IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | done | 2026-07-02 |
 | IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | done | 2026-07-02 |
-| IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | grounded | 2026-07-02 |
+| IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | done | 2026-07-02 |
 | IMP-86 | aesthetic | MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태(IMP-73 확장, Stripe식 2열·Inspector 3탭) | medium | M | high | done | 2026-07-02 |
 | IMP-87 | aesthetic | 고객사 화이트라벨 — 로고·제품명·favicon + 디자인 토큰 확장(색상 프리셋 위에, WCAG on-primary 대비 검증) | medium | M | high | done | 2026-07-02 |
 | IMP-88 | code | 기능 격리 회귀 테스트 — cap-off/라우트 미등록 시 나머지 앱 동작 보장(cap 매트릭스·mock 파생 크래시 가드) | high | S | medium | done | 2026-07-02 |
@@ -962,6 +962,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Deep-dive suggestion**: 없음 (패턴·코드 fit 확정, 구현 직행). IMP-45/47/48 토폴로지 렌더러·IMP-57 ObjectView·IMP-64 시각언어·IMP-66 traverse에 종속.
 
 ### IMP-85 — 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들 분할
+- **Status**: done (2026-07-02) — App.tsx 24개 페이지 정적 import → React.lazy + 단일 Suspense(라우터 아웃렛). fallback 은 CLS-safe PageSkeleton(제목 스트립+KPI 카드 4+표 8행, Skeleton.tsx 신규) — resetKey=effPage 로 전환마다 재표시. 앱 셸/nav/providers/ErrorBoundary 는 eager 유지. main.tsx 의 installMockFetch 정적 import → env 게이트 내부 동적 import(mount 순서 보장) — 실백엔드(VITE_MOCK=off)는 mock 청크(87kB) 미로드. vite manualChunks 로 react/react-dom 만 react-vendor 청크 분리(런타임 의존성 0이라 다른 버킷 없음). BEFORE→AFTER: 단일 JS 832.69kB(gzip 245)·1청크 → 엔트리 index 114.56kB(gzip 39) + shell 공유(react-vendor 189.63/client 13.24/capabilities 5.31/toast·errors·ontologyGraph·ontologySchema·mockFactory ~12) ≈ 초기 eager ~335kB(약 60% 축소), 페이지 24 + mock 은 지연 청크(총 51 JS 청크). mock.ts 는 index.html modulepreload 에 없음(부트 청크 유출 없음 확인). 테스트 749 pass/80파일(isolation·router.cap green), tsc+vite build green. Spec: specs/2026-07-02/IMP-85-code-splitting.md. 변경: web/src/{App.tsx,main.tsx,components/Skeleton.tsx}, web/vite.config.ts.
 - **Type**: code (sev=medium, effort=M)
 - **Area**: `web/src/App.tsx`, `web/src/main.tsx`, `web/src/router.ts`, `web/vite.config`
 - **Problem**: App.tsx가 40개 이상 페이지를 정적 import해 단일 번들에 eager 포함(React.lazy/Suspense/동적 import 0건). 코드가 계속 늘고 mock.ts만 2485줄이라 초기 로드 페이로드가 선형 증가. 관제 콘솔은 한 번에 한 화면만 보므로 라우트 단위 분할 이득이 크다(direction 11).

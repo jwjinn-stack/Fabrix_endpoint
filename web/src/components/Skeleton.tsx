@@ -25,6 +25,28 @@ export function SkeletonCards({ count = 4 }: { count?: number }) {
   );
 }
 
+// 라우트 지연 로딩(IMP-85) 공통 fallback — 페이지 청크가 도착하기 전 아웃렛 영역을 채운다.
+// CLS 회피(최상위 caveat): 대부분의 화면이 공유하는 대략적 구조(제목 스트립 → KPI 카드 4개 → 표 행)를
+// 미리 차지해, 실제 콘텐츠가 붙어도 레이아웃 점프를 최소화한다. 앱 셸/nav 는 이미 eager 로 그려진 상태.
+export function PageSkeleton() {
+  return (
+    <div aria-hidden="true" style={{ padding: "var(--sp-4) 0" }}>
+      {/* 제목 스트립 */}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-4)", marginBottom: "var(--sp-5)" }}>
+        <Skeleton w={220} h={22} />
+        <Skeleton w={120} h={22} style={{ marginLeft: "auto" }} />
+      </div>
+      {/* KPI 카드 4개 */}
+      <SkeletonCards count={4} />
+      {/* 본문 표 */}
+      <div className="card" style={{ padding: "var(--sp-4)", marginTop: "var(--sp-5)" }}>
+        <SkeletonRows rows={8} cols={5} />
+      </div>
+      <span className="sr-only" role="status" aria-live="polite">화면을 불러오는 중입니다.</span>
+    </div>
+  );
+}
+
 // 테이블 행 스켈레톤.
 export function SkeletonRows({ rows = 6, cols = 5 }: { rows?: number; cols?: number }) {
   return (

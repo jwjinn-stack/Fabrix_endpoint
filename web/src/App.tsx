@@ -1,33 +1,38 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import Layout, { type Page } from "./components/Layout";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { PageSkeleton } from "./components/Skeleton";
 import { pageFromPath, pathForPage, queryParam, capForPage, type NavParams } from "./router";
 import { CapabilitiesProvider, useCap } from "./capabilities";
 import { TimeRangeProvider } from "./timeRange";
 import { ThemeProvider } from "./theme";
-import Dashboard from "./pages/Dashboard";
-import Ontology from "./pages/Ontology";
-import Usage from "./pages/Usage";
-import Guard from "./pages/Guard";
-import Traces from "./pages/Traces";
-import Sessions from "./pages/Sessions";
-import Models from "./pages/Models";
-import ModelImport from "./pages/ModelImport";
-import Playground from "./pages/Playground";
-import Eval from "./pages/Eval";
-import Endpoints from "./pages/Endpoints";
-import Gpu from "./pages/Gpu";
-import NodeMetrics from "./pages/NodeMetrics";
-import Network from "./pages/Network";
-import Topology from "./pages/Topology";
-import Investigate from "./pages/Investigate";
-import AiAgent from "./pages/AiAgent";
-import Traffic from "./pages/Traffic";
-import Settings from "./pages/Settings";
-import Credentials from "./pages/Credentials";
-import Keys from "./pages/Keys";
-import Diagnostics from "./pages/Diagnostics";
-import MetricSources from "./pages/MetricSources";
+
+// 라우트 지연 로딩(IMP-85, direction 11) — 각 페이지를 별도 청크로 분할해 초기 eager 번들에서 뺀다.
+// 관제 콘솔은 한 번에 한 화면만 보므로, 진입 화면 청크만 받고 나머지는 이동 시점에 받는다.
+// 앱 셸(Layout/nav/providers/ErrorBoundary)은 정적 import 로 eager 유지 — 즉시 렌더된다.
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Ontology = lazy(() => import("./pages/Ontology"));
+const Usage = lazy(() => import("./pages/Usage"));
+const Guard = lazy(() => import("./pages/Guard"));
+const Traces = lazy(() => import("./pages/Traces"));
+const Sessions = lazy(() => import("./pages/Sessions"));
+const Models = lazy(() => import("./pages/Models"));
+const ModelImport = lazy(() => import("./pages/ModelImport"));
+const Playground = lazy(() => import("./pages/Playground"));
+const Eval = lazy(() => import("./pages/Eval"));
+const Endpoints = lazy(() => import("./pages/Endpoints"));
+const Gpu = lazy(() => import("./pages/Gpu"));
+const NodeMetrics = lazy(() => import("./pages/NodeMetrics"));
+const Network = lazy(() => import("./pages/Network"));
+const Topology = lazy(() => import("./pages/Topology"));
+const Investigate = lazy(() => import("./pages/Investigate"));
+const AiAgent = lazy(() => import("./pages/AiAgent"));
+const Traffic = lazy(() => import("./pages/Traffic"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Credentials = lazy(() => import("./pages/Credentials"));
+const Keys = lazy(() => import("./pages/Keys"));
+const Diagnostics = lazy(() => import("./pages/Diagnostics"));
+const MetricSources = lazy(() => import("./pages/MetricSources"));
 
 // 부팅 시 /capabilities 를 받아 배포 프로파일(observe/manage)을 확정한 뒤 앱을 그린다.
 export default function App() {
@@ -85,7 +90,11 @@ function AppInner() {
         {/* 페이지 단위 바운더리 — 한 화면의 렌더 throw 가 NAV/Layout 까지 죽이지 않게 격리.
             effPage 를 resetKey 로 두어 다른 화면으로 이동하면 자동 복구된다. */}
         <ErrorBoundary label={effPage} resetKey={effPage}>
-          {pageContent(effPage, navigate, pgModel)}
+          {/* 단일 Suspense — 지연 로딩되는 페이지 청크가 도착하기 전 CLS-safe PageSkeleton 을 아웃렛에 표시.
+              resetKey=effPage 로 화면 전환마다 fallback 이 다시 뜬다(직전 화면 잔상 방지). */}
+          <Suspense fallback={<PageSkeleton />}>
+            {pageContent(effPage, navigate, pgModel)}
+          </Suspense>
         </ErrorBoundary>
       </Layout>
     </ErrorBoundary>
