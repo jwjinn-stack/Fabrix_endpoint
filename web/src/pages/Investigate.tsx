@@ -19,6 +19,8 @@ import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
 import InfoTip from "../components/InfoTip";
+import StatusInfoTip from "../components/StatusInfoTip";
+import IncidentReadingGuide from "../components/IncidentReadingGuide";
 import EvidencePanel from "../components/EvidencePanel";
 import ObjectView, { useObjectView } from "../components/ObjectView";
 import type { OntologyObject } from "../api/types";
@@ -138,6 +140,11 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
           새로고침
         </button>
       </div>
+
+      {/* IMP-97 — '이 화면 읽는 법' 온보딩(default-collapsed·1회 dismiss·persistent '?').
+          신호→추정원인→영향→조치 3단 마이크로 런북 + 상태 용어 InfoTip(단일 glossary).
+          first-anomaly 타임라인은 여기 렌더 금지 — drill-down 층(hop/ObjectView EvidencePanel)에만(정보폭탄 방지). */}
+      <IncidentReadingGuide />
 
       {/* IMP-61 — 데모 컨트롤 바(재생 모드에서만). 순서 있는 step 을 이전/다음으로 이동. */}
       {demoOn && (
@@ -315,6 +322,8 @@ function HopCard({
           <span className="cop-hop-title">{hop.object.title}</span>
           <span className="cop-hop-type">{meta.label}</span>
           <Badge tone={STATUS_TONE[hop.status]} dot>{STATUS_LABEL[hop.status]}</Badge>
+          {/* IMP-97 — 상태 용어 InfoTip(단일 glossary). warn/crit 만 항목 있음(ok/unknown 은 skip). */}
+          {(hop.status === "warn" || hop.status === "crit") && <StatusInfoTip termKey={hop.status} />}
         </div>
 
         {/* 라벨 줄 — 시간축(먼저 무너진 것) + 추정 근본원인 / blast-radius 배지. */}
@@ -323,7 +332,7 @@ function HopCard({
             첫 이상 {hop.firstAnomalyLabel}
           </span>
           {hop.critical && <span className="cop-tag cop-tag-crit">추정 근본원인</span>}
-          {hop.blastRadius && <span className="cop-tag cop-tag-blast">영향 확산(blast-radius)</span>}
+          {hop.blastRadius && <span className="cop-tag cop-tag-blast">영향 확산(blast-radius)<StatusInfoTip termKey="blast" /></span>}
           {index === 0 && <span className="cop-tag cop-tag-entry">진입</span>}
         </div>
 

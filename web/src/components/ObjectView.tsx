@@ -18,6 +18,8 @@ import { ACTION_REGISTRY, getActionSpec } from "../actions/registry";
 import { objectViewSchema, useUrlState } from "../urlState";
 import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
+// IMP-97 — 상태 용어 InfoTip(단일 glossary: statusGlossary.ts). COP/KineticStrip 과 공유.
+import StatusInfoTip from "./StatusInfoTip";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
 import EvidencePanel from "./EvidencePanel";
@@ -402,6 +404,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
               {/* 상태 밴드 — 게이지(IMP-54)로 강도 인코딩 + 텍스트 Badge 병기(색-only 금지, WCAG 1.4.1). */}
               <div className="ov-status-band">
                 <Badge tone={STATUS_TONE[obj.status]} dot>{STATUS_LABEL[obj.status]}</Badge>
+                {/* IMP-97 — 상태 용어 InfoTip(단일 glossary). warn/crit 항목만(ok/unknown skip). */}
+                {(obj.status === "warn" || obj.status === "crit") && <StatusInfoTip termKey={obj.status} />}
                 {obj.status !== "unknown" && (
                   <Gauge
                     value={STATUS_GAUGE_VALUE[obj.status]}

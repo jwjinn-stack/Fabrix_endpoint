@@ -24,6 +24,8 @@ import DataFreshness from "./DataFreshness";
 import PauseToggle from "./PauseToggle";
 import ActionForm from "./ActionForm";
 import { ActionInfoTip, ReversibleChip } from "./ActionInfoTip";
+// IMP-97 — 상태 용어 InfoTip(단일 glossary: statusGlossary.ts). COP/ObjectView 와 공유.
+import StatusInfoTip from "./StatusInfoTip";
 // IMP-100 — 근거 슬롯을 세로 evidence timeline 시각언어로(단일 재사용 컴포넌트 + signals→마커 어댑터).
 import EvidenceTimeline, { markersFromSignals } from "./EvidenceTimeline";
 import type { NavFn } from "../router";
@@ -135,6 +137,10 @@ function KineticCard({
         </button>
         <div className="kinetic-object-meta">
           <Badge tone={STATUS_TONE[alert.status]} dot>{STATUS_LABEL[alert.status]}</Badge>
+          {/* IMP-97 — 상태 용어 InfoTip(단일 glossary). warn/crit 항목만(ok/unknown skip). */}
+          {(alert.status === "warn" || alert.status === "crit") && <StatusInfoTip termKey={alert.status} />}
+          {/* Kinetic 알림은 본질적으로 '발생·미확인(triggered)' — 아래 '확인·배정' rung 으로 ack. */}
+          <StatusInfoTip termKey="triggered" />
           {alert.breachCount > 1 && (
             <span className="kinetic-breach" title="지속 임계초과(누적)">지속 ×{alert.breachCount}</span>
           )}
@@ -153,6 +159,8 @@ function KineticCard({
         <span className="kinetic-slot-h">
           추정 원인
           <Badge tone={CONF_TONE[alert.confidence]}>신뢰도 {CONF_LABEL[alert.confidence]}</Badge>
+          {/* IMP-97 — 큐 적체(backpressure) 신호가 있으면 용어 InfoTip(단일 glossary). */}
+          {alert.signals.some((s) => s.kind === "backpressure") && <StatusInfoTip termKey="backpressure" />}
         </span>
         <p className="kinetic-cause">{alert.probableCause}</p>
       </div>
@@ -183,6 +191,8 @@ function KineticCard({
               <span className="kinetic-rung-n" aria-hidden="true">2</span>확인·배정
             </button>
           )}
+          {/* IMP-97 — 확인·배정 = ack(확인·배정됨) 용어 설명(단일 glossary). */}
+          {onNavigate && <StatusInfoTip termKey="acked" />}
           {/* (c) 추천 Action 실행 — ActionForm confirm(capability+status 게이팅). observe=비활성+사유. */}
           {spec && alert.suggestedAction && (
             !canExecute ? (

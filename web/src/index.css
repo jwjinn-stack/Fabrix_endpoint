@@ -2454,6 +2454,52 @@ tr.row-sel { background: var(--primary-weak) !important; }
 /* KineticStrip 실행 rung 옆 설명 묶음(InfoTip + 되돌리기 칩) */
 .kinetic-rung-explain { display: inline-flex; align-items: center; gap: 6px; }
 
+/* IMP-97: 상태 배지 옆 용어 InfoTip(단일 glossary). 배지에 붙는 작은 ⓘ — 색-only 배지에 텍스트 정의를 더한다. */
+.status-infotip { display: inline-flex; align-items: center; margin-left: 2px; }
+.status-infotip-why { display: block; margin-top: 4px; color: var(--text-dim, #6b7280); }
+
+/* IMP-97: 인시던트 '이 화면 읽는 법' 온보딩 — default-collapsed·persistent '?' 트리거(NN/g progressive disclosure). */
+.incident-guide {
+  margin-bottom: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.incident-guide-head { display: flex; }
+.incident-guide-trigger {
+  cursor: pointer; font: inherit; background: none; border: 0; width: 100%; text-align: left;
+  padding: var(--sp-2) var(--sp-3); display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm); color: var(--text-dim); border-radius: var(--radius-sm);
+}
+.incident-guide-trigger:hover { color: var(--text); }
+.incident-guide-trigger:focus-visible { outline: 2px solid var(--primary, #4a6da7); outline-offset: -2px; }
+/* persistent '?' — 작은 원형 배지(intrusive auto-firing coach mark 아님). */
+.incident-guide-q {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: 700; line-height: 1;
+  color: var(--onPrimary, #fff); background: var(--primary-strong);
+}
+.incident-guide-new {
+  margin-left: auto; font-size: var(--fs-xs); color: var(--primary-strong);
+  border: 1px solid var(--primary); border-radius: 999px; padding: 1px 8px;
+}
+.incident-guide-body { padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); }
+.incident-guide-lead { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); margin: 0; }
+.incident-guide-lead b { color: var(--text); }
+.incident-guide-steps { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+.incident-guide-step { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.incident-guide-num {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: 700;
+  color: var(--onPrimary, #fff); background: var(--primary-strong); line-height: 1;
+}
+.incident-guide-step-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.incident-guide-step-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+.incident-guide-step-d b { color: var(--text); }
+.incident-guide-foot { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.incident-guide-foot-hint { font-size: var(--fs-xs); }
+.incident-guide-foot-hint b { color: var(--text); }
+
 /* ── 의미론적 유틸 (IMP-19) ──
    일회성 인라인 style 의 raw-px/하드코딩 색을 토큰으로 수렴하기 위한 최소 유틸.
    상수-토큰 유틸(.mt-1 등)은 만들지 않는다(Pajamas deprecated). 반복 의도가
