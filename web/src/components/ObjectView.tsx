@@ -20,6 +20,7 @@ import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
+import EvidencePanel from "./EvidencePanel";
 import GpuHardwareSection from "./GpuHardwareSection";
 import MetricExplorer from "./MetricExplorer";
 import type { GpuHardware } from "../api/types";
@@ -209,6 +210,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   const obj = poll.data?.obj ?? null;
   const links = useMemo(() => poll.data?.links ?? [], [poll.data]);
   const index = useMemo(() => poll.data?.index ?? {}, [poll.data]);
+  // IMP-93 — 근거 패널이 소비할 객체 배열(index 전량). links 는 head 링크(K8s 상관은 objectId 결정적이라 충분).
+  const objectsArr = useMemo(() => Object.values(index), [index]);
   const loading = poll.loading;
   // 미존재 — 로드가 끝났는데(데이터 도착) obj 가 null. head 없거나 로딩 중엔 미표시.
   const missing = !!head && poll.data != null && poll.data.obj == null;
@@ -459,6 +462,15 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
           {/* (2b) GPU 하드웨어(IMP-76) — GpuDevice 이고 props.hw(GpuHardware)가 있으면 전용 섹션.
               XID·throttle reason·NVLink·PCIe·ECC·clock 을 그룹+단위+뱃지로. 없으면(레거시/실백엔드) skip. */}
           {obj.type === "GpuDevice" && gpuHw && <GpuHardwareSection hw={gpuHw} />}
+
+          {/* (2c) 근거(Evidence) — IMP-93: 채팅 없이 신호→추정원인→영향 접지. 순수 파생(IMP-99 seam).
+              인용 클릭 → 같은 패널에서 참조 객체로 in-place traverse(그래프에 있을 때). 채팅은 별도 화면(보조). */}
+          <EvidencePanel
+            objectId={obj.id}
+            objects={objectsArr}
+            links={links}
+            onCite={(id) => { if (index[id]) traverse(id); }}
+          />
 
           {/* (3) Related — 목록(linkKind 그룹, a11y-safe 기본) / 그래프(클릭형 토폴로지) 토글(IMP-84).
               목록은 항상 도달·키보드 순회 가능한 접근성 폴백(WCAG complex-image). 그래프 노드 클릭은

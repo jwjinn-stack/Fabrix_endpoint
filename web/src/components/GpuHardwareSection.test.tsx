@@ -114,7 +114,8 @@ describe("ObjectView — GPU 하드웨어 섹션 통합", () => {
       "gpu:g1": { id: "gpu:g1", type: "GpuDevice", title: "host/gpu0", status: "warn", revision: 1, props: { device: "g1", xid_recent: 48, throttle: "열(HW Thermal Slowdown)", hw: HW } },
     });
     render(<ToastProvider><ObjectView objectId="gpu:g1" onClose={() => {}} /></ToastProvider>);
-    await waitFor(() => expect(screen.getByText(/GPU 하드웨어/)).toBeInTheDocument());
+    // 하드웨어 섹션 heading 으로 스코프(IMP-93 근거 요약이 'GPU 하드웨어/포화' 서술을 포함하므로 heading 매칭).
+    await waitFor(() => expect(screen.getByRole("heading", { name: /GPU 하드웨어/ })).toBeInTheDocument());
     expect(screen.getByText(/최근 XID 48/)).toBeInTheDocument();
   });
 

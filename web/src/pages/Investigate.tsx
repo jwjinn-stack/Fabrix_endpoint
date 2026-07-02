@@ -19,7 +19,9 @@ import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
 import InfoTip from "../components/InfoTip";
+import EvidencePanel from "../components/EvidencePanel";
 import ObjectView, { useObjectView } from "../components/ObjectView";
+import type { OntologyObject } from "../api/types";
 import KineticStrip from "../components/KineticStrip";
 import { investigateSchema, useUrlState } from "../urlState";
 import { usePolling } from "../utils/usePolling";
@@ -249,6 +251,9 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
                     active={view.objectId === h.id}
                     demoActive={demoOn && h.id === activeStepId}
                     demoStep={demoOn && h.id === activeStepId ? activeStep : null}
+                    objects={objects}
+                    links={links}
+                    onOpenObject={(id) => view.open(id)}
                   />
                 ))}
               </ol>
@@ -273,6 +278,9 @@ function HopCard({
   active,
   demoActive = false,
   demoStep = null,
+  objects,
+  links,
+  onOpenObject,
 }: {
   hop: Hop;
   index: number;
@@ -281,6 +289,9 @@ function HopCard({
   active: boolean;
   demoActive?: boolean;
   demoStep?: DemoStep | null;
+  objects: OntologyObject[];
+  links: OntologyLink[];
+  onOpenObject: (id: string) => void;
 }) {
   const meta = typeVisual(hop.object.type);
   return (
@@ -350,6 +361,16 @@ function HopCard({
           </div>
         )}
       </button>
+
+      {/* IMP-93 — 근거(Evidence): 채팅 없이 신호→추정원인→영향 접지. hop 카드 버튼 밖에 두어 인용/expander
+          가 카드 버튼과 중첩되지 않게(nested button 금지). 인용 클릭 → 참조 객체 ObjectView 오픈. */}
+      <EvidencePanel
+        objectId={hop.id}
+        objects={objects}
+        links={links}
+        onCite={(id) => onOpenObject(id)}
+        dense
+      />
 
       {isLast && !demoActive && <p className="cop-foot-note">경로는 척추(serves→runsOn→hostedBy) 종점 이후 한 hop 을 더 펼쳐 조기 종결을 방지합니다.</p>}
     </li>

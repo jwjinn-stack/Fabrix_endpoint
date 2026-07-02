@@ -2554,6 +2554,43 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-section { margin-top: var(--sp-4); }
 .ov-h { font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); margin: 0 0 var(--sp-2); text-transform: uppercase; letter-spacing: .03em; }
 
+/* ── 근거(Evidence) 패널 — IMP-93. 채팅 없이 신호→추정원인→영향 접지(ObjectView + COP hop 공유). ── */
+.ev-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.ev-h-dense { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
+/* 신뢰도 배지 — 색-only 금지(텍스트 병기). high=스틸블루, med=중립. */
+.ev-conf { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); background: var(--surface-2); }
+.ev-conf-high { color: var(--primary-strong); background: var(--primary-weak); border-color: var(--primary-weak); }
+.ev-summary { font-size: var(--fs-sm); color: var(--text); margin: var(--sp-2) 0; line-height: 1.4; }
+.ev-empty { font-size: var(--fs-sm); color: var(--text-faint); margin: var(--sp-2) 0 0; font-style: italic; }
+.ev-lines { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ev-line {
+  border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm); background: var(--surface-2); padding: var(--sp-2) var(--sp-3);
+}
+/* first-anomaly(시간축 앵커) / k8s event 는 스틸블루 rail 로 "먼저 읽히게". */
+.ev-line-firstAnomaly, .ev-line-k8sEvent { border-left-color: var(--primary); }
+.ev-signal { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: var(--fs-body); }
+.ev-what { font-weight: 600; color: var(--text); }
+.ev-when { font-size: var(--fs-xs); color: var(--text-faint); }
+.ev-chain { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; margin-top: 3px; font-size: var(--fs-sm); color: var(--text-dim); }
+.ev-arrow { color: var(--primary); font-weight: 700; }
+.ev-cause { color: var(--text-dim); }
+.ev-impact { color: var(--text); }
+/* 인용 — objectId 형태면 클릭 가능(navigate/highlight), 아니면 텍스트. */
+.ev-cite { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+.ev-cite-link { background: var(--surface); color: var(--primary); cursor: pointer; }
+.ev-cite-link:hover { background: var(--primary-weak); border-color: var(--primary); color: var(--primary-strong); }
+.ev-expander {
+  margin-top: var(--sp-2); font-size: var(--fs-xs); font-weight: 600; color: var(--primary);
+  background: none; border: none; cursor: pointer; padding: 2px 0;
+}
+.ev-expander:hover { color: var(--primary-strong); text-decoration: underline; }
+.ev-expander-more { color: var(--text-faint); font-weight: 400; }
+/* COP hop 조밀 변형 — hop 카드 아래 얹히므로 여백 축소. */
+.ev-dense { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.ev-dense .ev-lines { gap: 6px; }
+.ev-dense .ev-line { padding: 6px var(--sp-2); }
+
 /* (3) Related — 목록/그래프 토글(IMP-84). 목록=a11y-safe 기본, 그래프=클릭형 토폴로지. */
 .ov-rel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .ov-rel-head .ov-h { margin: 0; }
