@@ -127,7 +127,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-80 | aesthetic | 대량 메트릭 분석 레이아웃 — 평면 key/value 상세를 Object View 360° 3층 위계(요약 스트립→카테고리 카드→전체 테이블) | low | M | medium | accepted | 2026-07-02 |
 | IMP-81 | code | 온톨로지 mock 매 호출 재구성 + 결정적 agent 루프의 상태·성능 리스크 정리(요청단위 스냅샷 메모이즈·writeback 병합·테스트) | low | M | medium | accepted | 2026-07-02 |
 | IMP-82 | ux | AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드(엔드포인트·모델·타임아웃, Dynamo :8000 프리셋, /health·/v1/models 프로브) | high | M | high | done | 2026-07-02 |
-| IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | grounded | 2026-07-02 |
+| IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | done | 2026-07-02 |
 | IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | done | 2026-07-02 |
 | IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | grounded | 2026-07-02 |
 | IMP-86 | aesthetic | MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태(IMP-73 확장, Stripe식 2열·Inspector 3탭) | medium | M | high | done | 2026-07-02 |
@@ -942,6 +942,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Deep-dive suggestion**: 없음 (패턴 확정, 구현 직행). IMP-60 AI Agent·IMP-78 로컬-inference·IMP-21 신선도와 정합.
 
 ### IMP-83 — 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 직관 설명
+- **Status**: done (2026-07-02) — 진행형 disclosure(auto-expand localStorage 카드 아님)로 정정 구현. (1) 스코어카드 "지금 주의를 요하는 것" 요약이 여전히 첫 섹션(action-first). (2) 탭바 아래 항상-접힌 네이티브 `<details>` "온톨로지란? 3단계로 보기"(ConceptDisclosure) — localStorage 상태 0(observe/manage·clone 재트리거 회피), 양 탭 공통 하나. 펼치면 과업(Task)→객체·관계(Object/Link)→조치(Action) 3단을 각 "무엇+왜 좋은가" 1~2줄. (3) 스키마 탭에 묻혔던 개념 헤더(semantic↔kinetic·느낌 3카드)를 disclosure로 승격·스키마 탭에서 제거(중복 카피 봉합). (4) 첫 at-risk 행에만 1회성 인라인 예시(Endpoint --serves--> Model 읽는 법 + [상세→] 눌러 kinetic Action 실행). (5) InfoTip 재사용(신규 dep 0): 요약 3그룹 라벨(운영 준비=Production Readiness/관측성=Observability/오너십=Ownership) + disclosure 내 핵심 용어 4종(Object/Link/Action/kinetic) 정의 — Palantir Foundry 어휘 정합. a11y: 네이티브 details 키보드 토글 + InfoTip WCAG 1.4.13/Esc. Spec: specs/2026-07-02/IMP-83-ontology-onboarding.md. 테스트 739 pass(IMP-83 신규 7케이스 + IMP-88 isolation 6 green), tsc+vite build green.
 - **Type**: ux (sev=medium, effort=S)
 - **Area**: `web/src/pages/Ontology.tsx`, `web/src/components/InfoTip.tsx`
 - **Problem**: Ontology 화면은 스코어카드/스키마 탭으로 곧장 들어가 처음 보는 오퍼레이터에게 '온톨로지가 무엇이고 이걸로 뭐가 좋아지나'를 전달하는 진입 온보딩이 없다. 개념 헤더(semantic↔kinetic, Object/Link/Action)는 secondary "스키마 참조" 탭 199~228행에 묻혀 용어를 이미 아는 사람만 이해하고, 유일한 진입 설명은 breadcrumb InfoTip 하나(147~151행)뿐(direction 6·10).

@@ -151,21 +151,23 @@ describe("Ontology — 실패 항목 딥링크(과업 연결)", () => {
 });
 
 describe("Ontology — 스키마 그래프 = 보조 탭(still reachable)", () => {
-  it("기본 탭엔 스키마 그래프 없음 → '스키마 참조' 탭 클릭 후 그래프·관계표·개념헤더·Action 표 등장", async () => {
+  it("기본 탭엔 스키마 그래프 없음 → '스키마 참조' 탭 클릭 후 그래프·관계표·Action 표 등장", async () => {
     const { container } = render(<Ontology />);
     await waitFor(() => expect(screen.getByText("지금 주의를 요하는 것")).toBeInTheDocument());
-    // 기본(스코어카드) 탭에는 스키마 그래프(topo-svg)·개념 느낌 카피가 없다.
+    // 기본(스코어카드) 탭에는 스키마 그래프(topo-svg)가 없다.
     expect(container.querySelector(".topo-svg")).toBeNull();
-    expect(screen.queryByText("온톨로지 렌즈")).toBeNull();
+    // IMP-83 — 개념 헤더는 이제 상단 disclosure(양 탭 공통) 로 승격됐다.
+    //   개념 카피는 disclosure 본문(.onto-onboard-body)에만 존재하고, 스키마 탭 섹션엔 없다(중복 제거).
+    expect(container.querySelectorAll(".onto-concept").length).toBe(0);
 
     // '스키마 참조' 탭으로 전환.
     fireEvent.click(screen.getByRole("tab", { name: "스키마 참조" }));
 
-    // 스키마 그래프(TopologyView) + 관계 정의 표(link kind) + 개념 헤더 느낌 + Action 표가 나타난다.
+    // 스키마 그래프(TopologyView) + 관계 정의 표(link kind) + Action 표가 나타난다.
     await waitFor(() => expect(container.querySelector(".topo-svg")).toBeInTheDocument());
     expect(screen.getByText(/serves \(서빙\)/)).toBeInTheDocument();
-    expect(screen.getByText("온톨로지 렌즈")).toBeInTheDocument();
-    expect(screen.getByText("접지된 AI")).toBeInTheDocument();
+    // IMP-83 — 개념 헤더 카피는 스키마 탭에서 제거됨(중복 없음, disclosure 로 단일화).
+    expect(container.querySelectorAll(".onto-concept").length).toBe(0);
     // Object Type 카탈로그(타입당 1장, count 0 타입 포함) — 8장(IMP-89 App 추가).
     expect(container.querySelectorAll(".onto-card").length).toBe(8);
     // Action Type 목록.
@@ -227,6 +229,87 @@ describe("Ontology — all-pass / empty / env-missing", () => {
     // 스키마 참조 탭 — 링크 없으니 그래프 빈 상태 graceful.
     fireEvent.click(screen.getByRole("tab", { name: "스키마 참조" }));
     await waitFor(() => expect(screen.getByText(/관측된 관계가 없습니다/)).toBeInTheDocument());
+  });
+});
+
+// IMP-83 — 무엇/왜 온보딩: action-first 유지 + 접힌 3단 disclosure(localStorage 없음) + 첫 at-risk 예시 + InfoTip.
+describe("Ontology — IMP-83 무엇/왜 온보딩(진행형 disclosure)", () => {
+  it("action-first: '주의 요약'이 온보딩 disclosure 위(먼저)에 온다", async () => {
+    const { container } = render(<Ontology />);
+    await waitFor(() => expect(screen.getByText("지금 주의를 요하는 것")).toBeInTheDocument());
+    // 스코어카드 요약 카드가 존재(접힘 chrome 아래로 밀리지 않음).
+    expect(container.querySelector(".onto-attn")).toBeInTheDocument();
+    // disclosure 어포던스도 존재하되 기본 접힘.
+    const details = container.querySelector<HTMLDetailsElement>("details.onto-onboard");
+    expect(details).toBeTruthy();
+    expect(details!.open).toBe(false);
+  });
+
+  it("disclosure는 기본 접힘(open=false) — 어포던스 라벨만 노출, 상단 chrome 아님", async () => {
+    const { container } = render(<Ontology />);
+    await waitFor(() => expect(screen.getByText("지금 주의를 요하는 것")).toBeInTheDocument());
+    // 어포던스 텍스트는 항상 보인다.
+    expect(screen.getByText(/온톨로지란\?/)).toBeInTheDocument();
+    // 네이티브 <details> 는 기본 접힘(브라우저가 본문을 숨김; jsdom 은 DOM 유지하나 open=false 검증).
+    const details = container.querySelector<HTMLDetailsElement>("details.onto-onboard")!;
+    expect(details.open).toBe(false);
+  });
+
+  it("disclosure 본문에 과업→객체·관계→조치 3단 + 느낌 카드가 들어 있다(펼침 시 노출)", async () => {
+    render(<Ontology />);
+    await waitFor(() => expect(screen.getByText("지금 주의를 요하는 것")).toBeInTheDocument());
+    // 3단 개념 콘텐츠(과업/객체·관계/조치) + semantic↔kinetic 느낌 카드가 disclosure 본문에 존재.
+    expect(screen.getByText(/과업\(Task\) 으로 시작/)).toBeInTheDocument();
+    // 3단 본문 설명 카피(객체·관계 / 조치 단계) 존재.
+    expect(screen.getByText(/명사와 관계의 그래프/)).toBeInTheDocument();
+    expect(screen.getByText(/kinetic 제어 — 읽기 전용의 종말/)).toBeInTheDocument();
+    expect(screen.getByText("온톨로지 렌즈")).toBeInTheDocument();
+    expect(screen.getByText("Kinetic 제어")).toBeInTheDocument();
+    expect(screen.getByText("접지된 AI")).toBeInTheDocument();
+  });
+
+  it("disclosure는 양 탭에서 동일하게 하나만 존재한다(공유 설명)", async () => {
+    const { container } = render(<Ontology />);
+    await waitFor(() => expect(screen.getByText("지금 주의를 요하는 것")).toBeInTheDocument());
+    expect(container.querySelectorAll("details.onto-onboard").length).toBe(1);
+    fireEvent.click(screen.getByRole("tab", { name: "스키마 참조" }));
+    await waitFor(() => expect(container.querySelector(".topo-svg")).toBeInTheDocument());
+    // 스키마 탭에서도 동일 disclosure 하나만(중복 개념 헤더 없음).
+    expect(container.querySelectorAll("details.onto-onboard").length).toBe(1);
+  });
+
+  it("첫 at-risk 행에만 1회성 구체 예시(Endpoint --serves--> Model) 힌트가 붙는다", async () => {
+    const { container } = render(<Ontology />);
+    await waitFor(() => expect(container.querySelectorAll(".onto-scorerow").length).toBe(5));
+    const hints = container.querySelectorAll(".onto-example-hint");
+    expect(hints.length).toBe(1); // 딱 첫 at-risk 행에만.
+    // 첫 행(정렬상 at-risk 최상단)에 붙는다.
+    const firstRow = container.querySelector(".onto-scorerow")!;
+    expect(firstRow.querySelector(".onto-example-hint")).not.toBeNull();
+    expect(hints[0].textContent).toMatch(/serves/);
+  });
+
+  it("그룹 라벨 + 용어(Object/Link/Action/kinetic)에 InfoTip(재사용) 이 붙는다", async () => {
+    const { container } = render(<Ontology />);
+    await waitFor(() => expect(container.querySelector(".onto-attn")).toBeInTheDocument());
+    // 그룹 라벨 3개 InfoTip(요약 미니바) → infotip trigger 존재.
+    expect(container.querySelectorAll(".onto-group-label .infotip").length).toBe(3);
+    // disclosure 본문의 용어 InfoTip 4종(Object/Link/Action/kinetic).
+    expect(container.querySelectorAll(".onto-onboard-body .infotip").length).toBe(4);
+  });
+
+  it("localStorage 상태 없음: 재마운트해도 disclosure 는 기본 접힘 유지", async () => {
+    const setSpy = vi.spyOn(Storage.prototype, "setItem");
+    const first = render(<Ontology />);
+    await waitFor(() => expect(first.container.querySelector("details.onto-onboard")).toBeTruthy());
+    first.unmount();
+    const second = render(<Ontology />);
+    await waitFor(() => expect(second.container.querySelector("details.onto-onboard")).toBeTruthy());
+    const details = second.container.querySelector<HTMLDetailsElement>("details.onto-onboard")!;
+    expect(details.open).toBe(false);
+    // 온보딩 상태를 localStorage 에 쓰지 않는다.
+    expect(setSpy).not.toHaveBeenCalledWith(expect.stringMatching(/onboard|onto/i), expect.anything());
+    setSpy.mockRestore();
   });
 });
 

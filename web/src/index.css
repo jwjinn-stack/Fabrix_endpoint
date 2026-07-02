@@ -2931,6 +2931,47 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .onto-feel-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
 .onto-feel-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
 
+/* IMP-83 — 무엇/왜 온보딩: 항상-접힌 한 줄 disclosure(진행형 노출·localStorage 없음).
+   추가형 — 기존 .card/.onto-feel 토큰 재사용, 신규 색 없음. */
+.onto-onboard {
+  margin-bottom: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 0;
+}
+.onto-onboard-summary {
+  cursor: pointer; list-style: none; padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm); color: var(--text-dim); display: flex; align-items: center; gap: var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.onto-onboard-summary::-webkit-details-marker { display: none; }
+.onto-onboard-summary b { color: var(--text); }
+.onto-onboard-summary:hover { color: var(--text); }
+.onto-onboard-summary:focus-visible { outline: 2px solid var(--primary, #4a6da7); outline-offset: -2px; }
+.onto-onboard-glyph { color: var(--primary-strong); flex: none; }
+.onto-onboard[open] .onto-onboard-glyph { transform: rotate(0); }
+.onto-onboard-body { padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); }
+.onto-steps { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+.onto-step { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.onto-step-num {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: 700;
+  color: var(--onPrimary, #fff); background: var(--primary-strong); line-height: 1;
+}
+.onto-step-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-step-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+
+/* 첫 at-risk 행의 1회성 예시 힌트(맥락형). */
+.onto-example-hint {
+  margin-top: var(--sp-2); display: flex; gap: var(--sp-2); align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.onto-example-glyph { color: var(--primary-strong); flex: none; line-height: 1.4; }
+.onto-example-body { display: flex; flex-direction: column; gap: 2px; }
+.onto-example-l1, .onto-example-l2 { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+.onto-example-l2 b { color: var(--text); }
+.onto-example-arrow { color: var(--primary-strong); font-family: var(--mono, monospace); }
+
 .onto-section-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-3); }
 .onto-section-h h2 { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
 .onto-section-h h2 .muted { font-size: var(--fs-sm); font-weight: 500; }
