@@ -310,10 +310,25 @@ function HopCard({
           <span className="cop-edge-badge">{EDGE_BADGE[hop.fromKind]}</span>
         </div>
       )}
-      <button
-        type="button"
+      {/* 카드는 role=button 인 div — 헤더의 상태 InfoTip(ⓘ)이 실제 <button> 이라, 네이티브 <button> 로 감싸면
+          nested-button(잘못된 HTML·hydration 에러) + ⓘ 클릭이 카드 열기까지 동시 발동. div+키보드 활성화로 회피. */}
+      <div
+        role="button"
+        tabIndex={0}
         className={`cop-hop ${hop.critical ? "crit" : ""} ${hop.blastRadius ? "blast" : ""} ${active ? "active" : ""} ${demoActive ? "demo-active" : ""}`}
-        onClick={onOpen}
+        onClick={(e) => {
+          // 내부 인터랙티브(상태 InfoTip ⓘ)에서 버블된 클릭은 카드 열기로 삼지 않는다(ⓘ는 툴팁 전용).
+          if ((e.target as HTMLElement).closest(".infotip")) return;
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          // Enter/Space = 활성화(네이티브 button 동형). 내부 인터랙티브(ⓘ)에서 온 이벤트는 위임 무시.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
         aria-current={active || demoActive ? "true" : undefined}
         title={`${meta.label} · ${hop.id} — 상세/조치 열기`}
       >
@@ -369,7 +384,7 @@ function HopCard({
             )}
           </div>
         )}
-      </button>
+      </div>
 
       {/* IMP-93 — 근거(Evidence): 채팅 없이 신호→추정원인→영향 접지. hop 카드 버튼 밖에 두어 인용/expander
           가 카드 버튼과 중첩되지 않게(nested button 금지). 인용 클릭 → 참조 객체 ObjectView 오픈. */}
