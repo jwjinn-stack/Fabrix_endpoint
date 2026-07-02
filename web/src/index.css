@@ -2192,6 +2192,20 @@ tr.row-sel { background: var(--primary-weak) !important; }
 @media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
+/* ══════════════════ IMP-102 — 어시스트 접근성 계약 재사용 유틸 ══════════════════ */
+/* WCAG 2.5.8 Target Size(Minimum) — 인터랙티브 타깃 ≥24×24px. 재사용 유틸. */
+.a11y-target-min { min-width: 24px; min-height: 24px; }
+/* 스트리밍 답변 log — role=log(완료 메시지만). 색/대비는 기존 토큰만(라이트+스틸블루). */
+.streaming-log-wrap { display: flex; flex-direction: column; }
+.streaming-log { display: flex; flex-direction: column; gap: var(--sp-2); overflow-y: auto; padding: var(--sp-2); }
+.streaming-log .sl-msg { padding: var(--sp-2) var(--sp-3); border-radius: 10px; line-height: 1.5; color: var(--text); max-width: 90%; }
+.streaming-log .sl-user { align-self: flex-end; background: var(--primary-weak); border: 1px solid var(--border); }
+.streaming-log .sl-assistant { align-self: flex-start; background: var(--surface-2, var(--brand-gray-weak)); border: 1px solid var(--border); }
+/* 진행 중(draft) 버블 — 시각 표시 전용(aria-hidden 이라 낭독 안 됨). */
+.streaming-log .sl-draft { opacity: 0.92; }
+.streaming-log .sl-caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: var(--primary); animation: blink-caret 1s step-end infinite; }
+@media (prefers-reduced-motion: reduce) { .streaming-log .sl-caret { animation: none; } }
+
 /* ══════════════════ 공용 UX 유틸 (Round P5 — agent/스트리밍/관측성) ══════════════════ */
 /* 스트리밍 캐럿 — 어시스턴트 응답 토큰 뒤 깜빡이는 막대(§6.3) */
 .stream-caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: var(--primary); animation: blink-caret 1s step-end infinite; }

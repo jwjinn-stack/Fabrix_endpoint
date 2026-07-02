@@ -146,7 +146,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-99 | code | 근거 파생 seam 통합 — objectId→상관 K8sPod/K8sEvent/큐신호→신호→추정원인→영향 구조체를 detection/investigate/ObjectView/MCP가 공유하는 단일 순수 함수 | medium | M | medium | done | 2026-07-02 |
 | IMP-100 | aesthetic | 근거 타임라인 시각언어 — 신호→추정원인→영향을 세로 evidence timeline으로(first-anomaly부터 severity 색·경과시간·인과 연결선, Datadog Watchdog/incident.io 수준) | medium | M | medium | done | 2026-07-02 |
 | IMP-101 | platform | 파드 상태·재시작·waiting reason·OOM 근거 수집을 kube-state-metrics + cAdvisor로 표준화 + 스케줄러/큐 메트릭 매핑(IMP-79/74 확장, 실수집 spike park) | medium | L | medium | spike-needed | 2026-07-02 |
-| IMP-102 | ux | 어시스트 접근성 계약 — 키보드 전 흐름·Esc·focus 복원 + 스트리밍은 role=log 완료 낭독+role=status 진행상태(증분 aria-live 금지) + 문자 단축키 input 무시 | high | S | high | grounded | 2026-07-02 |
+| IMP-102 | ux | 어시스트 접근성 계약 — 키보드 전 흐름·Esc·focus 복원 + 스트리밍은 role=log 완료 낭독+role=status 진행상태(증분 aria-live 금지) + 문자 단축키 input 무시 | high | S | high | done | 2026-07-02 |
 | IMP-103 | ux | 전역 in-context Assist 진입점 — 어디서나 ⌘/(또는 '?')로 '무엇이든 물어보기' 슬라이드 패널 + 자동 화면-컨텍스트 주입·'이 화면 설명' | high | M | high | grounded | 2026-07-02 |
 | IMP-104 | ux | explain-this-selection — data-explain-key 요소를 키보드 우선으로 콕 집어 물어보기(우클릭/롱프레스/텍스트선택은 보조) + native title= 60파일 은퇴 | high | M | high | grounded | 2026-07-02 |
 | IMP-105 | ux | 위젯·영역 메타 선언(widgetMeta.ts, 무엇을 보여주는지) + '이 숫자 좋은가/나쁜가' IMP-7 임계 참조로 파생 + get_screen_context/describe_widget 근거 인용 | medium | M | high | done | 2026-07-02 |
@@ -1142,6 +1142,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Deep-dive suggestion**: oss-evaluate + spike-needed(실수집은 in-cluster pod 배포). IMP-79/74와 함께 spike park. 익스포터→K8sSnapshot 필드 매핑 표를 IMP-74 매트릭스에 추가.
 
 ### IMP-102 — 어시스트 접근성 계약 — 키보드 전 흐름·Esc·focus 복원 + 스트리밍 낭독 정정
+- **Status**: done (2026-07-02) — 재사용 a11y primitive 를 `web/src/a11y/` 에 추출(IMP-103 이 mount 할 계약, 패널 자체는 미구현). (1) `useDialogA11y` — APG Dialog: 열 때 initialFocusRef(입력창) 초기 포커스, Esc 닫기, Tab/Shift+Tab 트랩(열린 동안만), 닫을 때 트리거로 포커스 복원. 네이티브 `<dialog>` 강제 아님(div[role=dialog] 도 동작 — IMP-103 슬라이드/complementary 여지). IMP-12/31 `<dialog>` 컴포넌트는 불변. (2) `useStreamingLog` + `StreamingLog` — **증분 aria-live 금지 정정**: role=log(aria-live=polite·aria-atomic=false)에는 commit 된 완성 메시지만 append(한 번에 낭독), 진행 중 draft 버블은 aria-busy=true+aria-hidden(낭독 제외), 진행/완료/에러는 별도 role=status(polite)로 "응답 생성 중"/"완료"/"연결 오류"(무음 실패 금지). fail 은 부분 응답 미확정. shouldFollowScroll() 로 스크롤 점프 방지. (3) `useGlobalShortcutGuard` — WCAG 2.1.4: ⌘/(chord) primary, bare '?' secondary, input/textarea/contenteditable·IME(isComposing/229) 무시, enabled=false 로 끄기. (4) `.a11y-target-min`(≥24px, WCAG 2.5.8) + 라이트+스틸블루 토큰만. 테스트 `src/a11y/a11y-contract.test.tsx` 19케이스(focus init/restore/Esc/trap · role=log 완료 append not 증분 · aria-busy draft 제외 · role=status 진행 · shortcut input/IME/끄기 가드 · 스크롤 점프). 전체 899 pass(93 파일, IMP-88 isolation green), eslint(a11y) clean, tsc+vite build green. Spec: specs/2026-07-02/IMP-102-assist-a11y-contract.md.
 - **Type**: ux (sev=high, effort=S)
 - **Area**: `web/src/components/AssistPanel.tsx`(신규), `web/src/components/Layout.tsx`(전역 keydown)
 - **Problem**: 전역 오버레이/스트리밍 답변은 접근성 회귀의 단골(포커스 미복원·스트리밍 텍스트 미낭독·모달 트랩 누락). 이미 IMP-12/31에서 손수 다이얼로그의 트랩·복원이 문제였고, 새 어시스트가 aria-live 없이 증분 토큰을 흘리면 스크린리더 사용자는 답을 못 듣는다. ?/⌘/ 전역 단축키가 입력 필드 안에서 오발화하면 폼 타이핑을 깬다.
