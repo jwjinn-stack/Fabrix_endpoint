@@ -39,6 +39,8 @@ func TestMCP_OntologyContract_ReadOnlyShape(t *testing.T) {
 		"query_objects": false, "traverse_links": false, "get_object": false, "get_object_metrics": false,
 		// IMP-91 — read-only Kubernetes 조회 tool(list/get/describe; mutating verb 없음).
 		"list_pods": false, "list_nodes": false, "get_events": false, "describe_deployment": false,
+		// IMP-98 — 복합 진단 read-only tool(coarse-grained; buildIncidentEvidence seam 노출, mutating verb 없음).
+		"get_incident_context": false, "get_pod_diagnostics": false,
 	}
 	for _, s := range specs {
 		if s.InputSchema == nil {
@@ -69,8 +71,8 @@ func TestMCP_OntologyContract_ReadOnlyShape(t *testing.T) {
 func TestMCP_ToolsList_IncludesOntology(t *testing.T) {
 	rec := postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`)
 	body := rec.Body.String()
-	// aggregate + 온톨로지 read tool + K8s read tool(IMP-91)이 모두 노출(합집합).
-	for _, name := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics", "list_pods", "list_nodes", "get_events", "describe_deployment"} {
+	// aggregate + 온톨로지 read tool + K8s read tool(IMP-91) + 복합 진단 tool(IMP-98)이 모두 노출(합집합).
+	for _, name := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics", "list_pods", "list_nodes", "get_events", "describe_deployment", "get_incident_context", "get_pod_diagnostics"} {
 		if !strings.Contains(body, `"`+name+`"`) {
 			t.Errorf("tools/list 에 %q 가 없음: %s", name, body)
 		}

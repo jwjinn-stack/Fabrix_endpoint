@@ -1460,6 +1460,26 @@ export type K8sStep =
   | { kind: "reasoning"; text: string }
   | { kind: "tool"; call: { tool: K8sToolName; args: Record<string, string> }; result: K8sToolResult };
 
+// 복합 진단 tool 이름(IMP-98) — coarse-grained read-only. 원자 K8sToolName 과 분리(ReAct-auto 아님, 직접 호출).
+export type CompositeDiagToolName = "get_incident_context" | "get_pod_diagnostics";
+
+// get_pod_diagnostics 결과(IMP-98) — 파드 진단 번들. 파드 사실 + 상관 객체의 IncidentEvidence(동일 seam).
+// found=false 면 pod 미발견(환각 금지). evidence 는 파드가 상관하는 온톨로지 객체의 원인 컨텍스트(있으면).
+export interface PodDiagnostics {
+  pod: string;                 // 정규화한 파드 이름(pod/ 접두 제거)
+  found: boolean;              // 스냅샷에서 파드 발견 여부
+  phase?: K8sPod["phase"];
+  ready?: boolean;
+  restarts?: number;
+  oomKilled?: boolean;
+  waitingReason?: string;      // waiting reason(CrashLoopBackOff 등) — K8sPod.reason
+  node?: string;
+  objectId?: string;           // 상관된 온톨로지 객체 id(인용 소스)
+  relatedEvents: K8sEvent[];   // 이 파드 involvedObject 인 이벤트(원인 접지)
+  summary: string;             // 사람용 한 줄 요약(escape 렌더)
+  mock: true;                  // 정직성 — mock 파생 표기
+}
+
 // K8s 답 한 건 — 파드/노드 진단 서술 + 근거(k8s 리소스 + 온톨로지 objectId 인용).
 export interface K8sFinding {
   id: string;
