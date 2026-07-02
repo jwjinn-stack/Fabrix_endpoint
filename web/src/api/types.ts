@@ -1059,10 +1059,21 @@ export interface SessionDetail {
 // 임계 상태는 단일 출처(mockFactory.statusFromThresholds) — GPU tempColor/gpuStatus 와 통일.
 export type NodeStatus = "ok" | "warn" | "crit";
 
+// 토폴로지 그래프 노드 kind. 운영 토폴로지(IMP-45/47/48)는 server/service/gpu 3종만 쓰지만,
+// IMP-84 에서 ObjectView 관계 그래프가 layoutTopology()/TopologyView 를 재사용하면서 온톨로지
+// ObjectType(Model/Endpoint/Service/GpuDevice/Node/Trace/Incident/App)을 각기 다른 kind 로 실어보낸다.
+// union 을 넓히지 않으면 미지 kind 가 전부 'service' 로 붕괴해 layout tier tie-break(KIND_ORDER)를
+// 잃는다(IMP-84 유일한 비자명 변경). kind 는 layout 정렬·노드 반경 tie-break 힌트일 뿐 — 상태색·
+// 라벨은 objectTypeVisual 단일 출처가 담당한다. exhaustive Record 소비처(NODE_R·KIND_LABEL)는
+// 부분 맵 + fallback 조회로 넓힌 union 을 흡수한다(운영 토폴로지 회귀 0).
+export type TopologyNodeKind =
+  | "server" | "service" | "gpu" // 운영 토폴로지(IMP-45)
+  | "model" | "endpoint" | "node" | "trace" | "incident" | "app"; // 온톨로지 관계 그래프(IMP-84)
+
 // 토폴로지 그래프 노드. server=GPU 노드 호스트, service=엔드포인트/서빙, gpu=개별 GPU 디바이스.
 export interface TopologyNode {
   id: string;
-  kind: "server" | "service" | "gpu";
+  kind: TopologyNodeKind;
   status: NodeStatus;
   label: string;
   metrics?: Record<string, number>; // 노드 요약 지표(util·qps 등) — 화면 툴팁/셀 강조용
@@ -1133,17 +1144,18 @@ export interface NetworkReport {
 // 것을 넘어, 도메인을 명사(Object)·관계(Link)·동사(Action)로 표현하는 공용 계약(common contract) 계층.
 // 단일 출처: 온톨로지는 기존 Model/Endpoint/Service/GpuDevice/Node/Trace/Incident mock 을 승격해 파생한다.
 
-// §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑.
-// Model~Incident 는 SUBJECT-MATTER(디지털트윈) 층. Task 는 그 위에 얹는 PROCESS 층 1급 객체(IMP-69) —
-// "내게 할당된 운영 과업"(assignee·priority·status·workflow)을 온톨로지 객체로 승격해 Action Inbox 진입점을 만든다.
-export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident" | "Task";
+// §5.1 Object Types (명사) — 현실 엔티티를 디지털로 매핑. 전부 SUBJECT-MATTER(디지털트윈) 층.
+// (IMP-90: PROCESS 층 Task 는 제거 — 관제 콘솔은 과업 배정이 아니라 알림+즉시대응(KineticStrip)으로 수렴.)
+// (IMP-89: App = 소비자(Consumer) 엔티티. app_id 를 leaf 컬럼이 아니라 traversable 객체로 승격 —
+//  Endpoint→App(어느 앱이 이 EP 로 라우팅되나) 관계를 COP/ObjectView/스키마 그래프에 노출.)
+export type ObjectType = "Model" | "Endpoint" | "Service" | "GpuDevice" | "Node" | "Trace" | "Incident" | "App";
 
 // §5.2 Link Types (관계 그래프) — 트러블슈팅 척추:
 //   Service --consumes--> Endpoint --serves--> Model --runsOn--> GpuDevice --hostedBy--> Node
 //   Trace --routedTo--> Endpoint · Trace --executedOn--> GpuDevice · Incident --affects--> {any object}
-// PROCESS↔SUBJECT-MATTER 다리(IMP-69):
-//   Incident --spawns--> Task (인시던트가 과업을 낳음) · Task --tracks--> {subject-matter object} (과업이 감시/조치하는 대상)
-export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects" | "spawns" | "tracks";
+//   Endpoint --routes--> App (IMP-89: 이 엔드포인트가 라우팅하는 소비자 앱)
+// (IMP-90: PROCESS↔SUBJECT-MATTER 다리 spawns/tracks 는 Task 제거와 함께 삭제.)
+export type LinkKind = "serves" | "runsOn" | "hostedBy" | "routedTo" | "executedOn" | "consumes" | "affects" | "routes";
 
 // 온톨로지 공통 상태 렌즈 — 기존 NodeStatus(ok|warn|crit) + unknown(미배포/미측정). 소스에서 파생(단일 출처).
 export type ObjectStatus = "ok" | "warn" | "crit" | "unknown";
@@ -1209,46 +1221,7 @@ export interface ActionResult {
   reason?: string;           // 실패(denied/conflict) 사유 — 기계판독
 }
 
-// ───────────── PROCESS 레이어 — Task / Workflow (IMP-69) ─────────────
-// docs/ontology-usecase-comparison.md §1B·§4 (Palantir operational-process-coordination).
-// 실사례는 온톨로지를 2계층으로 운영한다: PROCESS(Task: assignee·시각·priority·status, Workflow=순차 단계)
-// OVER SUBJECT-MATTER(디지털트윈 = 위의 Model/Endpoint/GpuDevice/Node/Service/Trace 그래프).
-// Task 는 1급 ObjectType 이라 ObjectView(IMP-57)가 그대로 렌더하고, tracks 링크로 subject-matter 객체에 연결된다.
-// 진입점 = Action Inbox(/inbox): 할당된 과업 큐 → 컨텍스트 탐색 → 조치 → 양 계층 writeback(IMP-59 계약).
-
-export type TaskPriority = "low" | "med" | "high" | "urgent";
-// 과업 상태 — Workflow 순차 단계와 1:1(triaged→assigned→in-progress→resolved). open=미분류 초기.
-export type TaskStatus = "open" | "triaged" | "assigned" | "in-progress" | "resolved";
-
-// OntologyObject<TaskProps> 의 props — Task 객체가 담는 PROCESS 필드.
-export interface TaskProps {
-  title: string;
-  assignee: string;           // 담당자(운영자). 미할당이면 "" (open/triaged).
-  createdAt: string;          // 생성 시각(ISO)
-  assignedAt?: string;        // 할당 시각(ISO) — assign 시 기록
-  priority: TaskPriority;
-  status: TaskStatus;
-  linkedObjectIds: string[];  // subject-matter refs(이 과업이 tracks 하는 디지털트윈 객체 id)
-  workflowId: string;         // 소속 Workflow 정의 id
-  workflowStepIndex: number;  // Workflow.steps 내 현재 위치(status 와 동기화)
-  spawnedByIncidentId?: string; // 이 과업을 낳은 Incident id(있으면)
-  // OntologyObject.props 는 Record<string, unknown> 호환이어야 하므로 인덱스 시그니처 허용.
-  [k: string]: unknown;
-}
-
-// Workflow 단계 정의 한 칸 — key(상태와 매칭)·label(사람용)·terminal(종료 단계 여부).
-export interface WorkflowStep {
-  key: TaskStatus;
-  label: string;
-  terminal?: boolean;
-}
-
-// Workflow = 순차 단계의 정렬 목록(디지털트윈 위 PROCESS 층). Task.workflowStepIndex 가 이 배열의 위치.
-export interface WorkflowDef {
-  id: string;
-  name: string;
-  steps: WorkflowStep[];
-}
+// (IMP-90: PROCESS 레이어 Task / Workflow 타입은 제거 — /inbox 및 과업 할당 레이어 폐기.)
 
 // 응답 래퍼 — GET /ontology/objects, GET /ontology/objects/:id/links.
 export interface OntologyObjectList {
@@ -1414,6 +1387,101 @@ export interface AgentInsightRun {
   audit: AgentAuditEntry[];
   generated_at: string;
   source: string;                  // "agent-insights (mock)" | 실백엔드
+}
+
+// ── Kubernetes 클러스터 상태 질의(IMP-91) — read-only K8s MCP tool ──────────────
+// AI Agent 가 온톨로지 스냅샷을 넘어 실 클러스터 상태(파드 재시작·노드 NotReady·OOMKilled·rollout)를
+// 조회한다. mock-first(source 에 "mock" 표기·mock=true), 실연동은 official kubernetes-mcp-server SPIKE.
+// **read-only ONLY** — list/get/describe 만. mutating k8s verb(scale/restart/drain/cordon/delete)는 tool 로 없다.
+
+// K8s 파드 — 재시작 카운트·OOMKilled·phase. objectId 로 온톨로지 객체(Endpoint/Model/Node)와 상관.
+export interface K8sPod {
+  name: string;
+  namespace: string;
+  phase: "Pending" | "Running" | "Succeeded" | "Failed" | "Unknown";
+  ready: boolean;
+  restarts: number;          // 컨테이너 재시작 누적
+  oomKilled: boolean;        // 최근 종료가 OOMKilled 인지
+  node: string;              // 스케줄된 노드 이름
+  objectId?: string;         // 상관된 온톨로지 객체 id(인용 소스)
+  reason?: string;           // 비정상 phase 사유(CrashLoopBackOff 등)
+}
+
+// K8s 노드 — condition(Ready/NotReady) + NotReady 사유. objectId 로 온톨로지 Node 와 상관.
+export interface K8sNode {
+  name: string;
+  condition: "Ready" | "NotReady" | "MemoryPressure" | "DiskPressure" | "PIDPressure";
+  reason?: string;           // NotReady 사유(KubeletNotReady 등)
+  objectId?: string;         // 상관된 온톨로지 Node id(인용 소스)
+}
+
+// K8s 이벤트 — reason·message·involvedObject(파드/노드). 파드 재시작 원인 접지.
+export interface K8sEvent {
+  reason: "OOMKilling" | "BackOff" | "CrashLoopBackOff" | "FailedScheduling" | "Unhealthy" | "NodeNotReady" | "Evicted";
+  message: string;           // 사람용 이벤트 메시지(escape 렌더)
+  involvedObject: string;    // 대상(pod/<name> 또는 node/<name>)
+  count: number;
+  objectId?: string;         // 상관된 온톨로지 객체 id(인용 소스)
+}
+
+// K8s 배포 rollout 상태 — desired/updated/available/unavailable + 조건. objectId 로 Endpoint 와 상관.
+export interface K8sDeployment {
+  name: string;
+  namespace: string;
+  desired: number;
+  updated: number;
+  available: number;
+  unavailable: number;
+  rollout: "complete" | "progressing" | "stalled"; // 파생 상태
+  objectId?: string;         // 상관된 온톨로지 Endpoint id(인용 소스)
+}
+
+// K8s 스냅샷(결정적 파생) — 온톨로지 객체/링크에서 상관 파생. 실연동 시 이 스키마를 kube-mcp 가 채운다.
+export interface K8sSnapshot {
+  pods: K8sPod[];
+  nodes: K8sNode[];
+  events: K8sEvent[];
+  deployments: K8sDeployment[];
+}
+
+// K8s 질의 tool 이름(read-only 4종) — 모델이 자동 실행. mutating 은 의도적으로 배제(two-tier).
+export type K8sToolName = "list_pods" | "list_nodes" | "get_events" | "describe_deployment";
+
+// K8s tool 실행 결과 — 접지한 리소스 이름 + 온톨로지 objectId 인용(RCA 인용의 출처).
+export interface K8sToolResult {
+  resourceRefs: string[];    // 이 tool 이 접지한 k8s 리소스(pod/<name>·node/<name>)
+  objectIds: string[];       // 상관된 온톨로지 객체 id(인용 소스)
+  summary: string;           // 사람용 한 줄 요약(escape 렌더)
+  found: boolean;
+}
+
+// ReAct 타임라인 한 스텝(K8s) — reasoning 또는 k8s tool 호출+결과.
+export type K8sStep =
+  | { kind: "reasoning"; text: string }
+  | { kind: "tool"; call: { tool: K8sToolName; args: Record<string, string> }; result: K8sToolResult };
+
+// K8s 답 한 건 — 파드/노드 진단 서술 + 근거(k8s 리소스 + 온톨로지 objectId 인용).
+export interface K8sFinding {
+  id: string;
+  title: string;
+  claim: string;             // 진단 서술(escape 렌더 — "추정")
+  severity: "info" | "warn" | "crit";
+  resourceRefs: string[];    // 근거 k8s 리소스
+  citations: string[];       // 근거 온톨로지 objectId(비면 상관 없음)
+}
+
+// K8s 질의 실행 1회 결과 — AgentRun 의 형제. mock=true + source 에 "mock" 로 정직 표기.
+export interface K8sQueryRun {
+  traceId: string;
+  intent: string;
+  steps: K8sStep[];
+  findings: K8sFinding[];
+  grounded: boolean;         // 답할 근거(파드/노드/이벤트)가 있으면 true
+  mock: boolean;             // true = mock 데이터(실 k8s 아님, direction 8 정직성)
+  fallbackNote?: string;     // grounded=false 시 안내(지어내지 않음)
+  audit: AgentAuditEntry[];
+  generated_at: string;
+  source: string;            // "kubernetes (mock)" | 실 kube-mcp
 }
 
 // ── Kinetic 감지→객체 귀속 파생 레이어(IMP-72) ──────────────────────────────

@@ -18,9 +18,10 @@
 import type {
   AgentAuditEntry, AgentInsightRun, AgentRun, AgentStep, AgentToolName, AgentToolResult,
   ClusterInsight, InsightKind, ObjectType, OntologyLink, OntologyObject, RcaCandidate,
+  K8sSnapshot, K8sStep, K8sToolName, K8sToolResult, K8sFinding, K8sQueryRun,
 } from "./types";
 import { buildRootCausePath, defaultEntry, pickEntryCandidates } from "./investigate";
-import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
+import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
 
 // AGENT_TOOL_CONTRACT — ReAct 루프가 자동 실행하는 read tool(agent 내부명)을 MCP-canonical tool 명에 바인딩.
 // getIncidents 는 query_objects{type:Incident} 의 편의 별칭이라 같은 계약(query_objects)에 매핑된다.
@@ -475,5 +476,195 @@ export function buildAgentInsights(
     audit,
     generated_at: ts,
     source: "agent-insights (mock)",
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// IMP-91 — Kubernetes 클러스터 상태 질의(read-only K8s MCP tool)
+// ══════════════════════════════════════════════════════════════════════════
+// 에이전트가 온톨로지 스냅샷을 넘어 실 클러스터 상태(파드 재시작·노드 NotReady·OOMKilled·rollout)를 조회한다.
+// kagent/k8sgpt 식 자연어 클러스터 진단의 read 축. Dynamo/vLLM 워크로드가 K8s 위에 돌기에 GPU/Node 온톨로지
+// 이상 ↔ 파드/노드 이벤트를 상관시켜 답한다.
+//
+// **핵심 안전(two-tier)**: 아래 tool 은 조회(list/get/describe)만. mutating k8s verb 는 존재하지 않는다 →
+//   에이전트가 confirm 없이 클러스터를 변경할 구조적 경로가 없다(assertReadOnly + Go contract_test 이중 강제).
+// **정직성(direction 8)**: K8sSnapshot 은 mock 파생이며 결과 mock=true·source 에 "mock" 표기. 실연동은
+//   official kubernetes-mcp-server SPIKE — 이 계약(K8S_TOOL_REGISTRY·K8sSnapshot 스키마)은 그대로 두고
+//   snapshot 소스만 실 kube-mcp 로 스왑하면 된다(transport-only).
+// **격리(direction 9)**: 아래 tool 은 K8sSnapshot 배열을 받는 순수 필터라 빈/부분 스냅샷에서 graceful degrade.
+
+// 모듈 로드 시 1회 — K8s tool 계약이 레지스트리에 실재하는지 강제(drift 즉시 감지).
+const K8S_AGENT_TOOLS: K8sToolName[] = ["list_pods", "list_nodes", "get_events", "describe_deployment"];
+for (const name of K8S_AGENT_TOOLS) {
+  if (!K8S_TOOL_REGISTRY[name]) {
+    throw new Error(`K8s agent tool ${name} 이 K8S_TOOL_REGISTRY 에 없습니다(계약 불일치)`);
+  }
+}
+
+// ── read-only k8s tool 구현(K8sSnapshot 위 순수 필터) ────────────────────────
+// tool: list_pods(namespace?, phase?, objectId?) — 파드를 조건으로 추린다. objectId 로 온톨로지 상관.
+export function toolListPods(
+  k8s: K8sSnapshot,
+  args: { namespace?: string; phase?: string; objectId?: string },
+): K8sToolResult {
+  let rows = k8s.pods;
+  if (args.namespace) rows = rows.filter((p) => p.namespace === args.namespace);
+  if (args.phase) rows = rows.filter((p) => p.phase === args.phase);
+  if (args.objectId) rows = rows.filter((p) => p.objectId === args.objectId);
+  const refs = rows.map((p) => `pod/${p.name}`).sort();
+  const objectIds = Array.from(new Set(rows.map((p) => p.objectId).filter((v): v is string => !!v))).sort();
+  const bad = rows.filter((p) => p.restarts > 0 || p.oomKilled || p.phase === "Failed");
+  return {
+    resourceRefs: refs,
+    objectIds,
+    summary: rows.length ? `파드 ${rows.length}건(재시작·이상 ${bad.length}건)` : "일치하는 파드 없음",
+    found: rows.length > 0,
+  };
+}
+
+// tool: list_nodes(condition?) — 노드를 condition 으로 추린다(NotReady 탐색).
+export function toolListNodes(k8s: K8sSnapshot, args: { condition?: string }): K8sToolResult {
+  let rows = k8s.nodes;
+  if (args.condition) rows = rows.filter((n) => n.condition === args.condition);
+  const refs = rows.map((n) => `node/${n.name}`).sort();
+  const objectIds = Array.from(new Set(rows.map((n) => n.objectId).filter((v): v is string => !!v))).sort();
+  const notReady = rows.filter((n) => n.condition !== "Ready");
+  return {
+    resourceRefs: refs,
+    objectIds,
+    summary: rows.length ? `노드 ${rows.length}건(비정상 ${notReady.length}건)` : "일치하는 노드 없음",
+    found: rows.length > 0,
+  };
+}
+
+// tool: get_events(objectId?, reason?) — 최근 이벤트를 추린다(파드 재시작 원인 접지).
+export function toolGetEvents(k8s: K8sSnapshot, args: { objectId?: string; reason?: string }): K8sToolResult {
+  let rows = k8s.events;
+  if (args.objectId) rows = rows.filter((e) => e.objectId === args.objectId);
+  if (args.reason) rows = rows.filter((e) => e.reason === args.reason);
+  const refs = Array.from(new Set(rows.map((e) => e.involvedObject))).sort();
+  const objectIds = Array.from(new Set(rows.map((e) => e.objectId).filter((v): v is string => !!v))).sort();
+  return {
+    resourceRefs: refs,
+    objectIds,
+    summary: rows.length ? `이벤트 ${rows.length}건(${Array.from(new Set(rows.map((e) => e.reason))).join(", ")})` : "최근 이벤트 없음",
+    found: rows.length > 0,
+  };
+}
+
+// tool: describe_deployment(name?, objectId?) — 배포 rollout 상태를 조회한다.
+export function toolDescribeDeployment(k8s: K8sSnapshot, args: { name?: string; objectId?: string }): K8sToolResult {
+  let rows = k8s.deployments;
+  if (args.name) rows = rows.filter((d) => d.name === args.name);
+  if (args.objectId) rows = rows.filter((d) => d.objectId === args.objectId);
+  const refs = rows.map((d) => `deployment/${d.name}`).sort();
+  const objectIds = Array.from(new Set(rows.map((d) => d.objectId).filter((v): v is string => !!v))).sort();
+  const stalled = rows.filter((d) => d.rollout !== "complete");
+  return {
+    resourceRefs: refs,
+    objectIds,
+    summary: rows.length ? `배포 ${rows.length}건(미완료 rollout ${stalled.length}건)` : "일치하는 배포 없음",
+    found: rows.length > 0,
+  };
+}
+
+// 의도(자연어) → 조회 계획(어느 tool 을 순서대로 부를지). 결정적 키워드 매칭 — 모델 없이도 재현 가능.
+type K8sPlan = "pods" | "nodes" | "deployment";
+function planFromIntent(intent: string): K8sPlan {
+  const t = intent.toLowerCase();
+  if (/notready|not ready|노드|node/.test(t)) return "nodes";
+  if (/rollout|배포|deploy|롤아웃/.test(t)) return "deployment";
+  // 기본: 파드 재시작/OOM 진단(재시작·oom·crash·파드).
+  return "pods";
+}
+
+// ── K8s 질의 루프(결정적 ReAct) ──────────────────────────────────────────────
+// intent 로 조회 계획을 세우고, k8s read tool 을 순서대로 실행(자동)하며 ReAct 타임라인을 만든다.
+// findings 는 이상 리소스(재시작·OOMKilled·NotReady·미완료 rollout)를 근거(k8s ref + 온톨로지 objectId)와 함께 낸다.
+// grounding 없으면(모두 정상) 지어내지 않고 fallbackNote 로 안내.
+export function runK8sQuery(
+  k8s: K8sSnapshot,
+  opts: { intent?: string; traceId: string; nowIso?: string },
+): K8sQueryRun {
+  const ts = opts.nowIso ?? new Date().toISOString();
+  const intent = (opts.intent ?? "왜 이 파드가 재시작했나?").trim();
+  const traceId = opts.traceId;
+  const plan = planFromIntent(intent);
+
+  const steps: K8sStep[] = [];
+  const audit: AgentAuditEntry[] = [];
+  const rec = (kind: AgentAuditEntry["kind"], detail: string) => audit.push({ traceId, kind, detail, ts });
+  const reason = (text: string) => { steps.push({ kind: "reasoning", text }); rec("reasoning", text); };
+  const runTool = (tool: K8sToolName, args: Record<string, string>, result: K8sToolResult) => {
+    steps.push({ kind: "tool", call: { tool, args }, result });
+    rec("tool", `${tool}(${JSON.stringify(args)}) → ${result.resourceRefs.length}건`);
+    return result;
+  };
+
+  rec("prompt", `intent: ${intent.slice(0, 120)} (mock k8s)`);
+  reason("실 클러스터 상태(파드·노드·이벤트·배포)를 read-only tool 로 조회한다. 결과는 mock 데이터입니다.");
+
+  const findings: K8sFinding[] = [];
+
+  if (plan === "nodes") {
+    reason("어느 노드가 NotReady 인지 조회하고, 온톨로지 Node 객체와 상관시킨다.");
+    const nodes = runTool("list_nodes", {}, toolListNodes(k8s, {}));
+    // NotReady 노드마다 finding — node objectId 인용.
+    for (const n of k8s.nodes.filter((x) => x.condition !== "Ready")) {
+      findings.push({
+        id: `k8s-node-${n.name}`,
+        title: `노드 ${n.name} — ${n.condition}`,
+        claim: `노드 ${n.name} 가 ${n.condition} 상태입니다${n.reason ? ` (사유: ${n.reason})` : ""}. 이 노드에 스케줄된 워크로드가 영향받을 수 있습니다(추정, mock).`,
+        severity: "crit",
+        resourceRefs: [`node/${n.name}`],
+        citations: n.objectId ? [n.objectId] : [],
+      });
+    }
+    void nodes;
+  } else if (plan === "deployment") {
+    reason("배포 rollout 상태를 조회해 available/unavailable 을 확인한다.");
+    const deps = runTool("describe_deployment", {}, toolDescribeDeployment(k8s, {}));
+    for (const d of k8s.deployments.filter((x) => x.rollout !== "complete")) {
+      findings.push({
+        id: `k8s-deploy-${d.name}`,
+        title: `배포 ${d.name} — rollout ${d.rollout}`,
+        claim: `배포 ${d.name} 의 rollout 이 ${d.rollout} 입니다(available ${d.available}/${d.desired}, unavailable ${d.unavailable}). 파드가 준비되지 않았을 수 있습니다(추정, mock).`,
+        severity: d.available === 0 ? "crit" : "warn",
+        resourceRefs: [`deployment/${d.name}`],
+        citations: d.objectId ? [d.objectId] : [],
+      });
+    }
+    void deps;
+  } else {
+    // pods — 재시작/OOM 진단: list_pods → get_events(원인 접지).
+    reason("재시작·OOMKilled 파드를 조회하고, 이벤트로 그 원인(OOMKilling/BackOff)을 접지한다.");
+    const pods = runTool("list_pods", {}, toolListPods(k8s, {}));
+    runTool("get_events", {}, toolGetEvents(k8s, {}));
+    // 이상 파드마다 finding — 관련 이벤트 message 를 근거로. objectId 인용.
+    const badPods = k8s.pods.filter((p) => p.restarts > 0 || p.oomKilled || p.phase === "Failed");
+    for (const p of badPods) {
+      const evs = k8s.events.filter((e) => e.involvedObject === `pod/${p.name}`);
+      const evText = evs.map((e) => `${e.reason}: ${e.message}`).join(" / ");
+      findings.push({
+        id: `k8s-pod-${p.name}`,
+        title: `파드 ${p.name} — 재시작 ${p.restarts}${p.oomKilled ? " · OOMKilled" : ""}`,
+        claim: `파드 ${p.name}${p.node ? ` (노드 ${p.node})` : ""} 가 ${p.restarts}회 재시작${p.oomKilled ? "했고 최근 종료가 OOMKilled 입니다" : "했습니다"}.${evText ? ` 이벤트: ${evText}` : ""} (추정, mock).`,
+        severity: p.oomKilled || p.phase === "Failed" ? "crit" : "warn",
+        resourceRefs: [`pod/${p.name}`, ...evs.map((e) => e.involvedObject)].filter((v, i, a) => a.indexOf(v) === i),
+        citations: p.objectId ? [p.objectId] : [],
+      });
+    }
+    void pods;
+  }
+
+  const grounded = findings.length > 0;
+  if (!grounded) {
+    reason("이상(재시작·NotReady·미완료 rollout)이 없어 진단할 근거가 없습니다. 지어내지 않고 정상으로 보고합니다.");
+  }
+
+  return {
+    traceId, intent, steps, findings, grounded, mock: true,
+    fallbackNote: grounded ? undefined : "조회 범위에서 파드 재시작·노드 NotReady·미완료 rollout 등 이상이 관측되지 않았습니다(mock 데이터).",
+    audit, generated_at: ts, source: "kubernetes (mock)",
   };
 }

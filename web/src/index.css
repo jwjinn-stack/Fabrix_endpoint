@@ -13,6 +13,7 @@
   --primary-lite: #6ba3cd; /* 상단 바 그라데이션 끝점 */
   --primary-weak: #e9f1f8;
   --primary-strong: #2f6690; /* 텍스트/링크용 진한 블루 (#fff 위 AA) */
+  --on-primary: #ffffff; /* IMP-87 — --primary 위 텍스트 색(상단 바 워드마크·프리뷰). 커스텀 색상 시 WCAG 대비로 흰/검 자동선택 */
   --brand-gray: #aeb2b7; /* MAYMUST 그레이 (로고 삼각형) — 보조 중성 액센트 */
   --brand-gray-strong: #6b7178; /* 그레이 데이터/텍스트용 (AA) */
   --brand-gray-weak: #f0f1f3;
@@ -156,7 +157,7 @@ body {
   gap: 14px;
   padding: 0 16px;
   background: linear-gradient(90deg, var(--primary) 0%, var(--primary-lite) 100%);
-  color: #fff;
+  color: var(--on-primary);
 }
 .topbar .brand {
   font-weight: 700;
@@ -165,10 +166,18 @@ body {
   display: flex;
   align-items: baseline;
   gap: 2px;
+  color: var(--on-primary);
+}
+/* IMP-87 — 고객사 로고(data-URI) 렌더 시 상단 바 높이에 맞춰 축소 */
+.topbar .brand-logo {
+  height: 24px;
+  max-width: 180px;
+  object-fit: contain;
+  display: block;
 }
 .topbar .brand sup {
   font-size: 9px;
-  background: #fff;
+  background: var(--on-primary);
   color: var(--primary);
   border-radius: 3px;
   padding: 1px 3px;
@@ -2545,6 +2554,24 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-section { margin-top: var(--sp-4); }
 .ov-h { font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); margin: 0 0 var(--sp-2); text-transform: uppercase; letter-spacing: .03em; }
 
+/* (3) Related — 목록/그래프 토글(IMP-84). 목록=a11y-safe 기본, 그래프=클릭형 토폴로지. */
+.ov-rel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.ov-rel-head .ov-h { margin: 0; }
+.ov-rel-toggle, .ov-rel-depth { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.ov-seg {
+  padding: 3px 10px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-dim);
+  background: var(--surface, #fff); border: none; cursor: pointer; border-right: 1px solid var(--border);
+  transition: background var(--ease), color var(--ease);
+}
+.ov-seg:last-child { border-right: none; }
+.ov-seg:hover { background: var(--surface-2); color: var(--text); }
+/* active = 스틸블루 강조(3:1 대비 확보). 색-only 아님 — aria-pressed 로도 상태 노출. */
+.ov-seg.active { background: var(--primary-weak); color: var(--primary-strong); }
+.ov-seg-sm { padding: 2px 8px; font-size: 10px; }
+.ov-rel-graph { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); padding: var(--sp-2); }
+.ov-rel-depth { margin-bottom: var(--sp-2); }
+.ov-rel-graph-hint { font-size: var(--fs-xs); margin: var(--sp-2) 0 0; }
+
 /* (3) Related — linkKind 그룹 + 클릭 가능한 이웃 */
 .ov-group { margin-bottom: var(--sp-3); }
 /* IMP-64: 그룹 헤더 = 방향 지시자(의미 화살표+관계 라벨) + count. */
@@ -2684,6 +2711,14 @@ tr.row-sel { background: var(--primary-weak) !important; }
   border-bottom: 1px solid var(--border);
 }
 .cop-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 600; color: var(--text-faint); }
+
+/* IMP-82 — 로컬 모델 연결 상태 칩. Badge + 지연 배지 + InfoTip 을 한 줄로 정렬(색 비의존). */
+.model-conn-chip { display: inline-flex; align-items: center; gap: var(--sp-1); font-weight: 400; }
+.model-conn-latency {
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; padding: 1px 6px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2);
+}
 .cop-hint { font-size: var(--fs-xs); color: var(--text-faint); margin: 0 0 var(--sp-3); line-height: var(--lh-body); }
 
 /* LEFT — 진입 후보 리스트 */
@@ -2904,6 +2939,47 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .onto-feel-glyph { color: var(--primary-strong); font-size: 16px; line-height: 1.4; flex: none; }
 .onto-feel-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
 .onto-feel-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+
+/* IMP-83 — 무엇/왜 온보딩: 항상-접힌 한 줄 disclosure(진행형 노출·localStorage 없음).
+   추가형 — 기존 .card/.onto-feel 토큰 재사용, 신규 색 없음. */
+.onto-onboard {
+  margin-bottom: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 0;
+}
+.onto-onboard-summary {
+  cursor: pointer; list-style: none; padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm); color: var(--text-dim); display: flex; align-items: center; gap: var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.onto-onboard-summary::-webkit-details-marker { display: none; }
+.onto-onboard-summary b { color: var(--text); }
+.onto-onboard-summary:hover { color: var(--text); }
+.onto-onboard-summary:focus-visible { outline: 2px solid var(--primary, #4a6da7); outline-offset: -2px; }
+.onto-onboard-glyph { color: var(--primary-strong); flex: none; }
+.onto-onboard[open] .onto-onboard-glyph { transform: rotate(0); }
+.onto-onboard-body { padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); }
+.onto-steps { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+.onto-step { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.onto-step-num {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: 700;
+  color: var(--onPrimary, #fff); background: var(--primary-strong); line-height: 1;
+}
+.onto-step-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.onto-step-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+
+/* 첫 at-risk 행의 1회성 예시 힌트(맥락형). */
+.onto-example-hint {
+  margin-top: var(--sp-2); display: flex; gap: var(--sp-2); align-items: flex-start;
+  padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.onto-example-glyph { color: var(--primary-strong); flex: none; line-height: 1.4; }
+.onto-example-body { display: flex; flex-direction: column; gap: 2px; }
+.onto-example-l1, .onto-example-l2 { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+.onto-example-l2 b { color: var(--text); }
+.onto-example-arrow { color: var(--primary-strong); font-family: var(--mono, monospace); }
 
 .onto-section-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-5) 0 var(--sp-3); }
 .onto-section-h h2 { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
@@ -3319,4 +3395,122 @@ tr.row-sel { background: var(--primary-weak) !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ms-gap-cell, .ms-source-focus { transition: none; }
+}
+
+/* ── MCP 연동 상세(IMP-86) — Tools/Resources/Prompts 3-탭 + 스키마·예시·drift ── */
+/* Backend.AI 라이트 + 스틸블루. 코드블록 엔터프라이즈 모노. 네온 금지. reduce-motion 안전. */
+.mcp-detail { margin-top: var(--sp-2); }
+
+/* 상단 탭(Inspector 3분류) */
+.mcp-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: var(--sp-3); }
+.mcp-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: var(--sp-2) var(--sp-3); background: none; border: 0;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  font-size: var(--fs-sm); font-weight: 600; color: var(--text-dim); cursor: pointer;
+  transition: color var(--ease), border-color var(--ease);
+}
+.mcp-tab:hover { color: var(--text); }
+.mcp-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.mcp-tab-count {
+  font-size: 10px; font-variant-numeric: tabular-nums; color: var(--text-faint);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 6px; line-height: 16px;
+}
+.mcp-tab.active .mcp-tab-count { color: var(--blue); }
+
+/* drift 요약 바 — 단일 출처 vs 라이브 정합 시각화 */
+.mcp-drift-bar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: var(--fs-xs); color: var(--text-dim);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3);
+}
+.mcp-drift-note { color: var(--text-faint); }
+
+/* 정직성 — mock 모드 카탈로그 배너(실 MCP 연결 아님) */
+.mcp-mock-banner {
+  display: flex; align-items: flex-start; gap: var(--sp-2); flex-wrap: wrap;
+  font-size: var(--fs-xs); margin-bottom: var(--sp-3);
+}
+.mcp-mock-banner > span { flex: 1; min-width: 200px; }
+
+/* 상태 점 — 스틸블루/녹색/주의(네온 금지) */
+.mcp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.mcp-dot-ok { background: var(--green); }
+.mcp-dot-warn { background: var(--amber); }
+.mcp-dot-info { background: var(--blue); }
+.mcp-dot-off { background: var(--text-faint); }
+
+/* 카드 목록 */
+.mcp-cards { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* Accordion(접이식 tool 카드) */
+.mcp-acc { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.mcp-acc.open { border-color: var(--blue); }
+.mcp-acc-head {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: var(--sp-2) var(--sp-3); background: none; border: 0; text-align: left; cursor: pointer;
+  font-size: var(--fs-sm); color: var(--text);
+}
+.mcp-acc-head:hover { background: var(--surface-2); }
+.mcp-acc-caret { color: var(--text-faint); font-size: 11px; flex: none; }
+.mcp-acc-title { flex: 1; min-width: 0; }
+.mcp-acc-meta { flex: none; margin-left: auto; }
+.mcp-acc-body { padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface-2); }
+
+.mcp-tool-title { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.mcp-tool-name { font-family: var(--mono, monospace); font-size: var(--fs-sm); color: var(--text); font-weight: 600; }
+.mcp-tool-group { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
+
+/* Stripe식 2열: 좌 설명+스키마 / 우 코드 */
+.mcp-tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); align-items: start; }
+.mcp-tool-left { min-width: 0; }
+.mcp-tool-right { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.mcp-tool-desc { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.5; }
+.mcp-sub-h { font-size: var(--fs-xs); font-weight: 700; color: var(--text-faint); margin: var(--sp-2) 0 4px; }
+.mcp-readonly-note { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); color: var(--text-faint); }
+
+/* SchemaTable — prop 표 */
+.mcp-schema-table { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; font-size: var(--fs-xs); }
+.mcp-st-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--sp-2); padding: 5px var(--sp-2); border-top: 1px solid var(--border); align-items: start; }
+.mcp-st-row:first-child { border-top: 0; }
+.mcp-st-head { background: var(--surface-2); font-weight: 700; color: var(--text-faint); }
+.mcp-st-name { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.mcp-st-name code { font-family: var(--mono, monospace); color: var(--text); }
+.mcp-req { font-size: 9px; color: var(--red); border: 1px solid var(--red-border); border-radius: 3px; padding: 0 3px; }
+.mcp-opt { font-size: 9px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
+.mcp-st-type code { font-family: var(--mono, monospace); color: var(--blue); }
+.mcp-enum { display: inline-flex; flex-wrap: wrap; gap: 3px; margin-left: 4px; }
+.mcp-enum-val { font-family: var(--mono, monospace); font-size: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; color: var(--text-dim); }
+.mcp-st-desc { color: var(--text-dim); line-height: 1.4; }
+
+/* CodeBlock — 자체 JSON 하이라이트(엔터프라이즈 모노, 텍스트만) */
+.mcp-code { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--surface); }
+.mcp-code-label { font-size: 10px; font-weight: 700; color: var(--text-faint); padding: 4px var(--sp-2); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.mcp-code-pre { margin: 0; padding: var(--sp-2); overflow-x: auto; font-family: var(--mono, monospace); font-size: var(--fs-xs); line-height: 1.5; white-space: pre; }
+.mcp-code-pre code { font-family: inherit; }
+.hj-key { color: var(--blue); }
+.hj-str { color: var(--green); }
+.hj-num { color: var(--amber); }
+.hj-kw { color: var(--pink); }
+.hj-punc { color: var(--text-dim); }
+.hj-ws { color: inherit; }
+
+/* Resources 카드 */
+.mcp-res-card { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--surface); }
+.mcp-res-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 4px; }
+.mcp-res-name { font-weight: 600; font-size: var(--fs-sm); }
+.mcp-res-uri { display: block; font-family: var(--mono, monospace); font-size: var(--fs-xs); color: var(--text-dim); word-break: break-all; margin-bottom: 4px; }
+
+/* Prompts — 정직한 coming soon */
+.mcp-coming-soon { display: flex; align-items: flex-start; gap: var(--sp-2); border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: var(--sp-3); background: var(--surface-2); }
+.mcp-cs-title { font-weight: 600; font-size: var(--fs-sm); margin-bottom: 4px; }
+.mcp-empty { font-size: var(--fs-xs); color: var(--text-faint); margin: var(--sp-2) 0 0; }
+
+/* 좁은 화면 — 2열 → 1열 스택 */
+@media (max-width: 760px) {
+  .mcp-tool-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcp-tab { transition: none; }
 }

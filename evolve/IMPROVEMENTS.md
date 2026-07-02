@@ -126,6 +126,17 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-79 | platform | K8s 메트릭·익스포터 백본 채택(kube-prometheus-stack: DCGM+kube-state-metrics+cAdvisor / VictoriaMetrics) | medium | L | medium | spike-needed | 2026-07-02 |
 | IMP-80 | aesthetic | 대량 메트릭 분석 레이아웃 — 평면 key/value 상세를 Object View 360° 3층 위계(요약 스트립→카테고리 카드→전체 테이블) | low | M | medium | accepted | 2026-07-02 |
 | IMP-81 | code | 온톨로지 mock 매 호출 재구성 + 결정적 agent 루프의 상태·성능 리스크 정리(요청단위 스냅샷 메모이즈·writeback 병합·테스트) | low | M | medium | accepted | 2026-07-02 |
+| IMP-82 | ux | AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드(엔드포인트·모델·타임아웃, Dynamo :8000 프리셋, /health·/v1/models 프로브) | high | M | high | done | 2026-07-02 |
+| IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | done | 2026-07-02 |
+| IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | done | 2026-07-02 |
+| IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | done | 2026-07-02 |
+| IMP-86 | aesthetic | MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태(IMP-73 확장, Stripe식 2열·Inspector 3탭) | medium | M | high | done | 2026-07-02 |
+| IMP-87 | aesthetic | 고객사 화이트라벨 — 로고·제품명·favicon + 디자인 토큰 확장(색상 프리셋 위에, WCAG on-primary 대비 검증) | medium | M | high | done | 2026-07-02 |
+| IMP-88 | code | 기능 격리 회귀 테스트 — cap-off/라우트 미등록 시 나머지 앱 동작 보장(cap 매트릭스·mock 파생 크래시 가드) | high | S | medium | done | 2026-07-02 |
+| IMP-89 | ux | Endpoint↔app_id 라우팅을 온톨로지 관계로 노출(ObjectView·COP·목록 drill-through) | medium | M | medium | done | 2026-07-02 |
+| IMP-90 | ux | 과업 인박스(/inbox) 제거 — 관제는 할당보다 알림+즉시대응(KineticStrip), Task assignee/workflow 레이어 안전 강등 | medium | M | medium | done | 2026-07-02 |
+| IMP-91 | compete | AI Agent 에서 Kubernetes 클러스터 상태 질의 — read-only K8s MCP tool(파드/노드/이벤트/배포), mock-first·실연동 spike | medium | L | medium | done | 2026-07-02 |
+| IMP-92 | platform | LLM 트레이스/평가 백본을 Langfuse(K8s Helm)로 백킹 — 손수 짠 synth 트레이스 대체(OSS 코어 범위) | medium | L | medium | spike-needed | 2026-07-02 |
 
 ## Details
 
@@ -920,3 +931,107 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: (미연구 — low ambiguity) mock 내부 리팩터·테스트 공백 방지. IMP-71(전량 메트릭)·IMP-72(감지 귀속)·IMP-73(MCP tool) 파생 레이어의 성능·정합 전제. IMP-59 revision·409 경로 재사용.
 - **Sources**: (코드 검증 — buildOntology 매 호출 재구성·applyAction writeback 상태, 외부 출처 없음)
 - **Deep-dive suggestion**: 없음 (구현 직행, IMP-71/72/73 파생 레이어와 함께 정리).
+
+### IMP-82 — AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드
+- **Type**: ux (sev=high, effort=M)
+- **Area**: `web/src/pages/AiAgent.tsx`, `web/src/pages/Settings.tsx`, `web/src/api/agent.ts`, `web/src/api/client.ts`
+- **Problem**: AiAgent 패널과 클러스터 인사이트가 '로컬 추론 모델(Dynamo)'을 근거로 결과를 낸다고 반복 표기(AiAgent.tsx:148·429·438)하지만, 실제로 어떤 엔드포인트/모델에 연결됐는지·연결이 살아있는지(health)·응답이 느린지 사용자가 알 방법이 전혀 없다. Settings에 브랜드 색은 있어도 모델 연결 설정(엔드포인트 URL·모델명·타임아웃)은 없다. mock 뒤에서 실제로는 아무 모델에도 연결되지 않아 기술적 정직성(direction 8)도 훼손된다.
+- **Fix**: (1) AiAgent 헤더 AND 클러스터 인사이트 패널(AiAgent.tsx:429)에 연결 상태 칩 — green/yellow/red 관례 미러 3+1 상태(mock=기본, 정직히 "mock 모델"로 표기·"연결됨" 금지 / online=green / degraded=yellow / offline=red). 하드코딩이 아니라 GET /v1/models로 해석된 모델명 + 지연 배지 표기, 스트리밍 지각-반응 지표인 TTFT(time-to-first-token) 우선 노출. (2) VITE_MOCK=off 시 GET {endpoint}/health(200 기대) 폴링 + GET /v1/models로 구성 모델 id 실제 로드 확인('연결됐으나 다른 모델' 가드). read-only·저비용, 기존 폴링 인프라 재사용(새 의존성 금지). (3) Settings "로컬 모델" 카드(BrandColorCard/AlertWebhookCard의 localStorage 패턴): 엔드포인트 URL·모델 식별자·타임아웃 + Dynamo :8000 프리셋 + "연결 테스트" 버튼(동일 /health+/v1/models 프로브 인라인 리포트). manage 프로파일 게이팅(/capabilities, observe=read-only). 기본 상태는 정직하게 "mock" 유지 — fix가 정직성을 강화하도록.
+- **Evidence**: yes (high) — 양 축 모두 인정된 good practice. (1) health/connection 프로브: vLLM(및 Dynamo의 OpenAI-호환 층)이 표준 /health(200 + {"status":"healthy"}) + /v1/models(실제 로드 모델 열거) 노출 — canonical "poll /health→200 then hit /v1/*" 패턴. 코드의 기존 VITE_MOCK=off transport 스왑(AiAgent.tsx:100 이미 실 Dynamo 호출 명시)에 정합. (2) status-indicator UX: 2026 LLM-observability 가이드는 상단 상태 행에 green/yellow/red + P95 지연을 명시 권장, TTFT/지연이 스트리밍 추론의 지각-반응 핵심 신호(목표 <1s TTFT). 즉 연결 칩+모델명+지연 배지는 현대 패턴이지 신규 발명 아님. in-code gap 실재: AiAgent.tsx가 Dynamo grounding 4회+ 주장하나 연결 표면 0, Settings.tsx는 이미 localStorage-persist 카드 스캐폴딩(Settings.tsx:19·81) 보유하나 모델 연결 설정 0.
+- **Sources**: https://docs.vllm.ai/en/stable/serving/openai_compatible_server/ , https://www.glukhov.org/observability/monitoring-llm-inference-prometheus-grafana/ , https://github.com/vllm-project/vllm/issues/6073
+- **Deep-dive suggestion**: 없음 (패턴 확정, 구현 직행). IMP-60 AI Agent·IMP-78 로컬-inference·IMP-21 신선도와 정합.
+
+### IMP-83 — 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 직관 설명
+- **Status**: done (2026-07-02) — 진행형 disclosure(auto-expand localStorage 카드 아님)로 정정 구현. (1) 스코어카드 "지금 주의를 요하는 것" 요약이 여전히 첫 섹션(action-first). (2) 탭바 아래 항상-접힌 네이티브 `<details>` "온톨로지란? 3단계로 보기"(ConceptDisclosure) — localStorage 상태 0(observe/manage·clone 재트리거 회피), 양 탭 공통 하나. 펼치면 과업(Task)→객체·관계(Object/Link)→조치(Action) 3단을 각 "무엇+왜 좋은가" 1~2줄. (3) 스키마 탭에 묻혔던 개념 헤더(semantic↔kinetic·느낌 3카드)를 disclosure로 승격·스키마 탭에서 제거(중복 카피 봉합). (4) 첫 at-risk 행에만 1회성 인라인 예시(Endpoint --serves--> Model 읽는 법 + [상세→] 눌러 kinetic Action 실행). (5) InfoTip 재사용(신규 dep 0): 요약 3그룹 라벨(운영 준비=Production Readiness/관측성=Observability/오너십=Ownership) + disclosure 내 핵심 용어 4종(Object/Link/Action/kinetic) 정의 — Palantir Foundry 어휘 정합. a11y: 네이티브 details 키보드 토글 + InfoTip WCAG 1.4.13/Esc. Spec: specs/2026-07-02/IMP-83-ontology-onboarding.md. 테스트 739 pass(IMP-83 신규 7케이스 + IMP-88 isolation 6 green), tsc+vite build green.
+- **Type**: ux (sev=medium, effort=S)
+- **Area**: `web/src/pages/Ontology.tsx`, `web/src/components/InfoTip.tsx`
+- **Problem**: Ontology 화면은 스코어카드/스키마 탭으로 곧장 들어가 처음 보는 오퍼레이터에게 '온톨로지가 무엇이고 이걸로 뭐가 좋아지나'를 전달하는 진입 온보딩이 없다. 개념 헤더(semantic↔kinetic, Object/Link/Action)는 secondary "스키마 참조" 탭 199~228행에 묻혀 용어를 이미 아는 사람만 이해하고, 유일한 진입 설명은 breadcrumb InfoTip 하나(147~151행)뿐(direction 6·10).
+- **Fix**: 3-concept 콘텐츠(과업→객체·관계→조치)와 용어 InfoTip(Object/Link/Action/kinetic)은 Palantir Foundry 어휘와 정합하므로 유지하되, DELIVERY를 auto-expand 상단 카드 → 진행형/맥락형 disclosure로 변경(action-first 유지). (1) 스코어카드 "주의 요약"을 접지 않고 첫 노출 유지(at-risk를 fold 아래로 밀지 않음). (2) auto-expand first-run 카드 대신 항상-접힌 한 줄 "온톨로지란? 3단계로 보기" 어포던스(link/disclosure, localStorage 상태 없음 — observe/manage·clone 재트리거 회피)를 탭바 인근 인라인 배치. (3) 묻힌 스키마 탭의 개념 헤더를 그 on-demand disclosure로 승격해 두 탭이 한 설명 공유(중복 카피 없이 gap 제거). (4) 구체 2줄 예시(Endpoint --serves--> Model, 클릭 → kinetic Action)를 FIRST at-risk 행에 1회성 인라인 힌트로 부착(맥락형 "learn as you work" — 실제 실패 객체가 최고 교육 순간). (5) 접근성 InfoTip 컴포넌트 재사용(WCAG 1.4.13/키보드/Esc 이미 처리, 새 의존성 없음) — 현재 미설명인 3개 그룹 라벨(Production Readiness/Observability/Ownership)에 InfoTip 추가.
+- **Evidence**: partial (high) — 전제 검증됨: Ontology.tsx는 task-anchored 스코어카드 탭 기본(IMP-68 정합), 개념 헤더는 스키마 탭 199~228에 묻히고 진입 설명은 breadcrumb InfoTip 하나뿐 → 문제 실재. 3-concept framing·InfoTip은 2025-26 강력 지지(Palantir Foundry가 Object type→Link type→Action type을 그대로 교육). 그러나 auto-expand localStorage 상단 카드 메커닉은 dated pattern — NN/g 진행적 노출·setproduct·Userpilot 일관 가이드 "First: action. Then: guidance"(설명 블록으로 실제 과업을 fold 아래로 밀지 말 것). auto-expand localStorage는 observe/manage·clone 재트리거 + "왜 왔는지"(at-risk) 전에 dismiss chrome 요구 리스크.
+- **Sources**: https://www.setproduct.com/blog/how-to-replace-onboarding-with-contextual-help , https://blog.logrocket.com/ux-design/progressive-disclosure-ux-types-use-cases/ , https://www.palantir.com/docs/foundry/ontology/core-concepts , https://userpilot.com/blog/progressive-onboarding/
+- **Deep-dive suggestion**: 없음 (진행형 disclosure로 정정 반영, 구현 직행). IMP-68 스코어카드·IMP-4 InfoTip 접근성에 종속.
+
+### IMP-84 — 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 (TopologyView/layout.ts 재사용)
+- **Status**: done (2026-07-02) — ObjectView Related 에 "목록/그래프" 세그먼트 토글(기본=목록 a11y-safe, urlState `ovrel` 기억). 그래프 모드는 head 로드 결과(links+index)만 재사용해 head+1-hop(옵션 2-hop) 이웃을 {TopologyNode[],TopologyEdge[]}로 매핑 → layoutTopology()/TopologyView 렌더(신규 fetch·graph lib 0). 노드 클릭은 기존 traverse(id) 재사용(재중심+breadcrumb, 새 순회 상태 없음). 비자명 변경=layout kind 타이핑 확장: TopologyNode["kind"] union 을 온톨로지 kind(model/endpoint/node/trace/incident/app)까지 넓히고 layout KIND_ORDER 를 부분맵+kindRank() fallback 으로 전환(미지 kind 'service' 붕괴·tier tie-break 손실 방지), 소비처 NODE_R·KIND_LABEL 도 부분맵+fallback(운영 토폴로지 회귀 0). objectTypeToTopoKind 매핑으로 8개 타입 각기 다른 kind. 색·glyph 이중 인코딩·방향 화살표·edgeStatusColor(끝점 status)는 objectTypeVisual/IMP-64 단일 출처 재사용. 목록은 항상 도달·키보드 순회 폴백(WCAG complex-image). Spec: specs/2026-07-02/IMP-84-relationship-graph.md. 테스트 732 pass(isolation router.cap 6 + topology layout 7/TopologyView green, ObjectView +6 IMP-84 케이스), tsc+vite build green.
+- **Type**: ux (sev=medium, effort=M)
+- **Area**: `web/src/components/ObjectView.tsx`, `web/src/components/topology/TopologyView.tsx`, `web/src/components/topology/layout.ts`
+- **Problem**: ObjectView의 Related 섹션은 linkKind별 그룹 '목록(글)'로만 이웃을 보여준다. 이미 layoutTopology()·TopologyView(계층 DAG + 엣지)라는 완성된 그래프 렌더러가 components/topology에 있는데 객체 이웃 시각화에 재사용되지 않는다. 관계가 3~4단(Service→Endpoint→Model→GPU→Node)으로 뻗을 때 목록으로는 위상을 못 읽는다(direction 4).
+- **Fix**: ObjectView Related에 "그래프/목록" 세그먼트 토글 추가(기본=목록, a11y-safe 유지·urlState에 선택 기억). GRAPH: head + 1-hop(옵션 2-hop, depth 토글) OntologyLink 이웃 → {TopologyNode[], TopologyEdge[]} 매핑, layoutTopology() 실행, TopologyView 렌더. 노드 클릭은 기존 traverse(id) 재사용(클릭 객체로 그래프 재중심 + breadcrumb 확장 — 새 순회 상태 발명 금지). 1-hop DEFAULT 유지(focus+context 연구·Foundry UX상 >2 hops은 hairball; 2-hop은 명시적 expand). 재사용 전 layout.ts 확장 필수: TopologyNode["kind"](현 server|service|gpu, KIND_ORDER layout.ts:46, kindOf fallback='service')를 넓히거나 OntologyObject.type→topology kind 매핑 추가 — 안 하면 미지 kind가 전부 'service'로 붕괴하고 tier tie-break 손실(유일한 비자명 코드 변경). 상태색은 objectTypeVisual 단일 출처 유지 + glyph 이중 인코딩(WCAG, 색만으로 신호 금지), 엣지/노드 3:1 대비(라이트 baseline), 방향 화살표/엣지 라벨로 in/out 의미(IMP-64) 보존. linkKind-그룹 목록은 라벨된 접근성 폴백(항상 도달·키보드 순회)으로 유지 — WCAG complex-image 요건.
+- **Evidence**: yes (high) — 참조 제품과 정확히 일치. Palantir Foundry(canonical ontology/object-view)는 관계에 BOTH 표현 제공: Links 위젯(tree/list, expand-and-hop) AND Vertex(node-link 그래프, 노드 클릭 시 속성 패널 + 계속 hop). 즉 "그래프+목록 폴백, 노드 클릭 traverse"는 신규 아님. a11y: node-link는 complex image로 동등 텍스트/구조 폴백 MUST(WAI/Deque/Smashing) — "Show data as table/list" 토글이 표준. CODE FIT 주의: layoutTopology()는 순수·결정적 재사용 가능한 seam(cycle-break→longest-path layering→barycenter sweep→Bézier, zero deps)이나 kind가 server|service|gpu로만 타이핑됨 → 온톨로지 타입 붕괴 리스크가 유일한 실 변경점. ObjectView가 이미 traverse()(213행) + urlState(obj/objstack) breadcrumb 스택 보유 → 노드 클릭 배선 clean 재사용.
+- **Sources**: https://www.palantir.com/docs/foundry/vertex/explore-object-relationships , https://www.palantir.com/docs/foundry/object-views/widgets-properties-links , https://www.w3.org/WAI/tutorials/images/complex/ , https://www.deque.com/blog/how-to-make-interactive-charts-accessible/
+- **Deep-dive suggestion**: 없음 (패턴·코드 fit 확정, 구현 직행). IMP-45/47/48 토폴로지 렌더러·IMP-57 ObjectView·IMP-64 시각언어·IMP-66 traverse에 종속.
+
+### IMP-85 — 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들 분할
+- **Status**: done (2026-07-02) — App.tsx 24개 페이지 정적 import → React.lazy + 단일 Suspense(라우터 아웃렛). fallback 은 CLS-safe PageSkeleton(제목 스트립+KPI 카드 4+표 8행, Skeleton.tsx 신규) — resetKey=effPage 로 전환마다 재표시. 앱 셸/nav/providers/ErrorBoundary 는 eager 유지. main.tsx 의 installMockFetch 정적 import → env 게이트 내부 동적 import(mount 순서 보장) — 실백엔드(VITE_MOCK=off)는 mock 청크(87kB) 미로드. vite manualChunks 로 react/react-dom 만 react-vendor 청크 분리(런타임 의존성 0이라 다른 버킷 없음). BEFORE→AFTER: 단일 JS 832.69kB(gzip 245)·1청크 → 엔트리 index 114.56kB(gzip 39) + shell 공유(react-vendor 189.63/client 13.24/capabilities 5.31/toast·errors·ontologyGraph·ontologySchema·mockFactory ~12) ≈ 초기 eager ~335kB(약 60% 축소), 페이지 24 + mock 은 지연 청크(총 51 JS 청크). mock.ts 는 index.html modulepreload 에 없음(부트 청크 유출 없음 확인). 테스트 749 pass/80파일(isolation·router.cap green), tsc+vite build green. Spec: specs/2026-07-02/IMP-85-code-splitting.md. 변경: web/src/{App.tsx,main.tsx,components/Skeleton.tsx}, web/vite.config.ts.
+- **Type**: code (sev=medium, effort=M)
+- **Area**: `web/src/App.tsx`, `web/src/main.tsx`, `web/src/router.ts`, `web/vite.config`
+- **Problem**: App.tsx가 40개 이상 페이지를 정적 import해 단일 번들에 eager 포함(React.lazy/Suspense/동적 import 0건). 코드가 계속 늘고 mock.ts만 2485줄이라 초기 로드 페이로드가 선형 증가. 관제 콘솔은 한 번에 한 화면만 보므로 라우트 단위 분할 이득이 크다(direction 11).
+- **Fix**: (1) 라우트 레벨: App.tsx의 31개 페이지 import를 React.lazy(() => import('./pages/X'))로 전환, 라우터 아웃렛을 단일 Suspense + 페이지 구조와 MATCH하는 공통 Skeleton fallback으로 래핑(CLS 회피 — 최상위 caveat). 앱 셸/nav는 eager 유지. (2) mock.ts(2485줄): 최대 deferral 승. 무거운 ontology/trace 파생을 top-level 아닌 call-time dynamic import()로 → 실백엔드 배포 boot chunk에 안 들어가게. mock.ts가 셸에 transitive 유입 안 되는지 감사. (3) manualChunks: 이 프로젝트는 런타임 의존성 0(hand-rolled router/polling)이라 react-vendor/framer/icons vendor-splitting 대부분 미적용 — react/react-dom을 안정 far-future-cache 청크로 분리하는 것만 명확, 없는 vendor 버킷 과설계 금지. (4) providers/root init 경량 유지. (5) 옵션: hover/idle 시 다음 라우트 prefetch. (6) /benchmark 전후 게이트(번들 크기·FCP/TTI)로 델타 증명 — 이득은 아키텍처 의존이므로 측정.
+- **Evidence**: yes (high) — in-repo 확인: App.tsx 31개 정적 import·React.lazy/Suspense/dynamic import 0, vite config에 manualChunks 없음, mock.ts 2485줄 → 전체가 하나의 eager 번들. React.lazy+Suspense 라우트 분할은 React 공식 권장 "best place to start". 2025-26 사례: many-route 앱 초기 JS 30~60% 감소 / TTI 20~40% 개선, 상세 Vite+React 케이스 main 번들 ~95%·홈 스크립트 ~50% 감소·Lighthouse +10~18. caveat(다수 출처 일치): 이득은 route-SPECIFIC vs shared 코드 비율에 비례 — 40페이지 각자 로직/파생을 지는 콘솔이 정확히 high-payoff 케이스. Rollup/Vite가 shared chunk 자동 추출.
+- **Sources**: https://legacy.reactjs.org/docs/code-splitting.html , http://www.mykolaaleksandrov.dev/posts/2025/10/react-lazy-suspense-vite-manualchunks/ , https://jsschools.com/web_dev/boosting-spa-performance-how-lazy-loaded-routes-c/
+- **Deep-dive suggestion**: benchmark (전후 번들·FCP/TTI 측정). IMP-14 로딩 스켈레톤·IMP-81 mock 파생 정리와 정합.
+
+### IMP-86 — MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태
+- **Status**: done (2026-07-02) — Diagnostics McpPanel 카탈로그를 전용 상세 뷰로 승격. Tools/Resources/Prompts 3-탭(Inspector 3분류), tool별 접이식 카드(snake_case + 연결상태 dot) + Stripe식 2열(좌=설명+SchemaTable[name·type·enum·description·required], 우=예시 JSON-RPC req/res 코드블록). ONTOLOGY+K8S 레지스트리 단일 출처 렌더 + 라이브 tools/list diff 시각화(연결됨/라이브전용/라이브미노출). Prompts 는 정직한 coming-soon. 신규 자체완결 primitive(CodeBlock 자체 JSON 토크나이저·Accordion·SchemaTable·StatusDot, 외부 CDN 없음). read-only(mutating Run 없음). Spec: specs/2026-07-02/IMP-86-mcp-detail-screen.md. 신규: web/src/components/mcp/{primitives,McpDetail,examples,McpDetail.test}. 테스트 725 pass(isolation+drift canary green), tsc+vite build green.
+- **Type**: aesthetic (sev=medium, effort=M)
+- **Area**: `web/src/pages/Diagnostics.tsx`, `web/src/api/client.ts`(mcpListTools/mcpListResources), `web/src/actions/ontologyTools.ts`
+- **Problem**: Diagnostics의 MCP 섹션(291~430행)은 tool/resource 이름을 dt/dd(name+description, 391~397행)로만 얇게 나열할 뿐, 각 tool의 입력 스키마·예시 호출·응답·호출 로그·prompts가 없다. Anthropic MCP Inspector / Postman급 상세가 없어 '매우 자세하게'(direction 5)·aesthetic 완성도 모두 미달 — Linear/Stripe API 콘솔 대비 원시적. 그런데 렌더 재료는 이미 있음: ONTOLOGY_TOOL_REGISTRY(actions/ontologyTools.ts:45~)가 tool마다 name/description/inputSchema(prop별 type·description·enum) 단일 출처 보유.
+- **Fix**: MCP 섹션을 인라인 dt/dd → 전용 상세 뷰로 승격. Stripe식 2열: 좌열=tool 설명 + inputSchema를 prop 테이블(name·type·enum·description), 우열=문법 하이라이트 예시 JSON-RPC 요청/응답 코드블록(고정/스크롤 동기). tool마다 접이식 카드(제목=snake_case name + 연결상태 dot), 상단 Tools/Resources/Prompts 탭(Inspector 3분류). ONTOLOGY_TOOL_REGISTRY를 단일 출처로 렌더 + LIVE tools/list·resources/list와 diff 표시(스키마 drift 가드 시각화). read-only 서버(POST /api/v1/mcp, mutating은 assertReadOnly 차단)이므로 query_objects/get_object 등 조회 tool은 '예시 요청/응답' 정적 표시부터, 이후 선택적 실제 Run 폼(mutating 제외). 신규 primitive 허용: CodeBlock(자체 토크나이저 or 경량 인라인 — 외부 CDN 금지), Accordion, SchemaTable, StatusDot. Backend.AI 라이트+스틸블루 유지(네온 금지), 코드블록 엔터프라이즈 모노. prompts 미노출이면 '해당 없음/coming soon' 정직 상태 카드.
+- **Evidence**: yes (high) — 현행 dt/dd만 나열·스키마/예시/로그/prompts 전무 확인, 그러나 ONTOLOGY_TOOL_REGISTRY가 렌더 재료 보유. 가설이 업계 표준과 일치: (1) 공식 MCP Inspector가 Tools/Resources/Prompts 탭 + tool별 스키마+설명→폼→Run→응답 + DevTools식 JSON-RPC 로그 + 사이드바 연결상태. (2) Stripe API 레퍼런스의 '설명|코드' 2열(코드는 스크롤 고정). (3) Fern 2026: CodeBlock+Accordion/Tabs+브라우저 내 테스트가 TTFC를 시간→분 단축. 세 출처 모두 '접이식 tool 카드+스키마 하이라이트+예시 req/res+연결상태 dot+resources/prompts 탭' 수렴. 주의: read-only 서버이므로 Inspector식 Run 폼은 조회 tool 한정 또는 정적 예시부터.
+- **Sources**: https://github.com/modelcontextprotocol/inspector , https://orchestrator.dev/blog/2026-05-12-mcp-inspector/ , https://docs.stripe.com/api , https://buildwithfern.com/post/api-documentation-best-practices-guide
+- **Deep-dive suggestion**: deep-research-lite (Stripe 2열 밀도·타이포·CodeBlock 스타일 캡처). IMP-73 MCP 스키마 단일화·IMP-5/60 MCP UI 확장.
+- **Deep research (2026-07-02)**: 시도했으나 실패 — deep-research-lite 하네스가 StructuredOutput 재시도 상한(5)을 초과하며 유효 출력 없이 종료(TelemetrySafeError). 새 근거 확보 못함. 단, 기존 grounding이 이미 강함(Evidence=high, 3개 독립 출처가 'Tools/Resources/Prompts 탭 + 접이식 tool 카드 + 스키마 하이라이트 + 예시 req/res + 연결상태 dot'로 수렴)이라 confidence 유지(high). 캡처가 목적이던 Stripe 2열 밀도·CodeBlock 타이포 디테일은 구현 시 /design-shotgun 또는 라이브 캡처로 대체 권장. 향후 deep-dive 재시도 불필요 — 근거는 이미 구현에 충분.
+
+### IMP-87 — 고객사 화이트라벨 — 로고·제품명·favicon + 디자인 토큰 확장
+- **Type**: aesthetic (sev=medium, effort=M)
+- **Area**: `web/src/theme.tsx`, `web/src/components/Layout.tsx`(하드코딩 'FABRIX'), `web/src/pages/Settings.tsx`, `web/index.html`
+- **Problem**: theme.tsx(108줄)는 색상 프리셋 5종 + 커스텀 HEX + deriveBrand(strong/weak/lite 파생) + 다크모드까지 갖췄으나 화이트라벨의 핵심인 로고·제품명·favicon 개념이 전혀 없고 Layout.tsx:203에 'FABRIX<sup>AI</sup>'가 하드코딩됨. 색상은 갈아끼워지나 브랜드 정체성(로고·이름·favicon)이 고정 — 화이트라벨 SaaS 판매의 핵심 결함(direction 7).
+- **Fix**: theme.tsx Brand 인터페이스를 TenantBrand로 확장: {productName, productSuffix?, logoDataUri?, faviconDataUri?, primary/strong/weak/lite, onPrimary}. Grafana의 app_title/menu_logo/login_logo 스키마를 미러하되 단일 토큰 세트로 좁게 유지(토큰 폭증 방지). 렌더: (1) Layout.tsx:203 하드코딩을 brand.productName/suffix로 치환, logoDataUri 있으면 <img>. (2) BootScreen 동일 토큰. (3) 문서 title/favicon은 ThemeProvider useEffect에서 런타임 주입(document.title, link[rel=icon].href; index.html 기본은 fallback). 로고/favicon 업로드는 base64 data-URI localStorage(mock-first) + 크기/치수 가드(로고 ≤~64KB, favicon 정사각). 대비 검증: 커스텀 HEX 입력 시 흰/검 중 4.5:1(또는 UI 3:1) 만족 onPrimary를 상대 휘도로 실측·자동선택, 미달이면 Settings 경고(브랜드 색 자체는 막지 말고 텍스트 on primary 조합만 검증). Settings "화이트라벨" 카드 신설(색상 프리셋 위): 제품명 + 로고/favicon 업로드 + 라이브 프리뷰. 향후 /capabilities로 tenant 브랜드 오버라이드 가능하게 형태 잡되(observe/manage 정합) 지금은 localStorage 우선.
+- **Evidence**: yes (high) — theme.tsx 색상 파생은 있으나 로고/제품명/favicon 개념 0, Layout.tsx:203 하드코딩 확인. 업계 정설 지지: (1) 화이트라벨은 2025-26 SaaS baseline이며 색상 넘어 로고·제품명·favicon·이메일·"Powered by X" 제거까지 포함. (2) 디자인 토큰+런타임 JSON 테마로 재배포 없이 브랜드 전환이 권장 패턴. (3) Grafana Enterprise가 정확히 이 스키마(app_title/login_logo/menu_logo/footer) 표준화 — 검증된 레퍼런스. (4) WCAG 4.5:1(본문)·3:1(대형/UI), 브랜드 색 자체가 아니라 "조합"이 통과하면 됨 — deriveBrand의 현 mix(black/white)는 명도만 조절·대비 검증 없음 → onPrimary 자동 선택 로직 필요. 주의: 화이트라벨 토큰은 15번째 고객사에서 200개로 폭증하는 함정 → 소수 명시 토큰으로 좁게 봉인.
+- **Sources**: https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/configure-custom-branding/ , https://omni.co/articles/best-white-label-embedded-analytics-platforms-2026 , https://www.webmastered.com/blog/white-label-design-system-debt-theming-customization/ , https://www.studiolimb.com/guides/wcag-color-contrast-guide.html
+- **Deep-dive suggestion**: 없음 (Grafana 스키마·WCAG 확정, 구현 직행). IMP-19 토큰화·기존 theme.tsx 프리셋 확장.
+
+### IMP-88 — 기능 격리 회귀 테스트 — cap-off/라우트 미등록 시 나머지 앱 동작 보장
+- **Type**: code (sev=high, effort=S)
+- **Area**: `web/src/router.cap.test.ts`, `web/src/router.ts`, `web/src/capabilities.tsx`, `web/src/App.tsx`
+- **Problem**: 두-프로파일 게이팅(capabilities + PAGE_CAP)과 mock 파생이 강하게 얽혀 있어 한 화면/기능을 빼거나 cap을 끄면 다른 화면이 조용히 깨질 위험(예: ontology mock이 Task/Endpoint 파생에 의존). 이를 자동 검증하는 격리 테스트가 없어 IMP-68/69/90 같은 제거·게이팅 작업이 회귀를 부를 수 있다(direction 9 최우선).
+- **Fix**: cap 매트릭스(각 cap off/on)와 '핵심 화면(endpoint·ontology·dashboard) 렌더 성공' 조합을 도는 격리 검증 테스트 추가. 라우트 미등록 시 pageFromPath 폴백·nav 필터·mock 파생이 크래시 없이 동작함을 assert. 제거 대상 기능(inbox 등)마다 '빼도 나머지 통과' 회귀 가드. Vitest+RTL(IMP-13 도입) 패턴 활용.
+- **Evidence**: (미연구 — low ambiguity) code 회귀 가드, direction 9 격리 최우선 요구를 직접 충족. IMP-90 inbox 제거의 안전 전제. IMP-13 테스트 인프라 재사용.
+- **Sources**: (코드 검증 — capabilities.tsx·PAGE_CAP·pageFromPath 게이팅 얽힘, 외부 출처 없음)
+- **Deep-dive suggestion**: 없음 (구현 직행). IMP-13 테스트 러너·IMP-90 inbox 제거와 짝.
+
+### IMP-89 — Endpoint↔app_id 라우팅을 온톨로지 관계로 노출
+- **Type**: ux (sev=medium, effort=M)
+- **Area**: `web/src/api/types.ts`(LinkKind), `web/src/api/mock.ts`(buildOntology), `web/src/components/ObjectView.tsx`, `web/src/pages/Traces.tsx`, `web/src/pages/Endpoints.tsx`
+- **Problem**: app_id는 Trace·Session·Key·Guard 표에 컬럼으로만 존재하고 'Endpoint가 어느 app_id들에 라우팅되나'는 어디에도 관계로 드러나지 않는다. Trace--routedTo-->Endpoint 링크는 있으나 app_id는 leaf 속성일 뿐이라 COP/ObjectView에서 '이 엔드포인트가 서비스하는 앱'을 traverse할 수 없다(direction 1).
+- **Fix**: 온톨로지에 App(또는 Consumer) 객체 타입 또는 Endpoint props의 app_id 집계를 승격하고 Endpoint--serves-->App(혹은 routes 링크) 추가. ObjectView Endpoint 헤더에 app_id 라우팅 요약 + 관계 섹션, Traces/Endpoints 목록에서 app_id 클릭 시 필터 컨텍스트로 drill-through(기존 NavParams 재사용).
+- **Evidence**: (미연구 — low ambiguity) direction 1 직접 충족. IMP-56 온톨로지 계층·IMP-57 ObjectView·IMP-58 COP·IMP-84 관계 그래프에 종속.
+- **Sources**: (코드 검증 — app_id가 표 컬럼·leaf 속성, 온톨로지 링크 부재)
+- **Deep-dive suggestion**: 없음 (구현 직행). IMP-84 관계 그래프와 함께 traverse 가능하게.
+
+### IMP-90 — 과업 인박스(/inbox) 제거 — 관제는 할당보다 알림+즉시대응
+- **Type**: ux (sev=medium, effort=M)
+- **Area**: `web/src/pages/Inbox.tsx`, `web/src/router.ts`(inbox route/PAGE_CAP), `web/src/api/types.ts`(TaskProps assignee/workflow), `web/src/components/KineticStrip.tsx`
+- **Problem**: /inbox(IMP-69)는 담당자 배정·workflow 스텝퍼 중심 큐인데, 실시간 관제 콘솔의 실제 행동양식은 '배정→처리'가 아니라 '알림→즉시 조치'다. Task assignee/workflow 레이어는 제품 톤과 어긋나고 유지비만 늘린다. Incident 라이프사이클은 유지가 맞다(direction 12).
+- **Fix**: 라우트 미등록 + nav 제거로 /inbox를 격리 제거하고, 즉시대응 흐름은 KineticStrip으로 수렴. Task/Workflow assignee 필드는 타입에서 optional로 강등하거나 다른 기능이 참조하는지 확인 후 안전 제거(IMP-88 격리 검증 테스트로 나머지 동작 보장). Incident 객체·라이프사이클은 그대로 유지.
+- **Evidence**: (미연구 — low ambiguity) direction 12 직접 충족. IMP-69(inbox 도입)를 되돌리는 명시 결정이므로 IMP-88 격리 가드가 안전 전제. IMP-38 인시던트 라이프사이클은 유지.
+- **Sources**: (제품 방향 결정 — 관제 콘솔 행동양식, 외부 출처 없음)
+- **Deep-dive suggestion**: 없음 (구현 직행, IMP-88 격리 테스트 선행 권장).
+
+### IMP-91 — AI Agent 에서 Kubernetes 클러스터 상태 질의 — read-only K8s MCP tool
+- **Type**: compete (sev=medium, effort=L)
+- **Area**: `web/src/api/agent.ts`, `web/src/actions/ontologyTools.ts`, `web/src/pages/AiAgent.tsx`, `backend/`(MCP)
+- **Problem**: 에이전트는 온톨로지 스냅샷만 조회할 뿐 실 클러스터 상태(파드 재시작·노드 NotReady·OOMKilled 이벤트·배포 rollout)를 물어볼 수 없다. kagent·k8sgpt·Datadog K8s 인텔리전스는 자연어로 클러스터를 진단한다 — 여기가 약점. Dynamo/vLLM 워크로드가 K8s 위에 돌기에 GPU 이상↔파드/노드 이벤트 상관이 차별화 축이 될 수 있다(direction 2).
+- **Fix**: read-only Kubernetes MCP tool(list_pods/list_nodes/get_events/describe_deployment)을 ONTOLOGY_TOOL_REGISTRY에 추가하고 mock-first로 결정적 K8s 스냅샷 파생. two-tier 게이팅(조회만; mutation 없음). 실연동은 official kubernetes-mcp-server spike로 park(direction 8 기술적 정직성 — mock임을 정직히 표기). kagent 대체 방향.
+- **Evidence**: (미연구 — low ambiguity) direction 2 직접 충족. IMP-73 MCP 스키마 단일화·IMP-60 AI Agent·IMP-79 K8s 백본에 종속. 실연동은 IMP-79와 함께 spike.
+- **Sources**: (참조 — kagent/k8sgpt/Datadog K8s, official kubernetes-mcp-server; 미연구)
+- **Deep-dive suggestion**: oss-evaluate (official kubernetes-mcp-server 채택 저울질). IMP-73 레지스트리·IMP-79 K8s 백본 spike와 짝.
+
+### IMP-92 — LLM 트레이스/평가 백본을 Langfuse(K8s Helm)로 백킹
+- **Type**: platform (sev=medium, effort=L)
+- **Area**: `web/src/api/mock.ts`(트레이스 synth), `web/src/pages/Traces.tsx`, `backend/`(trace ingest)
+- **Problem**: 트레이스·스팬·온라인 평가 점수를 프론트/백엔드에서 손수 합성하고 있어(direction 8 기술적 정직성 리스크), 실 트레이스 수집·세션 롤업·데이터셋 평가를 자체 구현하면 재발명이 크다. IMP-42(OTel)와 짝을 이룰 저장·평가·UI 백본이 필요하다.
+- **Fix**: Langfuse(Apache-2.0 코어, self-host Helm chart, OTLP ingest, scores/datasets/sessions)를 in-cluster로 채택해 트레이스 저장·평가·비용 롤업 백본으로 삼고, FABRIX UI는 그 데이터를 온톨로지 객체(Trace)로 접지·표면화. 라이선스 주의: 일부 엔터프라이즈 기능은 상용 티어 — 코어 OSS 범위만 사용. mock-first 유지, 실연동은 spike park.
+- **Evidence**: (미연구 — low ambiguity) direction 8 기술적 정직성. IMP-18 online-eval·IMP-32 full-text 검색·IMP-42 OTel·IMP-39 eval suite와 정합, IMP-42와 짝 백본.
+- **Sources**: (참조 — Langfuse Apache-2.0 self-host Helm/OTLP; 미연구)
+- **Deep-dive suggestion**: oss-evaluate (Langfuse OSS 코어 범위·라이선스 경계). IMP-42 OTel와 함께 spike park.

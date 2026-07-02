@@ -269,7 +269,19 @@ export default function Traces({ onNavigate }: { onNavigate?: NavFn }) {
                     onKeyDown={(e) => { if (e.key === "Enter") setSelId(t.trace_id); }}>
                     <td>{timeFmt(t.ts)}</td>
                     <td>{t.model}</td>
-                    <td>{t.app_id}</td>
+                    <td>
+                      {/* IMP-89 — app_id 클릭 → 그 앱의 트레이스로 필터(drill-through 컨텍스트). */}
+                      {t.app_id ? (
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={(e) => { e.stopPropagation(); setFilter("app", t.app_id); }}
+                          title={`앱 ${t.app_id} 트레이스로 필터`}
+                        >
+                          {t.app_id}
+                        </button>
+                      ) : "—"}
+                    </td>
                     <td className="cell-dim">{t.endpoint}</td>
                     <td className="num" style={{ color: t.ttft_ms > 140 ? "var(--amber)" : undefined }}>{t.ttft_ms}ms</td>
                     <td className="num">{fmtMs(t.decode_ms)}</td>

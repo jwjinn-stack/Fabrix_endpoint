@@ -8,7 +8,14 @@ import Modal from "../components/Modal";
 import { SkeletonRows } from "../components/Skeleton";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
-import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
+import {
+  BRAND_PRESETS, deriveBrand, useBrand, wcagAssess, isImageDataUri, withinSizeCap,
+  LOGO_MAX_BYTES, FAVICON_MAX_BYTES, DEFAULT_TENANT, type TenantBrand,
+} from "../theme";
+import {
+  loadModelConfig, saveModelConfig, probeModel, resolveConnState, isMockMode, DYNAMO_PRESET,
+  type ModelConnConfig, type ProbeResult,
+} from "../api/modelConnection";
 import InfoTip from "../components/InfoTip";
 import { humanizeError } from "../utils/errors";
 import { useToast } from "../toast";
@@ -18,6 +25,8 @@ import FieldError from "../components/FieldError";
 // 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
 function BrandColorCard() {
   const { brand, setBrand } = useBrand();
+  // IMP-87 — 텍스트-on-primary 조합의 WCAG 대비만 검증(브랜드 색 자체는 막지 않는다).
+  const wcag = wcagAssess(brand.primary, brand.onPrimary);
   return (
     <div className="card">
       <div className="card-head">
@@ -72,6 +81,136 @@ function BrandColorCard() {
         </label>
       </div>
       <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: "var(--sp-2)" }}>링크 예시</a></div>
+      {/* WCAG 대비 경고 — 강조색 위 텍스트(--on-primary) 조합이 AA 미달이면 안내(색 자체는 유효 유지). */}
+      {!wcag.passAA && (
+        <p className="policy-hint" role="status" style={{ marginBottom: 0, color: "var(--amber)" }}>
+          ⚠ 강조색 위 텍스트 대비 {wcag.ratio.toFixed(1)}:1 — {wcag.passUI ? "대형·UI 요소(3:1)는 충족하나 본문(4.5:1) 미달" : "WCAG 최소(3:1) 미달"}입니다. 텍스트 색은 대비가 나은 쪽(흰/검)으로 자동 선택되나, 더 진하거나 옅은 강조색을 권장합니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// IMP-87 — 화이트라벨 카드. 제품명·위첨자 + 로고/favicon(data-URI) 업로드 + 라이브 프리뷰.
+//   BrandColorCard/LocalModelCard 의 localStorage 패턴을 재사용하되 tenant 는 useBrand 컨텍스트가 영속.
+//   manage-gated: canEdit(=credentials cap) 아니면 읽기 전용(observe). 향후 /capabilities tenant 오버라이드 대비.
+//   업로드는 FileReader→data-URI, 이미지 MIME·크기·(favicon)정사각 가드 후에만 반영(보안 라이트체크).
+function WhiteLabelCard({ canEdit }: { canEdit: boolean }) {
+  const toast = useToast();
+  const { tenant, setTenant, brand } = useBrand();
+  const [name, setName] = useState(tenant.productName);
+  const [suffix, setSuffix] = useState(tenant.productSuffix);
+
+  const dirty = name.trim() !== tenant.productName || suffix.trim() !== tenant.productSuffix;
+
+  const patch = (p: Partial<TenantBrand>) => setTenant({ ...tenant, ...p });
+
+  const saveText = () => {
+    patch({ productName: name.trim() || DEFAULT_TENANT.productName, productSuffix: suffix.trim() });
+    toast.success("제품명을 저장했습니다(이 브라우저).");
+  };
+
+  const reset = () => {
+    setName(DEFAULT_TENANT.productName);
+    setSuffix(DEFAULT_TENANT.productSuffix);
+    setTenant({ productName: DEFAULT_TENANT.productName, productSuffix: DEFAULT_TENANT.productSuffix });
+    toast.success("기본값(FABRIX)으로 되돌렸습니다.");
+  };
+
+  // 로고: 이미지 MIME + 크기 캡. favicon: 추가로 정사각(±2px) 요구.
+  const onUpload = (kind: "logo" | "favicon", file: File | undefined) => {
+    if (!file) return;
+    const cap = kind === "logo" ? LOGO_MAX_BYTES : FAVICON_MAX_BYTES;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const uri = String(reader.result ?? "");
+      if (!isImageDataUri(uri)) { toast.error("이미지 파일(png·jpeg·svg·webp·gif·ico)만 업로드할 수 있습니다."); return; }
+      if (!withinSizeCap(uri, cap)) { toast.error(`파일이 너무 큽니다(최대 ${Math.round(cap / 1024)}KB).`); return; }
+      if (kind === "favicon") {
+        // 정사각 검증 — 비정사각 favicon 은 브라우저 탭에서 찌그러진다.
+        const img = new Image();
+        img.onload = () => {
+          if (Math.abs(img.width - img.height) > 2) { toast.error("favicon 은 정사각형 이미지여야 합니다."); return; }
+          patch({ faviconDataUri: uri });
+          toast.success("favicon 을 적용했습니다.");
+        };
+        img.onerror = () => toast.error("이미지를 읽을 수 없습니다.");
+        img.src = uri;
+      } else {
+        patch({ logoDataUri: uri });
+        toast.success("로고를 적용했습니다.");
+      }
+    };
+    reader.onerror = () => toast.error("파일을 읽을 수 없습니다.");
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>외관 · 화이트라벨</h3>
+        <InfoTip>제품명·로고·favicon 을 고객사 브랜드로 교체합니다. 로고/favicon 은 이 브라우저에 이미지로 저장(data-URI)되며, 문서 제목과 탭 아이콘도 함께 바뀝니다. 강조색은 아래 “브랜드 색상”에서 별도로 설정합니다.</InfoTip>
+      </div>
+      <p className="policy-hint" style={{ marginTop: 0 }}>
+        상단 바 워드마크·부팅 화면·문서 제목·탭 아이콘에 즉시 반영되며 이 브라우저에 저장됩니다. 로고 ≤{Math.round(LOGO_MAX_BYTES / 1024)}KB, favicon ≤{Math.round(FAVICON_MAX_BYTES / 1024)}KB·정사각.
+      </p>
+
+      <div className="pg-field-row">
+        <label className="pg-field">
+          <span>제품명</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="FABRIX" maxLength={40} disabled={!canEdit} />
+        </label>
+        <label className="pg-field">
+          <span>위첨자(선택)</span>
+          <input value={suffix} onChange={(e) => setSuffix(e.target.value)} placeholder="AI" maxLength={8} disabled={!canEdit} />
+        </label>
+      </div>
+
+      {canEdit && (
+        <div className="pg-field-row">
+          <label className="pg-field">
+            <span>로고 이미지</span>
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" onChange={(e) => onUpload("logo", e.target.files?.[0])} />
+          </label>
+          <label className="pg-field">
+            <span>favicon(정사각)</span>
+            <input type="file" accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,image/webp" onChange={(e) => onUpload("favicon", e.target.files?.[0])} />
+          </label>
+        </div>
+      )}
+
+      {!canEdit && <p className="policy-hint" style={{ marginTop: 0 }}>읽기 전용(observe) 프로파일입니다 — 편집은 manage 프로파일에서만 가능합니다.</p>}
+
+      {/* 라이브 프리뷰 — 실제 topbar 그라데이션·onPrimary 로 워드마크/로고를 그대로 렌더 */}
+      <div className="policy-hint" style={{ marginTop: "var(--sp-2)" }}>미리보기</div>
+      <div
+        aria-label="상단 바 미리보기"
+        style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8,
+          background: `linear-gradient(90deg, ${brand.primary} 0%, ${brand.lite} 100%)`,
+          color: brand.onPrimary, fontWeight: 700, letterSpacing: ".02em",
+        }}
+      >
+        {tenant.logoDataUri ? (
+          <img src={tenant.logoDataUri} alt={tenant.productName} style={{ height: 24, maxWidth: 180, objectFit: "contain" }} />
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 2 }}>
+            {tenant.productName}
+            {tenant.productSuffix && (
+              <sup style={{ fontSize: 9, background: brand.onPrimary, color: brand.primary, borderRadius: 3, padding: "1px 3px", fontWeight: 800 }}>{tenant.productSuffix}</sup>
+            )}
+          </span>
+        )}
+      </div>
+
+      {canEdit && (
+        <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btn-primary" onClick={saveText} disabled={!dirty}>제품명 저장</button>
+          {tenant.logoDataUri && <button type="button" className="btn-ghost" onClick={() => patch({ logoDataUri: undefined })}>로고 제거</button>}
+          {tenant.faviconDataUri && <button type="button" className="btn-ghost" onClick={() => patch({ faviconDataUri: undefined })}>favicon 제거</button>}
+          <button type="button" className="btn-ghost" onClick={reset}>기본값(FABRIX)</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -147,6 +286,117 @@ export function AlertWebhookCard() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// IMP-82 — 로컬 추론 모델(Dynamo) 연결 설정 카드. BrandColorCard/AlertWebhookCard 의 localStorage 패턴.
+//   엔드포인트 URL·모델 식별자·타임아웃 + Dynamo :8000 프리셋 + "연결 테스트"(/health·/v1/models 프로브).
+//   canConfig=manage 에서만 편집(observe 는 읽기 전용). 저장값은 config(시크릿 아님) — 본문 로깅 없음.
+//   **정직성**: mock 모드면 "실 연결 안 됨"을 명시하고, 저장은 VITE_MOCK=off 실경로에서만 효력이 있음을 알린다.
+export function LocalModelCard({ canEdit }: { canEdit: boolean }) {
+  const toast = useToast();
+  const mock = isMockMode();
+  const [cfg, setCfg] = useState<ModelConnConfig>(() => loadModelConfig());
+  const [form, setForm] = useState<ModelConnConfig>(() => loadModelConfig());
+  const [testing, setTesting] = useState(false);
+  const [probe, setProbe] = useState<ProbeResult | null>(null);
+
+  const dirty = form.endpoint !== cfg.endpoint || form.model !== cfg.model || form.timeoutMs !== cfg.timeoutMs;
+
+  const save = () => {
+    const next: ModelConnConfig = {
+      endpoint: form.endpoint.trim(),
+      model: form.model.trim(),
+      timeoutMs: form.timeoutMs > 0 ? form.timeoutMs : 8000,
+    };
+    saveModelConfig(next);
+    setCfg(next);
+    setForm(next);
+    toast.success("로컬 모델 연결 설정을 저장했습니다(이 브라우저).");
+  };
+
+  const applyPreset = () => setForm({ ...DYNAMO_PRESET, model: form.model });
+
+  // 연결 테스트 — 입력된 값으로 즉시 프로브(저장과 별개, 인라인 리포트). read-only.
+  const test = async () => {
+    if (!form.endpoint.trim()) { toast.error("엔드포인트 URL 을 입력하세요."); return; }
+    setTesting(true);
+    setProbe(null);
+    try {
+      const r = await probeModel({ endpoint: form.endpoint.trim(), model: form.model.trim(), timeoutMs: form.timeoutMs || 8000 });
+      setProbe(r);
+    } catch {
+      // probeModel 은 throw 하지 않도록 설계됐지만 방어적으로 offline 표기.
+      setProbe({ healthOk: false, models: [], resolvedModel: null, modelMatch: false, latencyMs: 0, ttftMs: null, error: "프로브 실패" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  // 프로브 결과를 상태로 해석(mock=false 강제 — 실제 프로브 결과를 정직히 보여준다).
+  const conn = probe ? resolveConnState(probe, { endpoint: form.endpoint.trim(), model: form.model.trim(), timeoutMs: form.timeoutMs || 8000 }, false) : null;
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>로컬 추론 모델 연결</h3>
+        <InfoTip>AI Agent·클러스터 인사이트가 근거로 삼는 로컬 추론 모델(Dynamo, OpenAI-호환)의 엔드포인트·모델·타임아웃을 지정합니다. 상태 확인은 /health(200)와 /v1/models(로드 모델)만 읽는 저비용 read-only 프로브입니다. 이 브라우저에 저장됩니다.</InfoTip>
+      </div>
+      <p className="policy-hint" style={{ marginTop: 0 }}>
+        {mock
+          ? <>현재 <b>mock 모드</b>입니다 — 실제 모델에 연결되지 않으며 결과는 결정적 mock 데이터입니다. 아래 설정은 <code>VITE_MOCK=off</code> 실경로에서만 효력이 있습니다(정직 표기 유지).</>
+          : <>설정된 엔드포인트의 <code>/health</code>·<code>/v1/models</code>로 연결 상태와 로드 모델을 확인합니다. Dynamo 는 통상 별도 <code>:8000</code> 추론 서비스입니다.</>}
+      </p>
+
+      <label className="pg-field">
+        <span>엔드포인트 URL</span>
+        <input
+          value={form.endpoint}
+          onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
+          placeholder="http://localhost:8000"
+          disabled={!canEdit}
+        />
+      </label>
+      <div className="pg-field-row">
+        <label className="pg-field">
+          <span>모델 식별자</span>
+          <input
+            value={form.model}
+            onChange={(e) => setForm({ ...form, model: e.target.value })}
+            placeholder="예: Qwen/Qwen2.5-7B-Instruct (비우면 첫 로드 모델)"
+            disabled={!canEdit}
+          />
+        </label>
+        <label className="pg-field">
+          <span>타임아웃(ms)</span>
+          <input
+            value={String(form.timeoutMs)}
+            onChange={(e) => setForm({ ...form, timeoutMs: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
+            inputMode="numeric"
+            disabled={!canEdit}
+          />
+        </label>
+      </div>
+
+      {!canEdit && <p className="policy-hint" style={{ marginTop: 0 }}>읽기 전용(observe) 프로파일입니다 — 편집은 manage 프로파일에서만 가능합니다.</p>}
+
+      <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+        {canEdit && <button type="button" className="btn-ghost" onClick={applyPreset}>Dynamo :8000 프리셋</button>}
+        {canEdit && <button type="button" className="btn-primary" onClick={save} disabled={!dirty}>저장</button>}
+        <button type="button" className="btn-ghost" onClick={test} disabled={testing || !form.endpoint.trim()}>
+          {testing ? "테스트 중…" : "연결 테스트"}
+        </button>
+      </div>
+
+      {/* 연결 테스트 인라인 리포트 — /health·/v1/models 결과. 색 비의존(Badge dot + 텍스트). */}
+      {conn && (
+        <div className="policy-hint" role="status" style={{ marginBottom: 0 }}>
+          <Badge tone={conn.tone} dot>{conn.label}</Badge>{" "}
+          <span className="muted">{conn.detail}</span>
+          {conn.latencyMs != null && <span className="muted"> · 왕복 {conn.latencyMs}ms</span>}
         </div>
       )}
     </div>
@@ -417,6 +667,8 @@ export default function Settings() {
 
       {error && <div className="state error" role="alert">{error}</div>}
       {canConfig && <ReconfigurePanel />}
+      {/* IMP-82 — 로컬 모델 연결 카드. 목록/테스트는 항상 표시, 편집은 manage(credentials)에서만. */}
+      <LocalModelCard canEdit={canConfig} />
       {canConfig && <AlertWebhookCard />}
       {/* 지표 기반 알림 룰(IMP-36) — 목록은 읽기전용으로 항상, 편집은 manage(credentials)에서만 */}
       <AlertRulesCard canEdit={canConfig} />
@@ -493,6 +745,8 @@ export default function Settings() {
         <div className="policy-hint">모든 권한 토글·역할 변경은 감사 이벤트로 캡처됩니다. 상향 권한 부여 차단(자신보다 높은 역할 부여 불가)은 현재 사용자 컨텍스트 연동 후 활성화됩니다.</div>
       </div>
 
+      {/* IMP-87 — 화이트라벨(제품명·로고·favicon)은 색상 프리셋 위에. 편집은 manage(credentials)에서만. */}
+      <WhiteLabelCard canEdit={canConfig} />
       <BrandColorCard />
 
       <SlidePanel

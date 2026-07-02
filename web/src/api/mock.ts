@@ -22,17 +22,16 @@ import type {
   ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
   ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
   MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
-  TaskProps, TaskPriority, TaskStatus, WorkflowDef,
 } from "./types";
-import { ACTION_REGISTRY, STATE_TRANSITION, TASK_STEP_TRANSITION, evaluateSubmission } from "../actions/registry";
-import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
+import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
+import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } from "./mockFactory";
 // GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
 import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
 // IMP-78 — 클러스터 인사이트(생성적) 순수 조립. HARD grounding(인용 강제)은 buildAgentInsights 내부에서.
-import { runAgentLoop, buildAgentInsights } from "./agent";
+import { runAgentLoop, buildAgentInsights, runK8sQuery } from "./agent";
 // Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
 import { attributeDetections } from "./detection";
 
@@ -959,35 +958,8 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
-// ───────────── PROCESS 레이어 — Task / Workflow (IMP-69) ─────────────
-// Palantir operational-process-coordination(§1B·§4): 디지털트윈(subject-matter) 위에 얹는 과업 층.
-// Incident(장애 이벤트)를 assignee·priority·status·workflow 를 가진 1급 Task 로 승격해 Action Inbox 진입점을 만든다.
-//
-// 순차 워크플로 — Task.status/workflowStepIndex 가 이 배열의 위치와 1:1(단일 출처). resolved 가 terminal.
-const INCIDENT_WORKFLOW: WorkflowDef = {
-  id: "wf-incident",
-  name: "인시던트 대응",
-  steps: [
-    { key: "triaged", label: "분류" },
-    { key: "assigned", label: "배정" },
-    { key: "in-progress", label: "조치 중" },
-    { key: "resolved", label: "해소", terminal: true },
-  ],
-};
-// TaskStatus → INCIDENT_WORKFLOW.steps 내 인덱스(status↔step 동기화). 미지 status 는 0(방어).
-function workflowStepIndex(status: TaskStatus): number {
-  const i = INCIDENT_WORKFLOW.steps.findIndex((s) => s.key === status);
-  return i < 0 ? 0 : i;
-}
-// AlarmSeverity → TaskPriority (심각도가 우선순위를 좌우 — critical=urgent).
-function severityToPriority(sev: string): TaskPriority {
-  return sev === "critical" ? "urgent" : sev === "warning" ? "high" : "med";
-}
-// 결정적 담당자 배정 — 운영자 풀에서 seed(incident id)로 고른다(mock; 재현 가능).
-const OPERATORS = ["김운영", "이온콜", "박SRE", "최플랫폼"];
-function assigneeFor(seedKey: string): string {
-  return OPERATORS[hash(`assignee:${seedKey}`) % OPERATORS.length];
-}
+// (IMP-90: PROCESS 레이어 Task / Workflow(assignee·priority·status·workflow 승격)는 제거 —
+//  관제 콘솔은 과업 배정이 아니라 알림+즉시대응(KineticStrip)으로 수렴. Incident 라이프사이클은 유지.)
 
 // Action(writeback) mock 상태(IMP-59) — buildOntology 는 결정적으로 재구성되므로,
 // 실행된 action 의 결과(status 전이·revision 증가)를 여기 override 로 얹어 다음 조회에 반영한다.
@@ -1048,13 +1020,31 @@ function buildOntologyFresh(): OntologySnapshot {
   }
 
   // ── Endpoint (ENDPOINTS) ── serves→Model, consumes(Service→Endpoint)는 아래 Service 에서.
+  //  IMP-89: 각 EP 의 app_id 를 App(소비자) 객체로 승격하고 Endpoint --routes--> App 로 잇는다.
+  //  app_id 별로 어느 EP 들이 라우팅되나를 모아 App props(라우팅 요약)와 상태(worst)를 결정적으로 파생한다.
+  interface AppAgg { app_id: string; endpointNames: string[]; worst: ObjectStatus; requests: number }
+  const appAgg = new Map<string, AppAgg>();
+  const worstOf = (a: ObjectStatus, b: ObjectStatus): ObjectStatus => {
+    const rank: Record<ObjectStatus, number> = { crit: 0, warn: 1, ok: 2, unknown: 3 };
+    return rank[b] < rank[a] ? b : a;
+  };
   for (const e of ENDPOINTS) {
-    add(`endpoint:${e.name}`, "Endpoint", e.name, e.ready ? "ok" : "crit", {
+    const epStatus: ObjectStatus = e.ready ? "ok" : "crit";
+    add(`endpoint:${e.name}`, "Endpoint", e.name, epStatus, {
       namespace: e.namespace, model: e.model, backend: e.backend, replicas: e.replicas,
       app_id: e.app_id ?? "", dept_id: e.dept_id ?? "", ready: e.ready,
     });
     if (e.model && MODELS.some((m) => m.id === e.model)) {
       links.push({ from: `endpoint:${e.name}`, to: `model:${e.model}`, linkKind: "serves" });
+    }
+    // app_id 가 있을 때만 App 으로 승격(부재 시 graceful — App 객체·routes 링크 생성 안 함).
+    if (e.app_id) {
+      const agg = appAgg.get(e.app_id) ?? { app_id: e.app_id, endpointNames: [], worst: "unknown", requests: 0 };
+      agg.endpointNames.push(e.name);
+      agg.worst = worstOf(agg.worst, epStatus);
+      appAgg.set(e.app_id, agg);
+      // Endpoint --routes--> App (이 엔드포인트가 라우팅하는 소비자 앱).
+      links.push({ from: `endpoint:${e.name}`, to: `app:${e.app_id}`, linkKind: "routes" });
     }
   }
 
@@ -1117,6 +1107,11 @@ function buildOntologyFresh(): OntologySnapshot {
   // ── Trace (대표 몇 건) ── routedTo→Endpoint, executedOn→GpuDevice.
   const traceList = genTraceList("24h", {});
   const gpuIds = topo.nodes.filter((n) => n.kind === "gpu").map((n) => n.id);
+  // IMP-89: App 라우팅 요약의 request_count — 대표 트레이스(전량 표본)의 app_id 별 집계(결정적).
+  const appTraceCount = new Map<string, number>();
+  for (const t of traceList.traces) {
+    if (t.app_id) appTraceCount.set(t.app_id, (appTraceCount.get(t.app_id) ?? 0) + 1);
+  }
   for (const t of traceList.traces.slice(0, 8)) {
     const status: ObjectStatus = t.status === "error" ? "crit" : t.decision === "blocked" ? "warn" : "ok";
     add(`trace:${t.trace_id}`, "Trace", t.trace_id, status, {
@@ -1130,6 +1125,22 @@ function buildOntologyFresh(): OntologySnapshot {
       const gid = gpuIds[hash(t.trace_id) % gpuIds.length];
       links.push({ from: `trace:${t.trace_id}`, to: `gpu:${gid}`, linkKind: "executedOn" });
     }
+  }
+
+  // ── App (소비자 — IMP-89) ── app_id 를 leaf 컬럼이 아니라 traversable 객체로.
+  //  Endpoint --routes--> App 링크는 위 Endpoint 루프에서 이미 push. 여기선 App 객체 자체를 만든다.
+  //  props = 라우팅 요약(어느 EP 들이·몇 개·요청 몇 건). 상태 = 소비 EP 들의 worst(단일 출처).
+  //  app_id 가 어떤 EP 에도 없으면 App 도 없다(부재 graceful). id 접두 app: 로 네임스페이스 충돌 회피.
+  for (const agg of [...appAgg.values()].sort((a, b) => (a.app_id < b.app_id ? -1 : 1))) {
+    const meta = APPS.find((a) => a.app_id === agg.app_id);
+    add(`app:${agg.app_id}`, "App", meta?.name ?? agg.app_id, agg.worst, {
+      app_id: agg.app_id,
+      name: meta?.name ?? agg.app_id,
+      dept_id: meta?.dept_id ?? "",
+      endpoints: agg.endpointNames.length,
+      endpoint_names: agg.endpointNames.join(", "),
+      request_count: appTraceCount.get(agg.app_id) ?? 0,
+    });
   }
 
   // ── Incident (INCIDENTS 승격) ── affects→{object}. dedup_key 로 영향 대상을 유추.
@@ -1153,37 +1164,8 @@ function buildOntologyFresh(): OntologySnapshot {
     }
   }
 
-  // ── PROCESS 층 Task (IMP-69) — 각 Incident 를 assignee·priority·status·workflow 를 가진 1급 과업으로 승격 ──
-  // 디지털트윈(subject-matter) 위에 얹는 과업 층. Incident --spawns--> Task, Task --tracks--> {영향 subject-matter}.
-  // 결정적: assignee/priority/status/linkedObjectIds 는 incident id + severity + affects 링크에서 파생(재현 가능).
-  const existingIds = new Set(objects.map((o) => o.id)); // Task tracks 대상 필터용(실재 객체만).
-  for (const inc of INCIDENTS) {
-    const incId = `incident:${inc.id}`;
-    const taskId = `task:${inc.id}`;
-    // 이 인시던트가 affects 하는 subject-matter 객체(위 Incident 루프가 이미 링크를 만들어 둠) = 과업이 tracks 할 대상.
-    const linkedObjectIds = links
-      .filter((l) => l.from === incId && l.linkKind === "affects")
-      .map((l) => l.to)
-      .filter((id) => existingIds.has(id));
-    // 초기 status — 이미 사람이 개입(acked)한 인시던트는 assigned 로 시작, 아니면 triaged(분류만 됨).
-    const seedStatus: TaskStatus = inc.state === "acked" || inc.state === "resolved" ? "assigned" : "triaged";
-    const props: TaskProps = {
-      title: `[대응] ${inc.title}`,
-      assignee: seedStatus === "assigned" ? assigneeFor(inc.id) : "",
-      createdAt: inc.first_seen,
-      assignedAt: seedStatus === "assigned" ? inc.last_seen : undefined,
-      priority: severityToPriority(inc.severity),
-      status: seedStatus,
-      linkedObjectIds,
-      workflowId: INCIDENT_WORKFLOW.id,
-      workflowStepIndex: workflowStepIndex(seedStatus),
-      spawnedByIncidentId: inc.id,
-    };
-    // Task 는 process 객체라 온톨로지 status 는 항상 중립(unknown) — 상태 렌즈는 subject-matter 전용.
-    add(taskId, "Task", props.title, "unknown", props as unknown as Record<string, unknown>);
-    links.push({ from: incId, to: taskId, linkKind: "spawns" });
-    for (const objId of linkedObjectIds) links.push({ from: taskId, to: objId, linkKind: "tracks" });
-  }
+  // (IMP-90: Incident→spawns→Task, Task→tracks 링크 및 PROCESS 층 Task 승격은 제거.
+  //  Incident affects 링크·라이프사이클은 위에서 그대로 유지된다.)
 
   // dangling 링크 방지 — 실재 object id 만 남긴다(단일 출처 무결성).
   const ids = new Set(objects.map((o) => o.id));
@@ -1225,6 +1207,125 @@ function runAgentInsightsMock(): import("./types").AgentInsightRun {
   const traceId = `agti_${AGENT_SEQ.toString(36)}_${hash("insights").toString(36)}`;
   const run = buildAgentInsights(objects, links, { traceId }); // (1) 순수 — 결정적 mock completion + 인용 강제.
   for (const a of run.audit) AGENT_AUDIT.unshift(a);            // (2) 부작용
+  return run;
+}
+
+// ── Kubernetes 클러스터 상태 스냅샷(IMP-91) — 온톨로지 상관 결정적 파생 ──
+// 에이전트의 K8s read tool(list_pods/list_nodes/get_events/describe_deployment)이 조회할 스냅샷을
+// 온톨로지 객체/링크에서 **결정적으로** 파생한다. 실 클러스터 상태가 아니라 mock 이며(direction 8 정직성),
+// 실연동은 official kubernetes-mcp-server SPIKE — 이 함수 자리만 실 kube-mcp 응답으로 스왑하면 된다.
+//
+// **온톨로지 상관(요구사항 2)**: crit GPU/Node → 그 노드가 NotReady, 그 위 파드에 OOMKilled + 재시작↑ +
+//   OOMKilling/BackOff 이벤트. crit Endpoint(NotReady 엔드포인트) → 그 배포 rollout unavailable.
+//   → k8s 답이 온톨로지(gpu-node-02 crit 등)와 정합하게 상관된다.
+// **순수·격리(direction 9)**: objects/links 배열만 받는 순수 함수 → 빈/부분 스냅샷에서 throw 없이 빈 결과.
+export function buildK8sSnapshot(objects: OntologyObject[], links: OntologyLink[]): import("./types").K8sSnapshot {
+  const pods: import("./types").K8sPod[] = [];
+  const nodes: import("./types").K8sNode[] = [];
+  const events: import("./types").K8sEvent[] = [];
+  const deployments: import("./types").K8sDeployment[] = [];
+
+  const nodeObjs = objects.filter((o) => o.type === "Node");
+  const gpuObjs = objects.filter((o) => o.type === "GpuDevice");
+  const epObjs = objects.filter((o) => o.type === "Endpoint");
+
+  // GpuDevice --hostedBy--> Node 로 각 노드의 GPU 상태를 모아 노드 이상 판정(단일 출처: 온톨로지 링크).
+  const gpuById = new Map(gpuObjs.map((o) => [o.id, o]));
+  const nodeGpuStatuses = new Map<string, string[]>();
+  for (const l of links) {
+    if (l.linkKind === "hostedBy" && gpuById.has(l.from)) {
+      const arr = nodeGpuStatuses.get(l.to) ?? [];
+      arr.push(gpuById.get(l.from)!.status);
+      nodeGpuStatuses.set(l.to, arr);
+    }
+  }
+
+  // ── Node ── 온톨로지 Node crit 또는 그 위 GPU 가 crit 이면 NotReady 로 상관.
+  for (const n of nodeObjs) {
+    const hostName = String((n.props as Record<string, unknown>).hostname ?? n.title);
+    const gpuStatuses = nodeGpuStatuses.get(n.id) ?? [];
+    const gpuCrit = gpuStatuses.includes("crit");
+    const notReady = n.status === "crit" || gpuCrit;
+    nodes.push({
+      name: hostName,
+      condition: notReady ? "NotReady" : "Ready",
+      reason: notReady ? (gpuCrit ? "GPU 장애로 kubelet 이 Ready 조건을 잃음(추정)" : "KubeletNotReady") : undefined,
+      objectId: n.id,
+    });
+    if (notReady) {
+      events.push({
+        reason: "NodeNotReady",
+        message: `Node ${hostName} status is now: NodeNotReady`,
+        involvedObject: `node/${hostName}`,
+        count: 1,
+        objectId: n.id,
+      });
+    }
+  }
+
+  // ── Pod ── Endpoint 를 파드의 상위로 삼는다(각 Endpoint = 하나의 서빙 배포). replicas 만큼 파드 생성.
+  //   Endpoint 가 crit(NotReady) 이거나 그 Model 이 crit 이면 파드에 OOMKilled + 재시작↑ 을 상관시킨다.
+  const nodeNames = nodes.map((x) => x.name);
+  for (const ep of epObjs) {
+    const p = ep.props as Record<string, unknown>;
+    const ns = String(p.namespace ?? "fabrix");
+    const replicas = Math.max(1, Number(p.replicas) || 1);
+    const epName = ep.title;
+    // 이 엔드포인트가 얹힌 노드(결정적): 이름 해시로 노드 배정(노드 없으면 이름만).
+    const nodeName = nodeNames.length ? nodeNames[hash(ep.id) % nodeNames.length] : "";
+    const nodeNotReady = nodes.find((x) => x.name === nodeName)?.condition === "NotReady";
+    const bad = ep.status === "crit"; // NotReady 엔드포인트 → 파드 기동 실패/OOM 상관.
+    for (let i = 0; i < replicas; i++) {
+      const podName = `${epName}-${(hash(`${ep.id}:${i}`) % 90000 + 10000).toString(36)}`;
+      const oom = bad && i === 0; // 대표 파드 1개가 OOMKilled(결정적).
+      const failedSched = nodeNotReady && i === 0;
+      const restarts = oom ? 5 + (hash(podName) % 8) : failedSched ? 3 : 0;
+      const phase: import("./types").K8sPod["phase"] = oom ? "Failed" : bad ? "Pending" : "Running";
+      pods.push({
+        name: podName, namespace: ns,
+        phase, ready: phase === "Running",
+        restarts, oomKilled: oom, node: nodeName,
+        objectId: ep.id,
+        reason: oom ? "CrashLoopBackOff" : failedSched ? "FailedScheduling" : undefined,
+      });
+      if (oom) {
+        events.push({ reason: "OOMKilling", message: `Container 가 메모리 한계를 초과해 OOMKilled 되었습니다 (pod ${podName})`, involvedObject: `pod/${podName}`, count: restarts, objectId: ep.id });
+        events.push({ reason: "BackOff", message: `Back-off restarting failed container (pod ${podName})`, involvedObject: `pod/${podName}`, count: restarts, objectId: ep.id });
+      } else if (failedSched) {
+        events.push({ reason: "FailedScheduling", message: `0/${nodeNames.length} nodes are available: 노드 ${nodeName} NotReady`, involvedObject: `pod/${podName}`, count: 1, objectId: ep.id });
+      }
+    }
+    // ── Deployment ── Endpoint 하나당 배포 하나. crit → unavailable rollout.
+    const desired = replicas;
+    const available = bad ? Math.max(0, replicas - 1) : replicas;
+    const unavailable = desired - available;
+    deployments.push({
+      name: epName, namespace: ns, desired, updated: desired, available, unavailable,
+      rollout: unavailable === 0 ? "complete" : available === 0 ? "stalled" : "progressing",
+      objectId: ep.id,
+    });
+  }
+
+  // 결정적 정렬(재현 가능).
+  pods.sort((a, b) => (a.name < b.name ? -1 : 1));
+  nodes.sort((a, b) => (a.name < b.name ? -1 : 1));
+  events.sort((a, b) => (a.involvedObject + a.reason < b.involvedObject + b.reason ? -1 : 1));
+  deployments.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return { pods, nodes, events, deployments };
+}
+
+// POST /agent/k8s — K8s 클러스터 상태 질의(IMP-91). runAgentMock 과 동일한 순수/부작용 경계(IMP-81):
+//   (1) 순수: buildK8sSnapshot(공유 스냅샷) → runK8sQuery(결정적 ReAct + 진단).
+//   (2) 부작용: transcript audit 를 AGENT_AUDIT 에 append.
+// VITE_MOCK=off 면 buildK8sSnapshot 자리만 실 kube-mcp 응답으로 스왑되고 응답 스키마(K8sQueryRun)는 고정.
+function runK8sQueryMock(body: Record<string, unknown>): import("./types").K8sQueryRun {
+  const { objects, links } = buildOntology(); // 요청단위 공유 스냅샷(재구성 중복 없음).
+  const k8s = buildK8sSnapshot(objects, links);
+  const intent = typeof body.intent === "string" ? body.intent : undefined;
+  AGENT_SEQ++;
+  const traceId = `agk8s_${AGENT_SEQ.toString(36)}_${hash(`${intent ?? ""}`).toString(36)}`;
+  const run = runK8sQuery(k8s, { intent, traceId }); // (1) 순수
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);  // (2) 부작용
   return run;
 }
 
@@ -1685,47 +1786,16 @@ function applyAction(name: string, body: Record<string, unknown>): Response {
     }
   }
 
-  // ── PROCESS 층 Task writeback(IMP-69) — 양 계층 반영 ──
-  // (1) process 층: Task props(status/assignee/workflowStepIndex)를 TASK_STEP_TRANSITION 대로 전이(단일 출처).
-  // (2) subject-matter 층: resolveTask 면 이 과업이 tracks 하는 디지털트윈 객체 + spawns 인시던트도 함께 수렴(status=ok).
-  //     실 외부 시스템 push(webhook)는 IMP-67 spike — 여기서는 온톨로지 override 로만 반영.
-  let taskExtraProps: Record<string, unknown> = {};
-  if (spec.target === "Task") {
-    const prev = (snapshot.props ?? {}) as Partial<TaskProps>;
-    const nextTaskStatus = TASK_STEP_TRANSITION[name] ?? (prev.status as TaskStatus | undefined) ?? "triaged";
-    const assigneeParam = typeof params.assignee === "string" ? params.assignee.trim() : "";
-    taskExtraProps = {
-      status: nextTaskStatus,
-      workflowStepIndex: workflowStepIndex(nextTaskStatus),
-      // assign/reassign 은 담당자 지정, resolveTask 는 담당자 유지. assignedAt 은 배정 시각.
-      ...(assigneeParam ? { assignee: assigneeParam, assignedAt: new Date().toISOString() } : {}),
-    };
-    if (name === "resolveTask") {
-      // (2) 디지털트윈 수렴 — 이 과업이 감시하던 subject-matter 객체(tracks)와 이를 낳은 Incident 를 ok 로.
-      const linked = Array.isArray(prev.linkedObjectIds) ? (prev.linkedObjectIds as string[]) : [];
-      const incId = prev.spawnedByIncidentId ? `incident:${prev.spawnedByIncidentId}` : undefined;
-      for (const objId of [...linked, ...(incId ? [incId] : [])]) {
-        const cur = buildOntology().objects.find((o) => o.id === objId);
-        if (!cur) continue;
-        ONTOLOGY_OVERRIDES[objId] = {
-          status: "ok",
-          revision: cur.revision + 1,
-          props: { ...(ONTOLOGY_OVERRIDES[objId]?.props ?? {}), resolved_by_task: target },
-        };
-      }
-      // 연결 Incident 는 기존 INCIDENTS 모듈 상태도 resolved 로(비회귀 — Incident 인박스와 정합).
-      if (prev.spawnedByIncidentId) actIncidentCore(prev.spawnedByIncidentId, "resolve", {});
-    }
-  }
+  // (IMP-90: PROCESS 층 Task writeback(assign/reassign/resolveTask 양 계층 반영)은 제거 —
+  //  Incident 라이프사이클(ack/resolve/snooze)은 위 actIncidentCore 경로로 그대로 유지.)
 
   // 5) 상태 전이 반영 — Rules(STATE_TRANSITION) 대로 status 전이 + revision++.
-  //    Task 는 STATE_TRANSITION 이 undefined(온톨로지 status 불변 = process 객체) → snapshot.status(unknown) 유지.
   const nextStatus = STATE_TRANSITION[name] ?? snapshot.status;
   const nextRev = snapshot.revision + 1;
   const nextOverride: OntologyOverride = {
     status: nextStatus,
     revision: nextRev,
-    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), ...taskExtraProps, last_action: name },
+    props: { ...(ONTOLOGY_OVERRIDES[target]?.props ?? {}), last_action: name },
   };
   ONTOLOGY_OVERRIDES[target] = nextOverride;
   // 요청단위 스냅샷 무효화(IMP-81) — override 를 갱신했으니 이 요청에서 만든 캐시를 버려
@@ -1988,8 +2058,8 @@ function genDiagnostics(verbose = false): DiagReport {
 // mock 프로파일 — VITE_PROFILE 로 observe/manage 흉내(백엔드 capability.Resolve 와 동일 규칙).
 // 프론트 단독에서 `VITE_PROFILE=observe npm run dev` 로 관제 전용 UI 를 확인할 수 있다.
 function genCapabilities(): Capabilities {
-  // incident.ack(관제 운영자도 '처리중' 표시 허용 — observe on) / incident.write(resolve/snooze·Task 조치 — manage 전용)
-  // 는 backend capability.go 와 1:1(단일 출처 정합). Task verb(assign/reassign/resolveTask, IMP-69)도 incident.write 게이팅.
+  // incident.ack(관제 운영자도 '처리중' 표시 허용 — observe on) / incident.write(resolve/snooze — manage 전용)
+  // 는 backend capability.go 와 1:1(단일 출처 정합).
   const ALL = ["dashboard", "traces", "guard", "guard.write", "models", "models.write", "playground", "eval", "endpoints", "endpoints.write", "keys", "keys.write", "users", "users.write", "credentials", "incident.ack", "incident.write"];
   const observeOn = new Set(["dashboard", "traces", "guard", "models", "incident.ack"]);
   const mutating = new Set(["guard.write", "models.write", "playground", "eval", "endpoints.write", "keys.write", "users.write", "credentials", "incident.write"]);
@@ -2134,6 +2204,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
     // AI Agent 클러스터 인사이트(IMP-78) — 로컬 모델이 온톨로지 근거로 군집·패턴 도출(HARD grounding·read-only).
     case "POST /agent/insights": return ok(runAgentInsightsMock());
+    case "POST /agent/k8s": return ok(runK8sQueryMock((body as Record<string, unknown>) ?? {}));
   }
 
   // 패턴 매칭 (path 변수 포함)
@@ -2436,10 +2507,11 @@ const MCP_AGGREGATE_TOOLS = [
   { name: "top_outliers", description: "차원별 분해에서 카탈로그 임계치를 위반한(이상) 그룹만 추려 사유와 함께 반환한다." },
   { name: "summarize_endpoint_health", description: "전체 추론 서빙 건강도 요약(QPS·TTFT p95·ITL·캐시적중·차단·알람)을 자연어로 반환한다." },
 ];
-// aggregate + 온톨로지 read tool(레지스트리 파생, name 순). inputSchema 도 실어 패널이 계약을 그대로 노출.
+// aggregate + 온톨로지 read tool + K8s read tool(IMP-91)(레지스트리 파생, name 순). inputSchema 도 실어
+// 패널이 계약을 그대로 노출한다. K8s tool 도 read-only(list/get/describe) — mutating 동사 없음(two-tier).
 const MCP_TOOLS = [
   ...MCP_AGGREGATE_TOOLS,
-  ...Object.values(ONTOLOGY_TOOL_REGISTRY)
+  ...[...Object.values(ONTOLOGY_TOOL_REGISTRY), ...Object.values(K8S_TOOL_REGISTRY)]
     .slice()
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),

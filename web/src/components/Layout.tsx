@@ -4,11 +4,11 @@ import CommandPalette, { type Command } from "./CommandPalette";
 import { useSearchAround } from "./useSearchAround";
 import { useObjectView } from "./ObjectView";
 import { useCap } from "../capabilities";
+import { useBrand } from "../theme";
 import { capForPage } from "../router";
 
 export type Page =
   | "dashboard"
-  | "inbox"
   | "ontology"
   | "usage"
   | "guard"
@@ -64,13 +64,13 @@ const NAV: NavItem[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  // 추적(Investigate) — 원인 추적을 1급 시민으로(TASK 진입). Action Inbox(IMP-69)가 과업-앵커 진입점(내게 할당된 과업 큐).
+  // 추적(Investigate) — 원인 추적을 1급 시민으로. 즉시대응은 KineticStrip(IMP-72, 알림→즉시 조치)이
+  // 담당하고, 근본원인 추적(COP)이 심층 진입점이다(IMP-90: 관제는 할당보다 알림+즉시대응 — /inbox 제거).
   // Incidents 는 investigate 화면 내부 surface.
   {
     glyph: "◈",
     label: "추적",
     children: [
-      { label: "과업 인박스", page: "inbox" },
       { label: "근본원인 추적(COP)", page: "investigate" },
     ],
   },
@@ -121,6 +121,8 @@ export default function Layout({
   onNavigate: (p: Page) => void;
 }) {
   const { can, caps } = useCap();
+  // IMP-87 — 화이트라벨: 워드마크/로고를 고객사 브랜드로 렌더(하드코딩 'FABRIX' 대체).
+  const { tenant } = useBrand();
   // 배포 프로파일에 따라 보이는 NAV — 화면별 cap 이 꺼져 있으면 메뉴·하위메뉴를 숨긴다.
   const allow = (p?: Page) => {
     const c = p ? capForPage(p) : undefined;
@@ -200,7 +202,15 @@ export default function Layout({
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          FABRIX<sup>AI</sup>
+          {tenant.logoDataUri ? (
+            // data-URI 는 theme.tsx 에서 이미지 MIME·크기 검증됨 — src 대입만(innerHTML 미사용).
+            <img className="brand-logo" src={tenant.logoDataUri} alt={tenant.productName} />
+          ) : (
+            <>
+              {tenant.productName}
+              {tenant.productSuffix && <sup>{tenant.productSuffix}</sup>}
+            </>
+          )}
         </div>
         <div className="project-pill">
           프로젝트 <b>default ▾</b>

@@ -46,11 +46,15 @@ describe("Diagnostics — AI 연동(MCP) 패널 (IMP-5)", () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
 
   it("라이브 tools/list·resources/list 에서 카탈로그를 렌더한다", async () => {
+    const user = userEvent.setup();
     renderPage();
+    // IMP-86: Tools 탭(기본)에 tool 카드가 라이브 전용으로 노출된다.
     expect(await screen.findByText("list_dimensions")).toBeInTheDocument();
     expect(screen.getByText("groupby_metric")).toBeInTheDocument();
     expect(screen.getByText("top_outliers")).toBeInTheDocument();
     expect(screen.getByText("summarize_endpoint_health")).toBeInTheDocument();
+    // resource 는 Resources 탭에서 확인.
+    await user.click(screen.getByRole("tab", { name: /Resources/ }));
     expect(screen.getByText("메트릭 카탈로그")).toBeInTheDocument();
   });
 

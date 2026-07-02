@@ -6,6 +6,8 @@ import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonRows } from "../components/Skeleton";
 import InspectDrawer from "../components/InspectDrawer";
 import InfoTip from "../components/InfoTip";
+import McpDetail from "../components/mcp/McpDetail";
+import { isMockMode } from "../api/modelConnection";
 import { humanizeError } from "../utils/errors";
 import { useCap } from "../capabilities";
 import { useToast } from "../toast";
@@ -379,31 +381,15 @@ function McpPanel({ enabled, onNavigate }: { enabled: boolean; onNavigate: (p: P
             JSON-RPC 2.0 over HTTP POST. 읽기 전용 — 모든 tool 은 조회만 수행합니다.
           </p>
 
-          {/* (b) LIVE 카탈로그 — 서버 tools/list + resources/list */}
-          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>노출 tool · resource (라이브)</div>
+          {/* (b) LIVE 카탈로그 상세(IMP-86) — Tools/Resources/Prompts 3-탭 + tool별 스키마·예시·drift.
+              레지스트리(단일 출처)에서 렌더 + 라이브 tools/list 와 diff 시각화. */}
+          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>tool · resource · prompt 상세 ({isMockMode() ? "mock 카탈로그" : "라이브"})</div>
           {loading ? (
             <SkeletonRows rows={4} cols={2} />
           ) : catErr ? (
             <div className="state error" role="alert">카탈로그를 불러오지 못했습니다 — {catErr}</div>
           ) : (
-            <>
-              <dl className="diag-detail">
-                {(tools ?? []).map((t) => (
-                  <span key={t.name} style={{ display: "contents" }}>
-                    <dt><code>{t.name}</code></dt>
-                    <dd>{t.description ?? "—"}</dd>
-                  </span>
-                ))}
-                {(tools ?? []).length === 0 && <span style={{ display: "contents" }}><dt>—</dt><dd>노출된 tool 이 없습니다.</dd></span>}
-              </dl>
-              {(resources ?? []).length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: "var(--sp-2)" }}>
-                  {(resources ?? []).map((r) => (
-                    <span key={r.uri} className="pill" title={r.description}>{r.name ?? r.uri}</span>
-                  ))}
-                </div>
-              )}
-            </>
+            <McpDetail tools={tools ?? []} resources={resources ?? []} />
           )}
 
           {/* (c) per-client connect 스니펫 */}

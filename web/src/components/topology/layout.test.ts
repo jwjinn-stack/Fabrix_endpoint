@@ -73,4 +73,22 @@ describe("layoutTopology — 순수 계층 DAG 레이아웃 (IMP-47)", () => {
     expect(l.edgePaths.length).toBe(0);
     expect(l.width).toBeGreaterThan(0);
   });
+
+  // IMP-84 — kind union 확장: 온톨로지 kind(model/endpoint/node/trace/incident/app)도 tier tie-break 를
+  // 잃지 않고(‘service’ 붕괴 없음) 결정적으로 레이아웃된다. Record 인덱싱 undefined 크래시 없음.
+  it("온톨로지 kind 확장: 미지 kind 붕괴 없이 결정적 레이아웃", () => {
+    const nodes: TopologyNode[] = [
+      n("m", "model"), n("ep", "endpoint"), n("g", "gpu"),
+      n("nd", "node"), n("tr", "trace"), n("inc", "incident"), n("ap", "app"),
+    ];
+    const edges = [e("ep", "m"), e("m", "g"), e("g", "nd"), e("tr", "ep"), e("inc", "m"), e("ep", "ap")];
+    const l1 = layoutTopology(nodes, edges);
+    const l2 = layoutTopology(nodes, edges);
+    // 모든 노드가 배치되고 결정적(같은 입력 → 같은 결과).
+    expect(l1.positions.size).toBe(nodes.length);
+    expect([...l1.positions.entries()]).toEqual([...l2.positions.entries()]);
+    // tier 단조: endpoint→model→gpu→node 체인이 tier 오름차순.
+    expect(l1.positions.get("ep")!.tier).toBeLessThan(l1.positions.get("m")!.tier);
+    expect(l1.positions.get("m")!.tier).toBeLessThan(l1.positions.get("g")!.tier);
+  });
 });

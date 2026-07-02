@@ -44,7 +44,7 @@ const GROUPS: { group: string; children: { label: string; page: Page }[] }[] = [
       { label: "트래픽", page: "traffic" },
     ],
   },
-  { group: "추적", children: [{ label: "과업 인박스", page: "inbox" }, { label: "근본원인 추적(COP)", page: "investigate" }] },
+  { group: "추적", children: [{ label: "근본원인 추적(COP)", page: "investigate" }] },
   {
     group: "제어",
     children: [

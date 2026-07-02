@@ -43,7 +43,17 @@ export interface TopologyLayout {
 const DEFAULTS = { colGap: 220, rowGap: 84, marginX: 60, marginY: 40, sweeps: 4 } as const;
 
 // 노드 kind 정렬 tie-break용 우선순위(동률 tier 안에서 안정 정렬 보조).
-const KIND_ORDER: Record<TopologyNode["kind"], number> = { server: 0, service: 1, gpu: 2 };
+// IMP-84: 운영 토폴로지 3종 + 온톨로지 관계 그래프 kind 를 모두 순위화한다. 넓힌 union 이라도
+// 미지 kind 가 전부 같은 값('service' 붕괴)으로 뭉쳐 tie-break 를 잃지 않게, 온톨로지 위계
+// (상류 인프라 → 논리 서비스/소비자 → 모델 → 물리 자원 → 경계) 순으로 순위를 준다.
+// kindRank() 는 미지 kind 를 안전 순위(끝)로 두어 Record 인덱싱 undefined 를 방어(순수·결정적).
+const KIND_ORDER: Partial<Record<TopologyNode["kind"], number>> = {
+  server: 0, node: 1, service: 2, app: 3, endpoint: 4, model: 5, trace: 6, gpu: 7, incident: 8,
+};
+const KIND_RANK_FALLBACK = 99; // 미지 kind → 끝(안정 정렬 보조; undefined 인덱싱 방지)
+function kindRank(k: TopologyNode["kind"]): number {
+  return KIND_ORDER[k] ?? KIND_RANK_FALLBACK;
+}
 
 interface InternalEdge {
   from: string; // acyclic 방향(저 tier → 고 tier 로 정렬됨)
@@ -146,7 +156,7 @@ function orderTiers(
   // 초기 순서: nodeIds 순 안정 + kind tie-break.
   nodeIds.forEach((id) => layers.get(tier.get(id) ?? 0)!.push(id));
   for (const [, arr] of layers) {
-    arr.sort((a, b) => KIND_ORDER[kindOf(a)] - KIND_ORDER[kindOf(b)]);
+    arr.sort((a, b) => kindRank(kindOf(a)) - kindRank(kindOf(b)));
   }
 
   const preds = new Map<string, string[]>();

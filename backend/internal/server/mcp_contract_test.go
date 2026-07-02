@@ -32,10 +32,14 @@ func TestMCP_OntologyContract_NoDrift(t *testing.T) {
 	}
 }
 
-// embed 사본이 정상 파싱되고, 계약이 read-only(mutating 동사 없음)이며 4개 tool 을 담는지.
+// embed 사본이 정상 파싱되고, 계약이 read-only(mutating 동사 없음)이며 온톨로지 4종 + K8s 4종(IMP-91)을 담는지.
 func TestMCP_OntologyContract_ReadOnlyShape(t *testing.T) {
 	specs := loadOntologyToolSpecs()
-	want := map[string]bool{"query_objects": false, "traverse_links": false, "get_object": false, "get_object_metrics": false}
+	want := map[string]bool{
+		"query_objects": false, "traverse_links": false, "get_object": false, "get_object_metrics": false,
+		// IMP-91 — read-only Kubernetes 조회 tool(list/get/describe; mutating verb 없음).
+		"list_pods": false, "list_nodes": false, "get_events": false, "describe_deployment": false,
+	}
 	for _, s := range specs {
 		if s.InputSchema == nil {
 			t.Errorf("tool %q inputSchema 파싱 실패(nil)", s.Name)
@@ -65,8 +69,8 @@ func TestMCP_OntologyContract_ReadOnlyShape(t *testing.T) {
 func TestMCP_ToolsList_IncludesOntology(t *testing.T) {
 	rec := postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`)
 	body := rec.Body.String()
-	// aggregate + 온톨로지 read tool 이 모두 노출(합집합).
-	for _, name := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics"} {
+	// aggregate + 온톨로지 read tool + K8s read tool(IMP-91)이 모두 노출(합집합).
+	for _, name := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics", "list_pods", "list_nodes", "get_events", "describe_deployment"} {
 		if !strings.Contains(body, `"`+name+`"`) {
 			t.Errorf("tools/list 에 %q 가 없음: %s", name, body)
 		}

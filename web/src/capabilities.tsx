@@ -5,6 +5,7 @@
 // 여기서는 UX(메뉴/버튼 숨김)만 책임진다 — 조회 실패 시 manage(전체)로 fail-open.
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { fetchCapabilities } from "./api/client";
+import { loadTenant } from "./theme";
 import type { Capabilities } from "./api/types";
 
 // 조회 실패/구버전 백엔드 폴백 — 빈 맵 + can() 기본 true 로 전체 노출(UI 를 막지 않음).
@@ -58,13 +59,20 @@ export function CapabilitiesProvider({ children }: { children: ReactNode }) {
 }
 
 // 부팅 로딩 — capabilities 해결 전 잠깐 보이는 전체화면.
+//  IMP-87 — ThemeProvider 밖일 수 있으므로 loadTenant()를 직접 읽어 동일 화이트라벨 토큰 사용.
 function BootScreen() {
+  const tenant = loadTenant();
   return (
     <div style={{ display: "grid", placeItems: "center", height: "100vh" }}>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontWeight: 800, fontSize: 22, color: "var(--brand-fabrix)", letterSpacing: ".02em" }}>
-          FABRIX<sup style={{ fontSize: "var(--fs-xs)" }}>AI</sup>
-        </div>
+        {tenant.logoDataUri ? (
+          <img src={tenant.logoDataUri} alt={tenant.productName} style={{ maxHeight: 40, maxWidth: 200 }} />
+        ) : (
+          <div style={{ fontWeight: 800, fontSize: 22, color: "var(--brand-fabrix)", letterSpacing: ".02em" }}>
+            {tenant.productName}
+            {tenant.productSuffix && <sup style={{ fontSize: "var(--fs-xs)" }}>{tenant.productSuffix}</sup>}
+          </div>
+        )}
         <div style={{ marginTop: "var(--sp-3)", fontSize: "var(--fs-body)", color: "var(--text-faint)" }}>구성을 불러오는 중…</div>
       </div>
       <span className="sr-only" role="status" aria-live="polite">구성을 불러오는 중입니다.</span>

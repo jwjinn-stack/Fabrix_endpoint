@@ -53,7 +53,7 @@ const TYPE_DESC: Record<ObjectType, string> = {
   Node: "GPU 를 담은 물리 노드(CPU·mem·GPU 수)",
   Trace: "추론 요청 1건의 실행 궤적(지연·토큰·판정)",
   Incident: "장애/이상 이벤트(심각도·영향 대상)",
-  Task: "운영 과업(담당자·우선순위·상태·워크플로 단계)",
+  App: "엔드포인트를 소비하는 앱(app_id·라우팅 EP·요청 수)", // IMP-89
 };
 
 // linkKind → 사람용 라벨(스키마 엣지 표 병기). ObjectView LINK_LABEL 과 통일.
@@ -65,12 +65,18 @@ const LINK_LABEL: Record<LinkKind, string> = {
   routedTo: "routedTo (라우팅)",
   executedOn: "executedOn (실행)",
   affects: "affects (영향)",
-  spawns: "spawns (과업 생성)",
-  tracks: "tracks (감시·조치)",
+  routes: "routes (app 라우팅)", // IMP-89 — Endpoint→App
 };
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };
+
+// IMP-83 — 미설명 규칙 그룹 라벨(운영 준비/관측성/오너십)의 InfoTip 정의. Datadog Scorecards 3그룹.
+const GROUP_INFO: Record<ScoreGroup, string> = {
+  readiness: "Production Readiness — 배포·활성·위험상태 여부. '지금 서비스할 준비가 됐나'를 판정합니다.",
+  observability: "Observability — 텔레메트리·SLO 신호 유무. '문제를 감지할 수 있나(관측 사각지대 여부)'를 판정합니다.",
+  ownership: "Ownership — 소유·귀속(앱·부서·호스트·제공자) 지정 여부. '누가 책임지나'를 판정합니다.",
+};
 
 // 카탈로그·스키마·Action·스코어카드를 함께 담는 라이브 파생 결과.
 interface OntologyModel {
@@ -179,6 +185,11 @@ export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
         >스키마 참조</button>
       </div>
 
+      {/* IMP-83 — 무엇/왜 온보딩: 항상-접힌 한 줄 어포던스(진행형 disclosure).
+          localStorage 상태 없음(observe/manage·clone 재트리거 회피) + 양 탭 공통 → 두 탭이 한 설명을 공유.
+          스키마 탭에 묻혀 있던 개념 헤더(semantic↔kinetic·"느낌" 3카드)를 여기로 승격(중복 제거). */}
+      <ConceptDisclosure />
+
       {error && (
         <div className="state error" role="alert">
           온톨로지를 불러오지 못했습니다. ({error})
@@ -196,41 +207,10 @@ export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
         />
       )}
 
-      {/* ── 보조 탭: 스키마 참조(개념헤더 + 카탈로그 + 스키마 그래프 + Action 목록) ── */}
+      {/* ── 보조 탭: 스키마 참조(카탈로그 + 스키마 그래프 + Action 목록) ──
+          개념 헤더는 IMP-83 으로 상단 ConceptDisclosure 로 승격(양 탭 공통·중복 제거). */}
       {!error && model && tab === "schema" && (
         <>
-          {/* (0) 개념 헤더 — semantic↔kinetic(§1) + 카피하는 "느낌" 3가지(§8). 문서 출처 그대로의 제품 카피. */}
-          <section className="onto-concept card" aria-label="온톨로지 개념">
-            <p className="onto-axes">
-              <b>Semantic(의미)</b> — Object–Link 그래프로 "무엇이 무엇과 어떻게 연결되는가" 를 본다.
-              {" · "}
-              <b>Kinetic(동역학)</b> — Action(동사)이 결정을 온톨로지에 직접 기록(writeback)하고 전 화면에 즉시 반영된다.
-            </p>
-            <div className="onto-feels">
-              <div className="onto-feel">
-                <span className="onto-feel-glyph" aria-hidden="true">◈</span>
-                <div>
-                  <div className="onto-feel-h">온톨로지 렌즈</div>
-                  <div className="onto-feel-d">메트릭 나열이 아니라 명사·관계·동사로 세계를 본다.</div>
-                </div>
-              </div>
-              <div className="onto-feel">
-                <span className="onto-feel-glyph" aria-hidden="true">⚡</span>
-                <div>
-                  <div className="onto-feel-h">Kinetic 제어</div>
-                  <div className="onto-feel-d">화면에서 Action(동사)을 눌러 세계를 바꾼다 — 읽기 전용의 종말.</div>
-                </div>
-              </div>
-              <div className="onto-feel">
-                <span className="onto-feel-glyph" aria-hidden="true">◆</span>
-                <div>
-                  <div className="onto-feel-h">접지된 AI</div>
-                  <div className="onto-feel-d">로컬 모델이 온톨로지를 tool 로 읽고 Action 을 호출 — 챗봇이 아닌 운영 에이전트.</div>
-                </div>
-              </div>
-            </div>
-          </section>
-
           {/* (1) Object Type 카탈로그 — 타입당 1장, 라이브 인스턴스 수/상태 분포/대표 인스턴스. */}
           <section aria-label="Object Type 카탈로그">
             <div className="onto-section-h">
@@ -349,6 +329,103 @@ export default function Ontology({ onNavigate }: { onNavigate?: NavFn } = {}) {
   );
 }
 
+// ── 온톨로지 무엇/왜 온보딩(IMP-83) ───────────────────────────────────────
+// 항상-접힌 한 줄 disclosure("온톨로지란? 3단계로 보기"). 펼치면 과업→객체·관계→조치 3단을
+// 각 1~2줄 "무엇 + 왜 좋은가" 로 설명(정보폭탄 금지) + semantic↔kinetic "느낌" 3카드(스키마 탭에서 승격).
+// localStorage 상태 없음(observe/manage·clone 재트리거 회피) → 네이티브 <details> 로 접힘/펼침만.
+// 핵심 용어(Object/Link/Action/kinetic)는 InfoTip(재사용, WCAG 1.4.13) 로 인라인 정의.
+// 진입 위치는 탭바 아래·탭 컨텐트 위 → 양 탭이 한 설명을 공유(중복 카피 제거). Palantir Foundry 어휘 정합.
+function ConceptDisclosure() {
+  return (
+    <details className="onto-onboard">
+      <summary className="onto-onboard-summary">
+        <span className="onto-onboard-glyph" aria-hidden="true">◈</span>
+        온톨로지란? <b>3단계</b>로 보기 — 과업 → 객체·관계 → 조치
+      </summary>
+      <div className="onto-onboard-body">
+        {/* 3단 개념 — 각 단계는 "무엇 + 왜 좋은가" 를 1~2줄로. Foundry Task→Object/Link→Action 교육 순서. */}
+        <ol className="onto-steps">
+          <li className="onto-step">
+            <span className="onto-step-num" aria-hidden="true">1</span>
+            <div>
+              <div className="onto-step-h">과업(Task) 으로 시작</div>
+              <div className="onto-step-d">
+                "지금 무엇이 주의를 요하나" 라는 <b>운영 과업</b>에서 출발합니다 — 타입 나열이 아니라 답부터.
+              </div>
+            </div>
+          </li>
+          <li className="onto-step">
+            <span className="onto-step-num" aria-hidden="true">2</span>
+            <div>
+              <div className="onto-step-h">
+                객체(
+                <InfoTip label="Object 설명">
+                  <b>Object(객체)</b> — 현실 엔티티를 디지털 명사로 매핑(Endpoint·Model·GpuDevice…).
+                  Palantir Foundry 의 Object type 과 같은 개념.
+                </InfoTip>
+                Object) · 관계(
+                <InfoTip label="Link 설명">
+                  <b>Link(관계)</b> — 객체를 잇는 방향 있는 연결(<code>serves</code>·<code>runsOn</code>…).
+                  장애 원인을 따라가는 척추가 됩니다.
+                </InfoTip>
+                Link) 로 세계를 본다
+              </div>
+              <div className="onto-step-d">
+                메트릭 나열 대신 <b>명사와 관계의 그래프</b>로 봅니다 — 무엇이 무엇과 어떻게 연결되는지가 한눈에.
+              </div>
+            </div>
+          </li>
+          <li className="onto-step">
+            <span className="onto-step-num" aria-hidden="true">3</span>
+            <div>
+              <div className="onto-step-h">
+                조치(
+                <InfoTip label="Action 설명">
+                  <b>Action(조치·동사)</b> — 객체 위에 얹는 제어 동사(재시작·스케일…). 실행하면 결정을
+                  온톨로지에 직접 기록(writeback)합니다. Foundry 의 Action type 과 같은 개념.
+                </InfoTip>
+                Action) 로 바꾼다
+              </div>
+              <div className="onto-step-d">
+                화면에서 바로 Action 을 눌러 세계를 바꾸는{" "}
+                <InfoTip label="kinetic 설명">
+                  <b>kinetic(동역학)</b> — 읽기 전용이 아니라, 결정이 온톨로지에 기록되고 전 화면에 즉시 반영되는 성질.
+                </InfoTip>
+                kinetic 제어 — 읽기 전용의 종말.
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        {/* semantic↔kinetic "느낌" 3카드 — 스키마 탭에서 승격(§1·§8, 문서 출처 그대로). */}
+        <div className="onto-feels">
+          <div className="onto-feel">
+            <span className="onto-feel-glyph" aria-hidden="true">◈</span>
+            <div>
+              <div className="onto-feel-h">온톨로지 렌즈</div>
+              <div className="onto-feel-d">메트릭 나열이 아니라 명사·관계·동사로 세계를 본다.</div>
+            </div>
+          </div>
+          <div className="onto-feel">
+            <span className="onto-feel-glyph" aria-hidden="true">⚡</span>
+            <div>
+              <div className="onto-feel-h">Kinetic 제어</div>
+              <div className="onto-feel-d">화면에서 Action(동사)을 눌러 세계를 바꾼다 — 읽기 전용의 종말.</div>
+            </div>
+          </div>
+          <div className="onto-feel">
+            <span className="onto-feel-glyph" aria-hidden="true">◆</span>
+            <div>
+              <div className="onto-feel-h">접지된 AI</div>
+              <div className="onto-feel-d">로컬 모델이 온톨로지를 tool 로 읽고 Action 을 호출 — 챗봇이 아닌 운영 에이전트.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 // ── 운영 준비도 스코어카드 뷰(IMP-68) ─────────────────────────────────────
 // 상단 "주의 요약"(at-risk·실패 규칙 수·그룹별 pass) + 인스턴스 스코어 목록(at-risk 우선 정렬).
 function ScorecardView({
@@ -361,6 +438,8 @@ function ScorecardView({
   onInvestigate?: (id: string) => void;
 }) {
   const { instances, summary } = scorecard;
+  // IMP-83 — 1회성 인라인 예시를 붙일 "첫 at-risk 행" id(맥락형 learn-as-you-work — 실제 실패 객체가 최고 교육 순간).
+  const firstAtRiskId = instances.find((i) => i.atRisk)?.object.id;
 
   return (
     <>
@@ -402,7 +481,11 @@ function ScorecardView({
                 const failed = g.total - g.pass;
                 return (
                   <div className="onto-group-stat" role="listitem" key={g.group}>
-                    <span className="onto-group-label">{GROUP_LABEL[g.group]}</span>
+                    <span className="onto-group-label">
+                      {GROUP_LABEL[g.group]}
+                      {/* IMP-83 — 미설명 그룹 라벨에 InfoTip(재사용). Datadog/Palantir 어휘 정합. */}
+                      <InfoTip label={`${GROUP_LABEL[g.group]} 설명`}>{GROUP_INFO[g.group]}</InfoTip>
+                    </span>
                     <span className={`onto-group-nums${failed > 0 ? " onto-group-nums-fail" : ""}`}>
                       {g.pass}/{g.total}
                     </span>
@@ -430,6 +513,7 @@ function ScorecardView({
                 score={ins}
                 onOpenObject={onOpenObject}
                 onInvestigate={onInvestigate}
+                showExampleHint={ins.object.id === firstAtRiskId}
               />
             ))}
           </ul>
@@ -444,10 +528,12 @@ function ScoreRow({
   score,
   onOpenObject,
   onInvestigate,
+  showExampleHint = false,
 }: {
   score: InstanceScore;
   onOpenObject: (id: string) => void;
   onInvestigate?: (id: string) => void;
+  showExampleHint?: boolean; // IMP-83 — 첫 at-risk 행에만 1회성 구체 예시 힌트.
 }) {
   const { object: obj, results, failCount, total, atRisk } = score;
   const vis = typeVisual(obj.type);
@@ -520,6 +606,22 @@ function ScoreRow({
             </li>
           ))}
         </ul>
+      )}
+
+      {/* IMP-83 — 첫 at-risk 행에만 1회성 구체 예시(맥락형 learn-as-you-work): 관계 + kinetic 조치를 2줄로. */}
+      {showExampleHint && (
+        <div className="onto-example-hint" role="note">
+          <span className="onto-example-glyph" aria-hidden="true">◈</span>
+          <div className="onto-example-body">
+            <div className="onto-example-l1">
+              읽는 법 — <code>Endpoint</code> <span className="onto-example-arrow">--serves--&gt;</span> <code>Model</code>:
+              이 객체가 어떤 관계(Link)로 무엇에 연결되는지.
+            </div>
+            <div className="onto-example-l2">
+              고치는 법 — <b>[상세 →]</b> 를 눌러 열고, 거기서 조치(Action)를 실행하면 온톨로지에 바로 기록됩니다(kinetic).
+            </div>
+          </div>
+        </div>
       )}
     </li>
   );

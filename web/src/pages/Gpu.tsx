@@ -199,7 +199,7 @@ export default function Gpu() {
       <SlidePanel
         open={!!detail}
         title={detail ? `GPU 상세 — ${detail.hostname} / GPU ${detail.gpu}` : ""}
-        subtitle="DCGM 실측 · 최근 60분 추세 (드릴다운 tier-3)"
+        subtitle={`${rep?.source === "live" ? "DCGM 실측" : "DCGM 계열 (mock)"} · 최근 60분 추세 (드릴다운 tier-3)`}
         onClose={() => { setDetail(null); setTs(null); }}
       >
         {detail && (
