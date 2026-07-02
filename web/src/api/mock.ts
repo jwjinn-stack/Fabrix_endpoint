@@ -36,6 +36,9 @@ import { runAgentLoop, buildAgentInsights, runK8sQuery } from "./agent";
 // Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
 import { attributeDetections } from "./detection";
 import { buildK8sSnapshot } from "./k8sSnapshot";
+// IMP-105 — 임계 카탈로그 단일 출처(IMP-7). ALERT_METRIC_CATALOG/ALERT_RULES 기본 임계를 여기서 파생.
+import { THRESHOLD_CATALOG } from "./thresholdCatalog";
+import type { AlertMetric } from "./types";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -2019,18 +2022,15 @@ function genCapabilities(): Capabilities {
 }
 
 // ── 지표 기반 알림 룰(IMP-36) mock ──
-const ALERT_METRIC_CATALOG = [
-  { key: "ttft_p95", title: "TTFT p95", unit: "ms", lower_better: true },
-  { key: "latency_avg", title: "E2E 지연 p95", unit: "ms", lower_better: true },
-  { key: "error_rate", title: "에러율", unit: "ratio", lower_better: true },
-  { key: "block_rate", title: "가드 차단율", unit: "ratio", lower_better: true },
-  { key: "throughput", title: "처리량(QPS)", unit: "qps", lower_better: false },
-  { key: "count", title: "가드 차단 건수", unit: "count", lower_better: true },
-];
+// IMP-105 — 임계 단일 출처(thresholdCatalog.ts, IMP-7)에서 파생. 숫자·방향을 두 곳에 적지 않는다.
+const ALERT_METRIC_CATALOG = (Object.entries(THRESHOLD_CATALOG) as [AlertMetric, (typeof THRESHOLD_CATALOG)[AlertMetric]][]).map(
+  ([key, t]) => ({ key, title: t.title, unit: t.unit, lower_better: t.lowerBetter }),
+);
 let ALERT_RULES: Record<string, unknown>[] = [
-  { id: "rule_a1b2", name: "TTFT p95 급증", metric: "ttft_p95", op: "gt", alert_threshold: 800, warn_threshold: 500, window: "5m", severity: "warning", no_data_mode: "no_data", recovery_window: 2, renotify_min: 30, enabled: true, state: "OK", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
-  { id: "rule_c3d4", name: "에러율 임계", metric: "error_rate", op: "gt", alert_threshold: 0.05, warn_threshold: 0.02, window: "5m", severity: "critical", no_data_mode: "no_data", recovery_window: 2, renotify_min: 15, enabled: true, state: "OK", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
-  { id: "rule_e5f6", name: "가드 차단율 급증", metric: "block_rate", op: "gt", alert_threshold: 0.1, window: "1h", severity: "warning", no_data_mode: "no_data", recovery_window: 2, enabled: false, state: "PAUSED", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
+  // IMP-105 — 기본 임계는 thresholdCatalog(IMP-7 단일 출처)에서 파생(warn/alert 숫자를 여기 인라인하지 않음).
+  { id: "rule_a1b2", name: "TTFT p95 급증", metric: "ttft_p95", op: "gt", alert_threshold: THRESHOLD_CATALOG.ttft_p95.alert, warn_threshold: THRESHOLD_CATALOG.ttft_p95.warn, window: "5m", severity: "warning", no_data_mode: "no_data", recovery_window: 2, renotify_min: 30, enabled: true, state: "OK", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
+  { id: "rule_c3d4", name: "에러율 임계", metric: "error_rate", op: "gt", alert_threshold: THRESHOLD_CATALOG.error_rate.alert, warn_threshold: THRESHOLD_CATALOG.error_rate.warn, window: "5m", severity: "critical", no_data_mode: "no_data", recovery_window: 2, renotify_min: 15, enabled: true, state: "OK", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
+  { id: "rule_e5f6", name: "가드 차단율 급증", metric: "block_rate", op: "gt", alert_threshold: THRESHOLD_CATALOG.block_rate.alert, window: "1h", severity: "warning", no_data_mode: "no_data", recovery_window: 2, enabled: false, state: "PAUSED", created_at: new Date(Date.now() - 7 * 864e5).toISOString() },
 ];
 let ALERT_RULE_SEQ = 100;
 

@@ -24,6 +24,8 @@ export interface StatMiniProps {
   spark?: number[];
   /** 임계 도달 톤 — 좌측바 + 값 색. 없으면 중립. */
   tone?: StatTone;
+  /** IMP-105 — 위젯 메타 id. 있으면 카드 루트에 data-widget-id 부착(어시스트 화면-컨텍스트). */
+  widgetId?: string;
 }
 
 // 변화율 배지 — StatCard 의 Delta 규칙과 동일(방향×good → good/bad/flat).
@@ -40,10 +42,10 @@ function Delta({ delta, good = "up" }: { delta: number; good?: "up" | "down" }) 
   );
 }
 
-export default function StatMini({ label, value, unit, sub, delta, deltaGood, spark, tone }: StatMiniProps) {
+export default function StatMini({ label, value, unit, sub, delta, deltaGood, spark, tone, widgetId }: StatMiniProps) {
   const hasSpark = Array.isArray(spark) && spark.length > 1;
   return (
-    <div className={`card stat-mini${tone ? ` tone-${tone}` : ""}${hasSpark ? " has-spark" : ""}`}>
+    <div className={`card stat-mini${tone ? ` tone-${tone}` : ""}${hasSpark ? " has-spark" : ""}`} data-widget-id={widgetId}>
       <div className="sm-label">{label}</div>
       <div className="sm-val" style={tone ? { color: TONE_COLOR[tone] } : undefined}>
         {value}

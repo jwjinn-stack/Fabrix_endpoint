@@ -32,10 +32,11 @@ export interface SummaryKPI {
 }
 
 // 핵심 KPI 게이지/값을 한 줄(반응형 그리드)로. 객체 상세 최상단 — "한눈에 상태".
-export function SummaryStrip({ items }: { items: SummaryKPI[] }) {
+// IMP-105 — widgetId 부착 시 어시스트가 이 요약 스트립을 화면-컨텍스트로 집는다(data-widget-id).
+export function SummaryStrip({ items, widgetId }: { items: SummaryKPI[]; widgetId?: string }) {
   if (items.length === 0) return null;
   return (
-    <div className="metric-summary" role="group" aria-label="핵심 지표 요약">
+    <div className="metric-summary" role="group" aria-label="핵심 지표 요약" data-widget-id={widgetId}>
       {items.map((k) => (
         <div className={`metric-kpi metric-kpi-${k.status}`} key={k.label}>
           <span className="metric-kpi-label">{k.label}</span>

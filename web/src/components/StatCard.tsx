@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import Sparkline from "./Sparkline";
 import InfoTip from "./InfoTip";
+// IMP-105 — 위젯 메타(선언적). data-widget-id 부착 + info 미지정 시 whatItShows passive 노출.
+import { widgetMeta } from "./widgetMeta";
 
 export type Tone = "green" | "red" | "amber" | "pink" | "teal";
 
@@ -53,6 +55,7 @@ export default function StatCard({
   link,
   onLink,
   onRefresh,
+  widgetId,
 }: {
   title: string;
   metrics: Metric[];
@@ -60,12 +63,17 @@ export default function StatCard({
   link?: string;
   onLink?: () => void;
   onRefresh?: () => void;
+  /** IMP-105 — 위젯 메타 id(예: "dashboard.quality"). 있으면 data-widget-id 부착 + passive 설명 노출. */
+  widgetId?: string;
 }) {
+  // IMP-105 — info 를 명시하지 않았고 위젯 메타가 있으면 whatItShows 를 InfoTip 으로 보조 노출(사람 self-doc).
+  const meta = widgetId ? widgetMeta(widgetId) : undefined;
+  const tip = info ?? meta?.whatItShows;
   return (
-    <div className="card">
+    <div className="card" data-widget-id={widgetId}>
       <div className="card-head">
         <h3>{title}</h3>
-        {info && <InfoTip>{info}</InfoTip>}
+        {tip && <InfoTip>{tip}</InfoTip>}
         <span className="spacer" />
         {link && (
           <button type="button" className="link" onClick={onLink}>

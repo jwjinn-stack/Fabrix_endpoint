@@ -160,6 +160,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
             persona: "sre",
             render: () => (
               <StatCard
+                widgetId="dashboard.traffic"
                 title="실시간 트래픽"
                 info="vLLM 엔진 실행/대기 요청 수와 성공률"
                 link="트래픽 상세 →"
@@ -186,6 +187,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
             persona: "sre",
             render: () => (
               <StatCard
+                widgetId="dashboard.quality"
                 title="응답 품질"
                 info="TTFT/ITL 분포와 KV prefix 캐시 적중률"
                 link="차원 분해 →"
@@ -205,6 +207,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
             persona: "security",
             render: () => (
               <StatCard
+                widgetId="dashboard.guardrail"
                 title="가드레일"
                 info="가드레일 차단/PII/Jailbreak/flagged 건수 (증적 기반)"
                 link="증적보기 →"
@@ -224,6 +227,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
             persona: "cost",
             render: () => (
               <StatCard
+                widgetId="dashboard.gpu"
                 title="GPU / MIG"
                 info="GPU 사용률·KV 캐시·MIG 슬라이스 효율"
                 link="GPU 상세 →"
