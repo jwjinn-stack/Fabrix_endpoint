@@ -146,6 +146,16 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-99 | code | 근거 파생 seam 통합 — objectId→상관 K8sPod/K8sEvent/큐신호→신호→추정원인→영향 구조체를 detection/investigate/ObjectView/MCP가 공유하는 단일 순수 함수 | medium | M | medium | done | 2026-07-02 |
 | IMP-100 | aesthetic | 근거 타임라인 시각언어 — 신호→추정원인→영향을 세로 evidence timeline으로(first-anomaly부터 severity 색·경과시간·인과 연결선, Datadog Watchdog/incident.io 수준) | medium | M | medium | done | 2026-07-02 |
 | IMP-101 | platform | 파드 상태·재시작·waiting reason·OOM 근거 수집을 kube-state-metrics + cAdvisor로 표준화 + 스케줄러/큐 메트릭 매핑(IMP-79/74 확장, 실수집 spike park) | medium | L | medium | spike-needed | 2026-07-02 |
+| IMP-102 | ux | 어시스트 접근성 계약 — 키보드 전 흐름·Esc·focus 복원 + 스트리밍은 role=log 완료 낭독+role=status 진행상태(증분 aria-live 금지) + 문자 단축키 input 무시 | high | S | high | grounded | 2026-07-02 |
+| IMP-103 | ux | 전역 in-context Assist 진입점 — 어디서나 ⌘/(또는 '?')로 '무엇이든 물어보기' 슬라이드 패널 + 자동 화면-컨텍스트 주입·'이 화면 설명' | high | M | high | grounded | 2026-07-02 |
+| IMP-104 | ux | explain-this-selection — data-explain-key 요소를 키보드 우선으로 콕 집어 물어보기(우클릭/롱프레스/텍스트선택은 보조) + native title= 60파일 은퇴 | high | M | high | grounded | 2026-07-02 |
+| IMP-105 | ux | 위젯·영역 메타 선언(widgetMeta.ts, 무엇을 보여주는지) + '이 숫자 좋은가/나쁜가' IMP-7 임계 참조로 파생 + get_screen_context/describe_widget 근거 인용 | medium | M | high | grounded | 2026-07-02 |
+| IMP-106 | code | read-only assist context seam — glossary/widget은 MCP RESOURCE(glossary://·widget://), get_screen_context는 read-only TOOL로 분할(IMP-73 레지스트리 파생·IMP-2 게이팅) | medium | M | high | grounded | 2026-07-02 |
+| IMP-107 | compete | 다음 액션 제안형 in-context 어시스트 — 읽기전용 딥링크 카드(근거 1줄 첨부) + mutating은 ActionForm confirm 게이팅(ZERO auto-mutation·observe 정합) | medium | M | high | grounded | 2026-07-02 |
+| IMP-108 | code | statusGlossary를 전역 glossary-as-data로 승격(category/aliases/relatedKeys) — 도메인 용어(TTFT/p95/prefill/blast) 선언적 단일 출처, StatusInfoTip 회귀 0 | medium | M | high | proposed | 2026-07-02 |
+| IMP-109 | aesthetic | 전역 Assist 패널 시각 완성도 — 스트리밍 caret·인용 chip(EvidenceTimeline 재사용)·메시지 밀도를 Linear/Vercel v0/Datadog Bits 수준으로(토큰 수렴·motion-reduce) | medium | M | medium | proposed | 2026-07-02 |
+| IMP-110 | ux | 어시스트 실모델 스트리밍(TTFT) + mock 시 'rule-based (no model)' 정직 표기 + 경량 세션 히스토리(IMP-82 연결 재사용·SSE/ReadableStream·AbortSignal) | medium | L | medium | proposed | 2026-07-02 |
+| IMP-111 | platform | 어시스트+RCA 추론을 인클러스터 LLM 게이트웨이(LiteLLM)로 백킹 — 라우팅·타임아웃·토큰 관측 위임, IMP-33과 인프라 공유(경량 설명모델 vs 대형 RCA) | low | L | medium | spike-needed | 2026-07-02 |
 
 ## Details
 
@@ -1130,3 +1140,93 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Evidence**: (미연구 — low ambiguity) direction 3 직접 충족. IMP-79 K8s 백본·IMP-74 익스포터 매트릭스에 종속·확장. IMP-94 스케줄러/큐 신호의 실수집 소스.
 - **Sources**: (참조 — kube-state-metrics/cAdvisor Apache-2.0 Helm; 미연구)
 - **Deep-dive suggestion**: oss-evaluate + spike-needed(실수집은 in-cluster pod 배포). IMP-79/74와 함께 spike park. 익스포터→K8sSnapshot 필드 매핑 표를 IMP-74 매트릭스에 추가.
+
+### IMP-102 — 어시스트 접근성 계약 — 키보드 전 흐름·Esc·focus 복원 + 스트리밍 낭독 정정
+- **Type**: ux (sev=high, effort=S)
+- **Area**: `web/src/components/AssistPanel.tsx`(신규), `web/src/components/Layout.tsx`(전역 keydown)
+- **Problem**: 전역 오버레이/스트리밍 답변은 접근성 회귀의 단골(포커스 미복원·스트리밍 텍스트 미낭독·모달 트랩 누락). 이미 IMP-12/31에서 손수 다이얼로그의 트랩·복원이 문제였고, 새 어시스트가 aria-live 없이 증분 토큰을 흘리면 스크린리더 사용자는 답을 못 듣는다. ?/⌘/ 전역 단축키가 입력 필드 안에서 오발화하면 폼 타이핑을 깬다.
+- **Fix**: [오버레이] role=dialog + aria-modal=true, 열릴 때 입력창 초기 포커스, Esc로 닫기, 닫힐 때 트리거 요소로 포커스 복원, 트랩은 열린 동안만(APG Dialog). aria-labelledby로 패널 제목 연결. [스트리밍 낭독 — 핵심 정정] 증분 토큰을 aria-live에 흘리지 말 것(SR가 매 변경마다 재낭독·가로채기로 오히려 '못 알아듣는' 회귀). 대신 (1) 답변 리스트 컨테이너에 role=log aria-live=polite aria-atomic=false, (2) 스트리밍 중 말풍선은 aria-busy=true로 두고 그 텍스트는 라이브 낭독 대상 제외(미커밋 상태/aria-hidden 토글), (3) 스트림 완료 시 완성된 메시지를 log에 확정 append → 한 번에 온전히 낭독, (4) 진행/에러/스로틀은 별도 role=status(polite) 영역에 '응답 생성 중'/'완료'/'연결 오류' 짧게(무음 실패 금지). 스크롤 점프 방지. [전역 단축키] activeElement가 input/textarea/[contenteditable]이면 무시 + 이상적으로 설정에서 끄기/재매핑(WCAG 2.1.4 완전충족), 문자 단독키(?)보다 수식키(⌘/)를 1급. [타깃/대비] 인터랙티브 타깃 ≥24×24px(SC 2.5.8), 텍스트/UI 대비 4.5:1·3:1. 회귀 방지로 jsx-a11y + 포커스복원·Esc·단축키가드 RTL 테스트.
+- **Evidence**: partial→refined (high) — 가설 대부분은 인정된 모범사례. (1) 오버레이 role=dialog·aria-modal·초기포커스·Esc·트리거복원은 APG Dialog 그대로이며 IMP-12/31 회귀를 막는 정확한 처방. (2) 문자 단축키를 input/textarea/contenteditable에서 무시하는 것은 WCAG 2.1.4 Character Key Shortcuts 정공법. (3) 대상크기 ≥24px는 WCAG 2.2 SC 2.5.8 인용. **정정**: 증분 토큰 aria-live 낭독은 debounce로도 근본 해결 안 됨 → role=log(증분 확정만) + aria-busy 스트리밍 버퍼 + role=status 진행상태 낭독이 SOTA('증분 낭독' 아니라 '완료 낭독 + 진행상태 낭독').
+- **Sources**: https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/ , https://www.w3.org/TR/WCAG22/#character-key-shortcuts , https://www.w3.org/TR/WCAG22/#target-size-minimum , https://www.sarasoueidan.com/blog/accessible-notifications-with-aria-live-regions-part-1/ , https://webaim.org/techniques/keyboard/
+- **Deep-dive suggestion**: 이미 grounded — IMP-103 패널의 기반 계약. IMP-12/31 검증된 모달 패턴 재사용. role=log/role=status 스트리밍 규약을 컴포넌트로 추출해 IMP-109 시각 완성도가 얹힘.
+
+### IMP-103 — 전역 in-context Assist 진입점 — 어디서나 ⌘/로 '무엇이든 물어보기'
+- **Type**: ux (sev=high, effort=M)
+- **Area**: `web/src/components/Layout.tsx`(전역 shell), 신규 `web/src/components/AssistPanel.tsx`
+- **Problem**: AI 어시스트가 /AiAgent 전용 라우트(IMP-60)에만 존재해, 다른 40+ 화면에서 모르는 용어·지금 상황을 물어보려면 컨텍스트를 버리고 페이지를 떠나야 한다. Layout에는 ⌘K 팔레트 핸들러(IMP-75)만 있고 ?/⌘/ 어시스트 트리거가 없다. Datadog Bits AI·Grafana Assistant·Dynatrace Davis CoPilot은 모두 화면을 떠나지 않는 전역 ask-anything 오버레이를 제공하는데 이 제품은 진입장벽 낮추기 핵심 표면이 통째로 빈다.
+- **Fix**: Layout에 lazy-import 슬라이드 AssistPanel + 헤더 스파클 트리거 버튼 + 전역 keydown(⌘/ primary, '?'는 secondary이며 input/textarea/contenteditable 포커스·IME조합 중 무시)을 추가. 보강 3가지: (1) 킬러 차별점은 자유질문보다 **자동 화면-컨텍스트 주입** — Grafana처럼 패널을 열 때 현재 route/선택 객체 ID·화면명을 시스템 프롬프트에 자동 첨부(IMP-105/106 seam), '이 화면 설명' 버튼은 그 위 원클릭 프리셋. (2) a11y: 배경 앱과 병행 사용이 목표지만 IMP-12/31 검증 자산 재사용을 위해 초판은 modal dialog(IMP-102 계약)로 출시, non-modal complementary 승격은 후속. aria-labelledby·첫 포커스 이동·트리거 복원 필수. (3) 발견성: 헤더 버튼 툴팁/placeholder에 단축키 노출("무엇이든 물어보기 ⌘/"). 기능 격리: 패널 제거해도 앱 동작(IMP-88 green). 성능: lazy import로 초기 번들 0, 패널 상태 shell-local useState로 전역 리렌더 회피.
+- **Evidence**: yes (high) — 2026 관측/모니터링 카테고리 확립 표준과 정확히 일치. (1) Grafana Assistant(2025-05 발표, 2025-08 public preview)는 사이드바로 열려 UI 이동해도 유지되며 '현재 뷰 컨텍스트 자동 주입'(='이 화면 설명'의 자동화). (2) Datadog Bits Assistant는 풀페이지 또는 작업 페이지 내 사이드바로 제공, 전역 ⌘K와 공존. (3) 세 제품 공통 in-context ask-anything 오버레이 표준. 접근성 근거 APG Dialog. ⌘K는 팔레트로 이미 점유 → 별도 키 타당, ⌘/를 primary로 두면 브라우저/한글IME 충돌 적음.
+- **Sources**: https://grafana.com/blog/2025/05/07/llm-grafana-assistant/ , https://docs.datadoghq.com/bits_ai/bits_assistant/ , https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/
+- **Deep-dive suggestion**: 이미 grounded — direction 1 핵심. IMP-102(a11y 계약)·IMP-106(컨텍스트 seam)·IMP-108(glossary)·IMP-110(스트리밍) 위에 조립. IMP-60 /AiAgent 로직 재사용.
+
+### IMP-104 — explain-this-selection — 용어·배지·영역을 콕 집어 물어보기(키보드 우선)
+- **Type**: ux (sev=high, effort=M)
+- **Area**: `web/src/components/StatusInfoTip.tsx`, `web/src/components/InfoTip.tsx`, 신규 `web/src/components/ExplainThis.tsx`
+- **Problem**: 지금은 statusGlossary에 등록된 7개 상태 배지(IMP-97)만 InfoTip으로 설명되고, 그 외 화면의 임의 용어·메트릭 라벨·위젯 영역은 '이게 뭔지' 물어볼 방법이 없다(60개 파일에 native title= 잔존). 초심자가 대시보드에서 'TTFT'·'blast-radius'·특정 카드가 뭘 보여주는지 콕 집어 물어볼 explain-this-selection 경로가 부재 — 진입장벽의 핵심.
+- **Fix**: 'Explainability on Demand' 레이어를 키보드 우선으로 출시. (1) **primary path** = 배지/메트릭라벨/위젯에 data-explain-key 속성 → 해당 요소가 focusable(tabindex=0)이 되고 hover/focus 시 ⓘ 어포던스 노출, Enter/context-menu 키/우클릭/롱프레스로 {term, widget-context} 프리필로 전역 assist(IMP-103)를 연다(선택 불필요). (2) **secondary path** = 텍스트 선택 시 floating 'ⓘ 설명' 버튼(마우스 편의만, 유일 경로 금지 — 선택 팝오버는 키보드 접근 함정). (3) Resolution: 등록 glossary term → 큐레이션 정의; 미등록 → rule-based 사전 폴백 + 실모델 seam(Notion define-any-word처럼). (4) Progressive disclosure(Linear 'Why?'식): 짧은 정의 먼저, 상세/관련 메트릭으로 확장. (5) a11y: role, aria-describedby to trigger, aria-live=polite 결과영역, Esc-dismiss, ≥4.5:1 대비, no focus theft(WCAG 2.2 Consistent Help 3.2.6). 읽기전용·mutation 금지. 이것이 60파일 native title= 백로그를 실제 explain 경로로 은퇴시킨다.
+- **Evidence**: yes (high) — 리딩 제품에서 shipped 패턴. Notion AI 'Explain this'가 하이라이트 텍스트의 낯선 용어 인라인 정의. Linear는 AI 출력에 'Why?' 링크로 progressive disclosure. Mantlr 2026 AI-UX 패턴셋이 'Explainability on Demand'로 명명(선행 설명 금지·모든 요소 확장·progressive disclosure). **정제**: 선택 전용 floating 버튼은 알려진 a11y 함정 → 안정적 키보드-도달 어포던스를 primary로, 선택 팝오버는 additive 마우스 층으로. data-explain-key + rule-based 폴백 + 모델 seam은 Notion degrade 방식과 일치.
+- **Sources**: https://www.notion.com/help/notion-ai-faqs , https://mantlr.com/blog/designing-for-ai-agents-ux-patterns-2026 , https://www.w3.org/WAI/ARIA/apg/practices/keyboard-interface/ , https://webaim.org/techniques/keyboard/
+- **Deep-dive suggestion**: 이미 grounded — direction 1/5. IMP-103 assist 프리필·IMP-105 widget-context·IMP-108 glossary·IMP-96/97 InfoTip 재사용. data-explain-key 점진 부착이 native title= 마이그레이션(IMP-4/20)을 마무리.
+
+### IMP-105 — 위젯·영역 메타 선언 + '이 화면/카드 설명' 근거 인용
+- **Type**: ux (sev=medium, effort=M)
+- **Area**: `web/src/components/StatCard.tsx`, `StatMini.tsx`, `MetricLayout.tsx`, 신규 `web/src/components/widgetMeta.ts`
+- **Problem**: 대시보드 카드·KPI·패널이 '무엇을 측정하고 좋음/나쁨 기준이 뭔지' 선언적 메타가 전혀 없다. 어시스트가 '이 숫자 좋은가 나쁜가'를 즉답하거나 '이 화면 설명'을 근거 인용하려 해도 참조할 위젯 메타데이터가 부재. Grafana Assistant는 패널 정의를 컨텍스트로 받아 설명하는데 여기엔 그 계약이 없다.
+- **Fix**: widgetMeta.ts를 위젯 id→{title, whatItShows, goodBadRef, relatedTerms[]}의 얇은 선언적 레지스트리로. goodBadRef는 **IMP-7 카탈로그 임계치를 가리킨다**(숫자 인라인 금지 — 카탈로그 키 + 방향만 저장해 단일 출처 유지; '좋음/나쁨' 판정은 답변 시점에 라이브 값 vs 참조 임계로 파생). 카드 루트에 data-widget-id 부착. 어시스트 tool 2종: get_screen_context(route) → 현재 마운트된 위젯 id + 메타(앱 전체 덤프 금지, 화면에 있는 것만 — 정보폭탄 방지), describe_widget(id) → 전체 메타 + 현재 값의 파생 판정을 임계 인용과 함께. relatedTerms는 IMP-108 glossary 재사용. InfoTip/EvidencePanel(IMP-95/99)에 passive 노출 — 어시스트 없이도 사람이 self-documentation. Grounding: describe_widget은 메타 없는 위젯에 '선언된 메타 없음'을 말하고 환각 금지(HARD). 고트래픽 KPI/스코어카드부터 점진 부착.
+- **Evidence**: yes (high) — 두 축에서 현행 best practice. (1) Dashboard Design Patterns(Bach et al., arXiv 2205.00757)가 'Data Description'/'Meta Data' 패턴(위젯이 보여주는 것·단위·provenance)과 'Threshold' 패턴(good/bad/neutral 판정)을 형식화, 메트릭별 formula/units/grain/caveats/target 문서화 처방 → 제안 스키마와 1:1. (2) AI-grounding 절반은 시장 리더 실제 동작과 일치 — Grafana Assistant(2025-08 public preview)는 명시적 context-aware로 패널 title/description/query/datasource/viz를 컨텍스트로 검색('@panel', 'Explain in Assistant'). FABRIX는 그 부재 계약(data-widget-id + widgetMeta.ts)을 추가. IMP-7 임계 재사용은 두 번째 진실원 방지의 정확한 판단.
+- **Sources**: https://grafana.com/blog/2025/05/07/llm-grafana-assistant/ , https://grafana.com/docs/grafana-cloud/machine-learning/assistant/dashboards/improve-existing-panels/ , https://dashboarddesignpatterns.github.io/patterns.html , https://arxiv.org/abs/2205.00757
+- **Deep-dive suggestion**: 이미 grounded — direction 4/5. IMP-7 임계·IMP-108 glossary·IMP-95/99 EvidencePanel 재사용. IMP-106 describe_widget/get_screen_context가 이 메타를 소비. 고트래픽 위젯부터 점진.
+
+### IMP-106 — read-only assist context seam — explain_term/get_screen_context/describe_widget MCP
+- **Type**: code (sev=medium, effort=M)
+- **Area**: `web/src/actions/ontology-tools.schema.json`, `web/src/api/ontologyTools.ts`, `web/src/api/client.ts`
+- **Problem**: 현행 MCP tool은 온톨로지/K8s 조회(query_objects·get_incident_context 등, IMP-73/98)뿐 — 어시스트가 '현재 라우트/열린 객체/선택 영역/관련 용어'를 근거로 받을 컨텍스트 tool이 없다. explain_term·get_screen_context·describe_widget이 스키마에 부재해 어시스트가 컨텍스트를 근거 인용하려면 매번 ad-hoc로 화면 상태를 긁어야 한다.
+- **Fix**: seam을 채택하되 MCP primitive 타입으로 분할(전부 tool로 정의하지 말 것). (1) explain_term → glossary를 **RESOURCE/resource template**(glossary://{term}, IMP-108 registry 파생) — read-only·addressable·pinnable·tool-call 비용 0. (2) describe_widget → **RESOURCE template**(widget://{id}, IMP-105 widgetMeta 파생). (3) get_screen_context → **read-only TOOL**(동적 per-turn 상태: route/open object/facet/selection), optionally resources/list_changed 구독으로 navigation 시 재접지. IMP-73 레지스트리 파생 단일출처 유지(하나의 registry → 프론트 agent surface + MCP 정의, 스키마 중복 금지). 순수 read-only·zero auto-mutation·capability/profile 게이팅(IMP-2), resource/tool description을 injection surface로 취급(문자열 검증, 신뢰 못할 객체 내용 보간 금지).
+- **Evidence**: yes (high) — MCP spec의 primitive taxonomy가 아이디어를 검증·정제. model-controlled TOOLS(동적/파라미터화 검색) vs application-controlled RESOURCES(named/addressable/read-only, side-effect 없음, grounding에 가치). explain_term·describe_widget은 정적/느린변화·named·read-only 참조데이터 → 교과서적 RESOURCE(resource template glossary://·widget://), 'burning tool calls' 회피. get_screen_context는 per-turn UI 상태 → 정당한 read-only TOOL. read-only+게이팅은 2025 MCP 보안 가이드(tool metadata/poisoned description 프롬프트 인젝션 위험)의 권장 완화와 정합. control-model split이 자연스러운 non-overlap 분할 제공.
+- **Sources**: https://modelcontextprotocol.io/specification/2025-06-18/server/tools , https://modelcontextprotocol.info/docs/concepts/resources/ , https://arxiv.org/html/2601.17549v1
+- **Deep-dive suggestion**: 이미 grounded — direction 2 핵심. IMP-73 레지스트리 파생·IMP-98 get_incident_context 하이브리드·IMP-2 게이팅과 동일 seam. IMP-105 widgetMeta·IMP-108 glossary가 데이터 원천. IMP-103 assist가 소비자.
+
+### IMP-107 — 다음 액션 제안형 in-context 어시스트로 '진단→조치' 루프 단축(읽기전용·확인은 사람)
+- **Type**: compete (sev=medium, effort=M)
+- **Area**: `web/src/components/AssistPanel.tsx`, `web/src/actions/registry.ts`, `web/src/components/CausePanel.tsx`
+- **Problem**: Datadog Bits AI·Dynatrace Davis CoPilot은 ask-anything 답변에 '다음에 무엇을 볼지/할지'를 클릭형으로 붙여 온콜 루프를 단축한다. 이 제품의 어시스트(전용 라우트, IMP-60)는 RCA 후보까지만 주고, 전역 in-context 표면에서 '이 상황에서 다음 조치' 제안 + 관련 화면/객체로의 원클릭 이동이 약해 진입장벽이 높다.
+- **Fix**: 읽기전용 next-action 제안 카드를 답변 하단에 출시하되 3가지를 sharpen. (1) Davis CoPilot의 'show the data behind each suggestion'을 채택 — 각 카드에 EvidencePanel/CausePanel seam(IMP-95/99) 출처의 1줄 rationale을 붙여 클릭 가능이 아니라 신뢰 가능하게. (2) 액션을 read-only vs mutating 플래그를 가진 typed registry로 모델링; read-only(ObjectView/COP/Metric Explorer 딥링크, get_object_metrics/get_incident_context/get_pod_diagnostics 같은 안전 MCP 쿼리)는 원클릭 카드, mutating은 ActionForm confirm + capability 게이트로 라우팅되는 PROPOSAL(절대 auto-execute 금지) — Bits AI의 채팅-트리거 mutating triage보다 강한 신뢰 자세. (3) 경쟁사 destination 폭을 자체 COP/ObjectView/Metric Explorer + create-incident-context로 매칭, IMP-72 Probable Cause/IMP-108 glossary 문구 재사용으로 표면 간 일관성. in-context/global 유지(/AiAgent 전용 아님)가 실제 갭. 차별점은 evidence-backed + zero-auto-mutation(observe read-only 프로파일 정합).
+- **Evidence**: yes (high) — 두 경쟁사 모두 2025 shipped mainstream. Datadog Bits AI SRE(2025-12-02 GA): 알림 자율 조사·'사람 로그인 전에 next steps 추천', human-in-the-loop(review·decide·trigger in chat), 7개 triage 액션(Slack/Teams/incident/page/case/Jira) 모두 MUTATING·수동 트리거. read-only investigate/deep-link 카드는 강조 안 함. Dynatrace Davis CoPilot: 'affected components 검토·logs/metrics 분석·operational impact 평가 같은 next steps 제안' + 'remediation 추천·relevant tools 링크' + '각 제안을 뒷받침하는 데이터 표시'(EvidencePanel/CausePanel과 직접 매핑). **판단**: 리더가 clickable next-action을 붙이는 건 이제 table stakes(단독 차별 아님). 지킬 각도는 ZERO-auto-mutation — read-only-first + mutation은 confirm 게이팅이 방어적 엔터프라이즈/observe 자세.
+- **Sources**: https://docs.datadoghq.com/bits_ai/bits_ai_sre/take_action/ , https://www.datadoghq.com/blog/bits-ai-sre/ , https://docs.dynatrace.com/docs/discover-dynatrace/platform/davis-ai/copilot , https://www.dynatrace.com/news/blog/davis-copilot-expands-get-answers-and-insights-across-the-dynatrace-platform/
+- **Deep-dive suggestion**: 이미 grounded — direction 5. IMP-103 assist·IMP-59 Action 프레임워크·IMP-72 Probable Cause·IMP-95/99 evidence seam 재사용. mutating은 IMP-2 capability 게이팅 필수.
+
+### IMP-108 — statusGlossary를 전역 glossary-as-data로 승격 — 도메인 용어 선언적 단일 출처
+- **Type**: code (sev=medium, effort=M)
+- **Area**: `web/src/api/statusGlossary.ts`(→ `web/src/api/glossary.ts`로 확장)
+- **Problem**: statusGlossary는 인시던트 상태 7개 term에 국한(triggered/acked/notready/backpressure/warn/crit/blast). 어시스트가 인용할 도메인 용어(TTFT·p95·prefill·throttle·NVLink·에러율·토큰비용 등)와 위젯/영역 메타가 어디에도 선언적으로 없어, explain-this가 근거 인용할 데이터 원천이 없다. 여러 파일이 용어 문구를 ad-hoc 문자열로 흩뿌릴 위험.
+- **Fix**: GlossaryTerm 스키마에 category/aliases(영문·별칭 검색어)/relatedKeys를 더한 전역 glossary.ts로 승격하고, 관측 도메인 용어를 데이터로 등재. StatusInfoTip은 하위셋을 그대로 소비(회귀 0). 어시스트 rule-based 폴백과 explain_term MCP resource(IMP-106)가 이 단일 출처를 인용. 순수·의존성 0 유지, 정보폭탄 금지(short 1줄 + why 1줄 규약 유지).
+- **Evidence**: (미연구 — low ambiguity) direction 4 직접 충족. IMP-97 statusGlossary의 자연 확장. IMP-104 explain-this·IMP-105 widgetMeta relatedTerms·IMP-106 glossary:// resource의 데이터 원천.
+- **Sources**: (참조 — glossary-as-data 패턴; 미연구)
+- **Deep-dive suggestion**: deep-research-lite(선택) 또는 구현 직행. IMP-97 statusGlossary 하위셋 호환 유지(회귀 0 테스트). IMP-104/105/106의 선행 데이터 의존.
+
+### IMP-109 — 전역 Assist 패널 시각 완성도 — 스트리밍·인용 chip·메시지 밀도
+- **Type**: aesthetic (sev=medium, effort=M)
+- **Area**: 신규 `web/src/components/AssistPanel.tsx`, `web/src/index.css` 토큰
+- **Problem**: 새 전역 어시스트 패널이 기존 손수 style·InfoTip 톤에 안주하면 Linear Ask/Vercel v0 챗·Datadog Bits AI의 스트리밍 타이핑, 근거 인용 chip, 메시지 버블 밀도·여백 리듬 대비 값싸 보인다. 인라인 style 잔존(IMP-19) 표면에 새 패널을 얹으면 시각 부채가 늘어난다.
+- **Fix**: 스틸블루+라이트 토큰 위에 프리미엄 대화 표면 구축: 스트리밍 caret·부드러운 텍스트 reveal(motion-reduce 존중), 인용을 클릭형 monospace chip(EvidenceTimeline IMP-100 시각언어 재사용), 질문/답변 밀도·행간·구분선 리듬, 로딩·빈·에러 상태 폴리시. 토큰/유틸로 수렴(일회성 style 금지).
+- **Evidence**: (미연구 — low ambiguity) IMP-27/34/35/44/64/100 시각 완성도 계열의 assist 표면 적용. IMP-103 패널 위에 렌더, IMP-102 스트리밍 a11y 계약(role=log·aria-busy) 시각 대응.
+- **Sources**: (참조 — Linear Ask/Vercel v0/Datadog Bits 대화 표면; 미연구)
+- **Deep-dive suggestion**: plan-design-review. IMP-103 패널·IMP-102 스트리밍 계약 위에 얹음. IMP-100 EvidenceTimeline 인용 시각언어·IMP-19 토큰 수렴 재사용. motion-reduce·Backend.AI 라이트+스틸블루 준수.
+
+### IMP-110 — 어시스트 실모델 스트리밍(TTFT) + 'rule-based (no model)' 정직 표기 + 경량 히스토리
+- **Type**: ux (sev=medium, effort=L)
+- **Area**: `web/src/api/modelConnection.ts`, `web/src/api/client.ts`(신규 streamAssist), 신규 `web/src/components/AssistPanel.tsx`
+- **Problem**: modelConnection(IMP-82)은 TTFT를 프로브 왕복으로만 측정하고 실제 토큰 스트리밍 경로가 없다(ttftMs 보통 null). 어시스트가 실 Dynamo(VITE_MOCK=off)에 붙어도 지각-반응 스트리밍이 없고, mock일 때 '실모델처럼' 보이면 기술 정직성 위반. 경량 대화 히스토리도 없어 후속 질문 맥락이 끊긴다.
+- **Fix**: IMP-82 모델 연결 재사용해 streamAssist(SSE/ReadableStream getReader, AbortSignal 타임아웃 합성 — runAgent 견고성 패턴)로 실 Dynamo 스트리밍(첫 토큰까지 TTFT 노출). mock/미연결 시 glossary(IMP-108)·widgetMeta(IMP-105) rule-based 폴백을 'rule-based (no model)' badge로 정직 표기(ModelStatusChip 톤 통일). 세션 내 경량 히스토리 + IMP-102 스트리밍 a11y(role=log 완료 낭독·role=status 진행).
+- **Evidence**: (미연구 — low ambiguity) direction 3 직접 충족. IMP-82 모델 연결/설정·runAgent AbortSignal 견고성 재사용. 기술 정직성(mock/rule-based 표기·실모델 seam) 제약 준수.
+- **Sources**: (참조 — SSE/ReadableStream 스트리밍·TTFT; 미연구)
+- **Deep-dive suggestion**: deep-research-lite(SSE vs fetch ReadableStream·AbortSignal 타임아웃 합성 패턴) 또는 구현 직행. IMP-82 연결·IMP-108/105 폴백 데이터·IMP-102 낭독 계약 위에. 실 Dynamo 연동은 mock-first·spike park.
+
+### IMP-111 — 로컬 어시스트 추론을 검증된 인클러스터 LLM 게이트웨이로 백킹
+- **Type**: platform (sev=low, effort=L)
+- **Area**: `web/src/api/modelConnection.ts`, `backend/`(Dynamo :8000 프리셋), `deploy/`
+- **Problem**: 어시스트 실모델 경로가 Dynamo :8000 단일 엔드포인트를 프론트가 직접 프로브·호출하는 구조라, 라우팅/폴백/타임아웃/사용량 관측을 어시스트마다 재구현하게 된다. 고객 플랫폼팀이 온프렘/에어갭에서 여러 모델(설명용 경량 모델 vs RCA용 대형)을 운영하려면 게이트웨이 계층이 필요.
+- **Fix**: LiteLLM(MIT, Helm/K8s deploy 성숙)을 어시스트+RCA 공용 인클러스터 게이트웨이로 채택 — OpenAI 호환 인터페이스로 Dynamo/vLLM 백엔드를 프록시, 모델별 라우팅·타임아웃·토큰 관측을 게이트웨이에 위임. IMP-33(플레이그라운드 LiteLLM 백킹, spike-needed)과 동일 인프라 공유로 seam 통일. 라이선스: LiteLLM MIT 상업 사용 OK.
+- **Evidence**: (미연구 — low ambiguity) direction 3/6. IMP-33 LiteLLM 백본과 인프라 공유(중복 채택 회피). 실 게이트웨이 배포는 in-cluster pod → spike 성격.
+- **Sources**: (참조 — LiteLLM MIT Helm/K8s; 미연구, IMP-33과 함께 평가)
+- **Deep-dive suggestion**: oss-evaluate + spike-needed(실 게이트웨이는 in-cluster 배포). IMP-33과 함께 spike park — 단일 LiteLLM 인스턴스로 playground+assist+RCA 공유. IMP-82/110 모델 연결이 게이트웨이 엔드포인트를 가리키도록.
