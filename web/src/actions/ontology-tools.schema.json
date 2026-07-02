@@ -46,6 +46,23 @@
       "name": "get_events"
     },
     {
+      "description": "read-only diagnostic bundle, no mutation. 한 온톨로지 객체(Endpoint/Model/Node)의 인시던트 원인 컨텍스트를 한 호출로 반환한다 — 상관 파드·이벤트·배포 rollout·큐 신호 + 추정 근본원인 요약 + 근거 인용(objectId/podRef). 원자 tool(list_pods/get_events/describe_deployment)을 여러 번 부를 필요 없이 여기서 번들로 받는다(mock-first).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "description": "진단 대상 온톨로지 객체 id(필수)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "objectId"
+        ],
+        "type": "object"
+      },
+      "name": "get_incident_context"
+    },
+    {
       "description": "단일 객체의 canonical 표현(type/title/status/props)을 id 로 조회한다(조회 전용).",
       "inputSchema": {
         "additionalProperties": false,
@@ -88,6 +105,23 @@
         "type": "object"
       },
       "name": "get_object_metrics"
+    },
+    {
+      "description": "read-only diagnostic bundle, no mutation. 한 파드(pod/<name> 또는 <name>)의 진단 번들을 반환한다 — waiting reason·재시작 횟수·OOMKilled·연관 이벤트 + 상관된 온톨로지 객체의 원인 컨텍스트(동일 seam). 특정 파드가 왜 재시작/OOM 했는지 한 호출로 받는다(mock-first).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "pod": {
+            "description": "파드 이름(pod/<name> 접두 허용, 필수)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pod"
+        ],
+        "type": "object"
+      },
+      "name": "get_pod_diagnostics"
     },
     {
       "description": "Kubernetes 노드를 조회한다(condition·NotReady 사유). NotReady 노드를 찾는 데 쓴다(조회 전용, mock-first).",

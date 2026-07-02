@@ -18,7 +18,7 @@
 // 실행은 오직 <ActionForm>(IMP-59) + evaluateSubmission(capability+status) confirm 게이팅으로만. 자동 mutation 경로 없음.
 
 import type {
-  DetectionSignal, KineticAlert, ObjectStatus, ObjectType, OntologyLink, OntologyObject,
+  DetectionSignal, KineticAlert, ObjectStatus, ObjectType, OntologyLink, OntologyObject, SchedulerSignals,
 } from "./types";
 import { buildRootCausePath } from "./investigate";
 import { decodeClocksEventReasons } from "./gpuHardware";
@@ -35,6 +35,8 @@ export const SUGGESTED_ACTION: Partial<Record<ObjectType, string>> = {
 // Model 은 상태로 분기 — crit(기동 실패 정황)은 재기동, warn(용량 부족)은 스케일. 결정적.
 function suggestedFor(obj: OntologyObject): string | undefined {
   if (obj.type === "Model") return obj.status === "crit" ? "restartModel" : "scaleReplicas";
+  // Incident(backpressure) — 즉시 실행 mutation 이 아니라 라이프사이클 ack(처리중)이 첫 조치(IMP-94).
+  if (obj.type === "Incident") return "ack";
   return SUGGESTED_ACTION[obj.type];
 }
 
@@ -71,15 +73,37 @@ function throttleReasons(obj: OntologyObject): string[] {
 }
 
 // first-anomaly index(0=가장 오래됨, 23=최신) → "N분 전" 라벨(investigate.ts 와 동일 규약, 24분 창).
-function anomalyLabel(index: number): string {
+// IMP-99: buildIncidentEvidence 가 first-anomaly 인덱싱에 동일 라벨 규약을 재사용(단일 출처).
+export function anomalyLabel(index: number): string {
   if (index < 0) return "관측 시각 미상";
   const minsAgo = Math.round(((24 - 1 - index) * 60) / 60);
   return minsAgo <= 0 ? "방금" : `${minsAgo}분 전`;
 }
 
+// ── backpressure(스케줄러 큐 적체) 신호 (IMP-94) ─────────────────────────────
+// Incident.props.scheduler(mockFactory.deriveSchedulerSignals 파생)에서 SchedulerSignals 를 안전 추출.
+// 실백엔드 스왑 시에도 동일 스키마이면 그대로 흐른다(형식 불일치 → null).
+function schedulerSignals(obj: OntologyObject): SchedulerSignals | null {
+  const s = (obj.props as { scheduler?: unknown }).scheduler;
+  if (!s || typeof s !== "object") return null;
+  const o = s as Partial<SchedulerSignals>;
+  if (!Array.isArray(o.queueDepthTrend)) return null;
+  if (typeof o.queueWaitP95 !== "number" || typeof o.queueWaitSlo !== "number") return null;
+  return o as SchedulerSignals;
+}
+
+// **증거 규율(CRITICAL)**: waiting>0 은 자동으로 인시던트가 아니다. 짧은 큐는 버스트/continuous batching 에서
+// 정상. 상관 조건 — 지속 대기(waiting≥지속 임계) AND 대기 p95 > SLO AND TTFT 동반 상승 — 이 **동시에** 성립할
+// 때만 backpressure 인시던트로 판정한다(bare constant 아님, SLO 임계 대비). vLLM 관측 관례 정합.
+const SUSTAINED_WAITING = 8; // alarm 문자열(waiting>8)과 정합하는 지속 임계 — 순간 스파이크 제외.
+export function isBackpressureIncident(s: SchedulerSignals): boolean {
+  return s.waiting >= SUSTAINED_WAITING && s.queueWaitP95 > s.queueWaitSlo && s.ttftRising;
+}
+
 // ── 신호 수집(객체별) ────────────────────────────────────────────────────────
 // 한 객체에서 나온 모든 감지 신호를 모은다(아직 dedupe 전). 각 신호는 근거 슬롯 한 줄이 된다.
-function signalsForObject(
+// IMP-99: buildIncidentEvidence 가 이 함수를 재사용해 근거를 조립한다(중복 파생 금지 — 단일 출처).
+export function signalsForObject(
   obj: OntologyObject,
   firstAnomaly: { index: number; label: string } | null,
 ): DetectionSignal[] {
@@ -193,16 +217,59 @@ function signalsForObject(
     }
   }
 
+  if (obj.type === "Incident") {
+    // (5) 스케줄러 backpressure(IMP-94) — 큐 깊이·처리율·동시성·대기 p95 클러스터. SLO 게이팅 통과 시에만.
+    const sched = schedulerSignals(obj);
+    if (sched && isBackpressureIncident(sched)) {
+      const when = firstAnomaly?.label ?? "최근";
+      const depthNow = sched.queueDepthTrend[sched.queueDepthTrend.length - 1] ?? sched.waiting;
+      // (5a) 큐 깊이 추이 — 적체가 쌓여온 시계열(vllm:num_requests_waiting).
+      out.push({
+        kind: "backpressure",
+        label: "대기 큐 깊이 상승",
+        detail: `대기 ${depthNow}건 (추이 ${sched.queueDepthTrend.join("→")}) — vllm:num_requests_waiting(mock)`,
+        observedAt: when,
+        citation: obj.id,
+      });
+      // (5b) 처리율 — admitted<offered = 유입>수용력.
+      out.push({
+        kind: "backpressure",
+        label: "유입 > 수용력",
+        detail: `유입 ${sched.offeredRate}/s > 수용 ${sched.admittedRate}/s — 초과 ${sched.offeredRate - sched.admittedRate}/s 적체(mock)`,
+        observedAt: when,
+        citation: obj.id,
+      });
+      // (5c) 동시성 포화 — inUse≥limit(max_num_seqs).
+      out.push({
+        kind: "backpressure",
+        label: "동시성 한도 포화",
+        detail: `동시 실행 ${sched.concurrencyInUse}/${sched.concurrencyLimit} — max_num_seqs 상한 도달(mock)`,
+        observedAt: when,
+        citation: obj.id,
+      });
+      // (5d) 대기 p95 vs SLO — vllm:request_queue_time_seconds. 게이팅 근거를 명시적 근거 줄로.
+      out.push({
+        kind: "backpressure",
+        label: "대기 p95 SLO 초과",
+        detail: `대기 p95 ${sched.queueWaitP95}s > SLO ${sched.queueWaitSlo}s${sched.ttftRising ? " · TTFT 동반 상승" : ""}(mock)`,
+        observedAt: when,
+        citation: obj.id,
+      });
+    }
+  }
+
   return out;
 }
 
 // 추정 원인 경로 서술(슬롯3) — first-anomaly 시각 + 타입별 인과 요약. "추정" 명시(상관≠인과).
-function probableCauseText(obj: OntologyObject, firstAnomaly: { label: string } | null, signalCount: number): string {
+// IMP-99: buildIncidentEvidence 의 rootCauseSummary 가 이 함수를 재사용(단일 출처).
+export function probableCauseText(obj: OntologyObject, firstAnomaly: { label: string } | null, signalCount: number): string {
   const when = firstAnomaly ? `가장 이른 이상이 ${firstAnomaly.label} 관측됨` : "이상이 관측됨";
   const kind =
     obj.type === "GpuDevice" ? "GPU 하드웨어/포화가 상류 지연을 유발"
     : obj.type === "Node" ? "노드 자원 포화가 위 워크로드로 번짐"
     : obj.type === "Model" ? "모델 서빙 지연/오류가 엔드포인트로 전파"
+    : obj.type === "Incident" ? "유입이 수용력·동시성 한도를 넘어 큐가 적체(유입>수용력·concurrency cap·대형 prefill 정황)"
     : "이상이 관계 그래프로 전파";
   return `${obj.title}에서 ${when}. ${kind}하는 것으로 추정됩니다(신호 ${signalCount}건).`;
 }
@@ -224,15 +291,14 @@ export interface AttributeOptions {
 //     - state transition: status crit/warn 인 객체만 승격(정상 ok/unknown 미승격).
 //     - sustained collapse: breachCount(신규=1, 유지=2)로 접어 카운트 배지.
 //     - adaptive baseline: TTFT p95 는 baseline 배수로 판정(signalsForObject 내부).
-export function attributeDetections(
+// first-anomaly 인덱싱(단일 출처) — 통증 우선 진입점(crit/warn Endpoint·Incident) 각각에서 원인 경로를
+// 만들고, hop 별 first-anomaly 중 가장 이른(작은 index) 관측을 객체별로 유지한다. buildRootCausePath 파생.
+// IMP-99: buildIncidentEvidence 가 이 함수를 재사용해 특정 객체의 first-anomaly 시각을 얻는다(동형 규약).
+export function indexFirstAnomalies(
   objects: OntologyObject[],
   links: OntologyLink[],
-  opts: AttributeOptions = {},
-): KineticAlert[] {
-  // first-anomaly 근거 — 가장 아픈 진입점에서 원인 경로를 한 번 만들고, hop 별 first-anomaly 를 인덱싱.
-  // (경로가 닿는 객체에만 시간축 근거가 붙는다 — 고립 이상 객체는 자체 신호로만 승격.)
+): Map<string, { index: number; label: string }> {
   const anomalyByObject = new Map<string, { index: number; label: string }>();
-  // 통증 우선 진입점 후보(crit/warn Endpoint 또는 Incident) 각각에서 경로를 만들어 first-anomaly 수집.
   const entries = objects
     .filter((o) => (o.type === "Endpoint" || o.type === "Incident") && o.status !== "ok")
     .sort((a, b) => (STATUS_RANK[a.status] - STATUS_RANK[b.status]) || (a.id < b.id ? -1 : 1));
@@ -247,18 +313,34 @@ export function attributeDetections(
       }
     }
   }
+  return anomalyByObject;
+}
+
+export function attributeDetections(
+  objects: OntologyObject[],
+  links: OntologyLink[],
+  opts: AttributeOptions = {},
+): KineticAlert[] {
+  // first-anomaly 근거 — 가장 아픈 진입점에서 원인 경로를 한 번 만들고, hop 별 first-anomaly 를 인덱싱.
+  // (경로가 닿는 객체에만 시간축 근거가 붙는다 — 고립 이상 객체는 자체 신호로만 승격.)
+  const anomalyByObject = indexFirstAnomalies(objects, links);
 
   const alerts: KineticAlert[] = [];
   for (const obj of objects) {
     // state transition 억제 — 정상/미측정 객체는 스트립에 올리지 않는다.
     if (obj.status === "ok" || obj.status === "unknown") continue;
-    // 귀속 대상 타입만(Model/GpuDevice/Node). Endpoint 는 진입점 근거로만 쓰고 카드는 자원/모델에 귀속.
-    if (obj.type !== "Model" && obj.type !== "GpuDevice" && obj.type !== "Node") continue;
+    // 귀속 대상 타입 — Model/GpuDevice/Node + Incident(backpressure, IMP-94). Endpoint 는 진입점 근거로만.
+    // Incident 는 SLO 게이팅을 통과해 backpressure 신호가 실릴 때만 아래 signals.length 로 자연 승격된다
+    // (waiting>0≠인시던트 — 짧은 큐는 signalsForObject 가 신호 0개 → 미승격).
+    if (obj.type !== "Model" && obj.type !== "GpuDevice" && obj.type !== "Node" && obj.type !== "Incident") continue;
 
     const firstAnomaly = anomalyByObject.get(obj.id) ?? null;
     const signals = signalsForObject(obj, firstAnomaly);
     // 신호가 하나도 없으면(상태는 나쁘나 감지 축에 안 걸림) 승격하지 않는다(노이즈 억제).
     if (signals.length === 0) continue;
+    // Incident 는 backpressure 신호가 실제로 실릴 때만 승격한다(IMP-94). firstAnomaly 만으로는 승격 금지 —
+    // 짧은 큐(SLO 게이트 미통과)는 firstAnomaly 만 붙어도 카드로 올리지 않는다(waiting>0≠인시던트).
+    if (obj.type === "Incident" && !signals.some((s) => s.kind === "backpressure")) continue;
 
     const verb = suggestedFor(obj);
     const breachCount = opts.previousObjectIds?.has(obj.id) ? 2 : 1;

@@ -19,7 +19,11 @@ import { SkeletonCards } from "../components/Skeleton";
 import DataFreshness from "../components/DataFreshness";
 import PauseToggle from "../components/PauseToggle";
 import InfoTip from "../components/InfoTip";
+import StatusInfoTip from "../components/StatusInfoTip";
+import IncidentReadingGuide from "../components/IncidentReadingGuide";
+import EvidencePanel from "../components/EvidencePanel";
 import ObjectView, { useObjectView } from "../components/ObjectView";
+import type { OntologyObject } from "../api/types";
 import KineticStrip from "../components/KineticStrip";
 import { investigateSchema, useUrlState } from "../urlState";
 import { usePolling } from "../utils/usePolling";
@@ -137,6 +141,11 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
         </button>
       </div>
 
+      {/* IMP-97 — '이 화면 읽는 법' 온보딩(default-collapsed·1회 dismiss·persistent '?').
+          신호→추정원인→영향→조치 3단 마이크로 런북 + 상태 용어 InfoTip(단일 glossary).
+          first-anomaly 타임라인은 여기 렌더 금지 — drill-down 층(hop/ObjectView EvidencePanel)에만(정보폭탄 방지). */}
+      <IncidentReadingGuide />
+
       {/* IMP-61 — 데모 컨트롤 바(재생 모드에서만). 순서 있는 step 을 이전/다음으로 이동. */}
       {demoOn && (
         <DemoBar
@@ -249,6 +258,9 @@ export default function Investigate({ onNavigate }: { onNavigate?: NavFn }) {
                     active={view.objectId === h.id}
                     demoActive={demoOn && h.id === activeStepId}
                     demoStep={demoOn && h.id === activeStepId ? activeStep : null}
+                    objects={objects}
+                    links={links}
+                    onOpenObject={(id) => view.open(id)}
                   />
                 ))}
               </ol>
@@ -273,6 +285,9 @@ function HopCard({
   active,
   demoActive = false,
   demoStep = null,
+  objects,
+  links,
+  onOpenObject,
 }: {
   hop: Hop;
   index: number;
@@ -281,6 +296,9 @@ function HopCard({
   active: boolean;
   demoActive?: boolean;
   demoStep?: DemoStep | null;
+  objects: OntologyObject[];
+  links: OntologyLink[];
+  onOpenObject: (id: string) => void;
 }) {
   const meta = typeVisual(hop.object.type);
   return (
@@ -292,10 +310,25 @@ function HopCard({
           <span className="cop-edge-badge">{EDGE_BADGE[hop.fromKind]}</span>
         </div>
       )}
-      <button
-        type="button"
+      {/* 카드는 role=button 인 div — 헤더의 상태 InfoTip(ⓘ)이 실제 <button> 이라, 네이티브 <button> 로 감싸면
+          nested-button(잘못된 HTML·hydration 에러) + ⓘ 클릭이 카드 열기까지 동시 발동. div+키보드 활성화로 회피. */}
+      <div
+        role="button"
+        tabIndex={0}
         className={`cop-hop ${hop.critical ? "crit" : ""} ${hop.blastRadius ? "blast" : ""} ${active ? "active" : ""} ${demoActive ? "demo-active" : ""}`}
-        onClick={onOpen}
+        onClick={(e) => {
+          // 내부 인터랙티브(상태 InfoTip ⓘ)에서 버블된 클릭은 카드 열기로 삼지 않는다(ⓘ는 툴팁 전용).
+          if ((e.target as HTMLElement).closest(".infotip")) return;
+          onOpen();
+        }}
+        onKeyDown={(e) => {
+          // Enter/Space = 활성화(네이티브 button 동형). 내부 인터랙티브(ⓘ)에서 온 이벤트는 위임 무시.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
         aria-current={active || demoActive ? "true" : undefined}
         title={`${meta.label} · ${hop.id} — 상세/조치 열기`}
       >
@@ -304,6 +337,8 @@ function HopCard({
           <span className="cop-hop-title">{hop.object.title}</span>
           <span className="cop-hop-type">{meta.label}</span>
           <Badge tone={STATUS_TONE[hop.status]} dot>{STATUS_LABEL[hop.status]}</Badge>
+          {/* IMP-97 — 상태 용어 InfoTip(단일 glossary). warn/crit 만 항목 있음(ok/unknown 은 skip). */}
+          {(hop.status === "warn" || hop.status === "crit") && <StatusInfoTip termKey={hop.status} />}
         </div>
 
         {/* 라벨 줄 — 시간축(먼저 무너진 것) + 추정 근본원인 / blast-radius 배지. */}
@@ -312,7 +347,7 @@ function HopCard({
             첫 이상 {hop.firstAnomalyLabel}
           </span>
           {hop.critical && <span className="cop-tag cop-tag-crit">추정 근본원인</span>}
-          {hop.blastRadius && <span className="cop-tag cop-tag-blast">영향 확산(blast-radius)</span>}
+          {hop.blastRadius && <span className="cop-tag cop-tag-blast">영향 확산(blast-radius)<StatusInfoTip termKey="blast" /></span>}
           {index === 0 && <span className="cop-tag cop-tag-entry">진입</span>}
         </div>
 
@@ -349,7 +384,17 @@ function HopCard({
             )}
           </div>
         )}
-      </button>
+      </div>
+
+      {/* IMP-93 — 근거(Evidence): 채팅 없이 신호→추정원인→영향 접지. hop 카드 버튼 밖에 두어 인용/expander
+          가 카드 버튼과 중첩되지 않게(nested button 금지). 인용 클릭 → 참조 객체 ObjectView 오픈. */}
+      <EvidencePanel
+        objectId={hop.id}
+        objects={objects}
+        links={links}
+        onCite={(id) => onOpenObject(id)}
+        dense
+      />
 
       {isLast && !demoActive && <p className="cop-foot-note">경로는 척추(serves→runsOn→hostedBy) 종점 이후 한 hop 을 더 펼쳐 조기 종결을 방지합니다.</p>}
     </li>

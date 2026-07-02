@@ -128,7 +128,7 @@ vi.mock("./capabilities", () => ({ useCap: () => ({ caps: mockCaps, can: mockCan
 vi.mock("./components/Notifications", () => ({ default: () => null }));
 vi.mock("./components/CommandPalette", () => ({ default: () => null }));
 
-// eslint-disable-next-line import/first
+// vi.mock 은 vitest 가 hoist 하므로 이 import 가 mock 뒤에 와도 안전(플랫 config 에 import/first 규칙 없음).
 import Layout from "./components/Layout";
 
 describe("IMP-88 — nav 필터 격리(cap-off 에서 크래시 없이 렌더)", () => {

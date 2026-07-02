@@ -2442,6 +2442,64 @@ tr.row-sel { background: var(--primary-weak) !important; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
+/* IMP-96: 액션 인라인 설명(무엇을·언제·상태전이·부수효과·되돌리기) — InfoTip 버블 내부 레이아웃 */
+.action-tip { display: block; }
+.action-tip-title { display: block; margin-bottom: 4px; color: var(--text, #1f2530); }
+.action-tip-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 3px; }
+.action-tip-dl dt { font-weight: 600; color: var(--text-dim, #6b7280); white-space: nowrap; }
+.action-tip-dl dd { margin: 0; color: var(--text, #1f2530); }
+.action-tip-lite { display: flex; flex-direction: column; gap: 2px; }
+.action-tip-transition { color: var(--text, #1f2530); }
+.action-tip-when { color: var(--text-dim, #6b7280); }
+/* KineticStrip 실행 rung 옆 설명 묶음(InfoTip + 되돌리기 칩) */
+.kinetic-rung-explain { display: inline-flex; align-items: center; gap: 6px; }
+
+/* IMP-97: 상태 배지 옆 용어 InfoTip(단일 glossary). 배지에 붙는 작은 ⓘ — 색-only 배지에 텍스트 정의를 더한다. */
+.status-infotip { display: inline-flex; align-items: center; margin-left: 2px; }
+.status-infotip-why { display: block; margin-top: 4px; color: var(--text-dim, #6b7280); }
+
+/* IMP-97: 인시던트 '이 화면 읽는 법' 온보딩 — default-collapsed·persistent '?' 트리거(NN/g progressive disclosure). */
+.incident-guide {
+  margin-bottom: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.incident-guide-head { display: flex; }
+.incident-guide-trigger {
+  cursor: pointer; font: inherit; background: none; border: 0; width: 100%; text-align: left;
+  padding: var(--sp-2) var(--sp-3); display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-sm); color: var(--text-dim); border-radius: var(--radius-sm);
+}
+.incident-guide-trigger:hover { color: var(--text); }
+.incident-guide-trigger:focus-visible { outline: 2px solid var(--primary, #4a6da7); outline-offset: -2px; }
+/* persistent '?' — 작은 원형 배지(intrusive auto-firing coach mark 아님). */
+.incident-guide-q {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: 700; line-height: 1;
+  color: var(--onPrimary, #fff); background: var(--primary-strong);
+}
+.incident-guide-new {
+  margin-left: auto; font-size: var(--fs-xs); color: var(--primary-strong);
+  border: 1px solid var(--primary); border-radius: 999px; padding: 1px 8px;
+}
+.incident-guide-body { padding: 0 var(--sp-3) var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); }
+.incident-guide-lead { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); margin: 0; }
+.incident-guide-lead b { color: var(--text); }
+.incident-guide-steps { list-style: none; margin: 0; padding: 0; display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+.incident-guide-step { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.incident-guide-num {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex;
+  align-items: center; justify-content: center; font-size: var(--fs-xs); font-weight: 700;
+  color: var(--onPrimary, #fff); background: var(--primary-strong); line-height: 1;
+}
+.incident-guide-step-h { font-size: var(--fs-body); font-weight: 700; color: var(--text); }
+.incident-guide-step-d { font-size: var(--fs-sm); color: var(--text-dim); line-height: var(--lh-body); }
+.incident-guide-step-d b { color: var(--text); }
+.incident-guide-foot { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.incident-guide-foot-hint { font-size: var(--fs-xs); }
+.incident-guide-foot-hint b { color: var(--text); }
+
 /* ── 의미론적 유틸 (IMP-19) ──
    일회성 인라인 style 의 raw-px/하드코딩 색을 토큰으로 수렴하기 위한 최소 유틸.
    상수-토큰 유틸(.mt-1 등)은 만들지 않는다(Pajamas deprecated). 반복 의도가
@@ -2553,6 +2611,153 @@ tr.row-sel { background: var(--primary-weak) !important; }
 /* 섹션 */
 .ov-section { margin-top: var(--sp-4); }
 .ov-h { font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); margin: 0 0 var(--sp-2); text-transform: uppercase; letter-spacing: .03em; }
+
+/* ── 근거(Evidence) 패널 — IMP-93. 채팅 없이 신호→추정원인→영향 접지(ObjectView + COP hop 공유). ── */
+.ev-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.ev-head-tags { display: inline-flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; justify-content: flex-end; }
+.ev-h-dense { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
+/* 신뢰도 배지 — 색-only 금지(텍스트 병기). high=스틸블루, med=중립. */
+.ev-conf { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); background: var(--surface-2); }
+.ev-conf-high { color: var(--primary-strong); background: var(--primary-weak); border-color: var(--primary-weak); }
+/* mock 폴백 표기 — 실 수집 아님(무채색·정직). CausePanel 'rule-based (no model)' badge 와 동일 톤. */
+.ev-mock-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px dashed var(--border); color: var(--text-faint); background: var(--surface-2); white-space: nowrap; }
+.ev-summary { font-size: var(--fs-sm); color: var(--text); margin: var(--sp-2) 0; line-height: 1.4; }
+.ev-empty { font-size: var(--fs-sm); color: var(--text-faint); margin: var(--sp-2) 0 0; font-style: italic; }
+.ev-lines { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ev-line {
+  border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm); background: var(--surface-2); padding: var(--sp-2) var(--sp-3);
+}
+/* first-anomaly(시간축 앵커) / k8s event 는 스틸블루 rail 로 "먼저 읽히게". */
+.ev-line-firstAnomaly, .ev-line-k8sEvent { border-left-color: var(--primary); }
+.ev-signal { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: var(--fs-body); }
+.ev-what { font-weight: 600; color: var(--text); }
+.ev-when { font-size: var(--fs-xs); color: var(--text-faint); }
+.ev-chain { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; margin-top: 3px; font-size: var(--fs-sm); color: var(--text-dim); }
+.ev-arrow { color: var(--primary); font-weight: 700; }
+.ev-cause { color: var(--text-dim); }
+.ev-impact { color: var(--text); }
+/* 인용 — objectId 형태면 클릭 가능(navigate/highlight), 아니면 텍스트. */
+.ev-cite { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; }
+.ev-cite-link { background: var(--surface); color: var(--primary); cursor: pointer; }
+.ev-cite-link:hover { background: var(--primary-weak); border-color: var(--primary); color: var(--primary-strong); }
+.ev-expander {
+  margin-top: var(--sp-2); font-size: var(--fs-xs); font-weight: 600; color: var(--primary);
+  background: none; border: none; cursor: pointer; padding: 2px 0;
+}
+.ev-expander:hover { color: var(--primary-strong); text-decoration: underline; }
+.ev-expander-more { color: var(--text-faint); font-weight: 400; }
+/* COP hop 조밀 변형 — hop 카드 아래 얹히므로 여백 축소. */
+.ev-dense { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.ev-dense .ev-lines { gap: 6px; }
+.ev-dense .ev-line { padding: 6px var(--sp-2); }
+
+/* ── AI 원인 설명 패널 — IMP-95. 채팅 없이 '무엇이/왜/영향/다음 조치' 4 섹션 자동 생성(OPT-IN·staged).
+      HARD grounding(인용 없는 claim 은 seam 이 드롭) + 클릭형 인용 + 룰기반 폴백 badge.
+      Backend.AI 라이트 + 스틸블루 토큰(NO neon). ── */
+.cause-panel { }
+.cause-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cause-sub { font-size: var(--fs-xs); margin: 2px 0 var(--sp-2); }
+.cause-optin { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.cause-generate { white-space: nowrap; }
+.cause-auto-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-dim); cursor: pointer; }
+.cause-stage { font-size: var(--fs-xs); color: var(--primary); margin: var(--sp-2) 0; font-weight: 600; }
+.cause-empty { font-size: var(--fs-sm); color: var(--text-dim); margin: var(--sp-2) 0; }
+.cause-sections { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-2); }
+.cause-sec {
+  border-left: 3px solid var(--border); padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+}
+/* '왜'(추정 근본원인)는 스틸블루 rail 로 먼저 읽히게. '다음 조치'는 teal 힌트. */
+.cause-sec-why { border-left-color: var(--primary); }
+.cause-sec-next { border-left-color: var(--border); }
+.cause-sec-title {
+  display: inline-block; font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px;
+}
+.cause-sec-empty { font-size: var(--fs-xs); margin: 2px 0 0; }
+.cause-claims { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cause-claim { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: var(--fs-sm); }
+.cause-claim-text { color: var(--text); }
+.cause-claim-cites { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+/* 인용 — objectId 형태면 클릭 가능(navigate/highlight), 아니면 텍스트. ev-cite 규약 재사용. */
+.cause-cite { font-size: 10px; color: var(--text-faint); border: 1px solid var(--border); border-radius: 3px; padding: 0 4px; background: none; }
+.cause-cite-link { color: var(--primary); cursor: pointer; }
+.cause-cite-link:hover { background: var(--primary-weak); border-color: var(--primary); color: var(--primary-strong); }
+.cause-source { font-size: var(--fs-xs); margin: var(--sp-2) 0 0; }
+
+/* ── 근거 evidence 타임라인 — IMP-100. 신호→추정원인→영향을 세로 timeline 시각언어로.
+      first-anomaly(앵커)→now 순서, severity 색 마커 + 경과시간 + 추정원인 강조 노드 + 인과 연결선.
+      단일 재사용 컴포넌트(EvidenceTimeline) — EvidencePanel(ObjectView/COP hop) + KineticStrip 공유.
+      Backend.AI 라이트 + 스틸블루 토큰(NO neon). motion-reduce 는 전역 @media 규칙이 처리. ── */
+.ev-tl {
+  list-style: none; margin: var(--sp-2) 0 0; padding: 0;
+  position: relative; display: flex; flex-direction: column;
+}
+/* 세로 rail — 마커 dot 중심(좌측 8px)을 잇는 축. 첫 마커 상단~마지막 마커 하단에서 멈춘다. */
+.ev-tl-item {
+  position: relative; padding: 0 0 var(--sp-3) 22px; /* 좌측 여백 = rail(8px) + gap */
+}
+.ev-tl-item:last-child { padding-bottom: 0; }
+/* rail 선 — item 왼쪽 8px 지점에 세로선. ::before 로 그려 마커와 겹치게. */
+.ev-tl-item::before {
+  content: ""; position: absolute; left: 7px; top: 4px; bottom: 0;
+  width: 2px; background: var(--border-strong);
+}
+.ev-tl-item:last-child::before { display: none; } /* 마지막 마커 아래로는 rail 없음 */
+/* severity 마커 dot — rail 위에 얹는다. 색-only 금지(옆에 severity 텍스트 병기). */
+.ev-tl-marker {
+  position: absolute; left: 2px; top: 3px; width: 12px; height: 12px;
+  border-radius: 999px; background: var(--surface); border: 2px solid var(--border-strong);
+  box-sizing: border-box; z-index: 1;
+}
+.ev-tl-sev-crit > .ev-tl-marker { border-color: var(--red); background: var(--red-weak); }
+.ev-tl-sev-warn > .ev-tl-marker { border-color: var(--amber); background: var(--amber-weak); }
+.ev-tl-sev-info > .ev-tl-marker { border-color: var(--primary); background: var(--primary-weak); }
+/* first-anomaly 앵커 — rail 시작점을 스틸블루로 채워 "가장 이른 이상"을 강조. */
+.ev-tl-anchor > .ev-tl-marker { background: var(--primary); border-color: var(--primary-strong); }
+
+.ev-tl-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ev-tl-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+/* 계열 배지 — severity 색조. pill. */
+.ev-tl-kind {
+  flex: none; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+}
+.ev-tl-kind-crit { color: var(--red); background: var(--red-weak); border-color: var(--red-border); }
+.ev-tl-kind-warn { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
+.ev-tl-kind-info { color: var(--primary-strong); background: var(--primary-weak); border-color: var(--primary-weak); }
+/* severity 텍스트(색-only 금지 병기). */
+.ev-tl-sev-text { font-size: 10px; font-weight: 700; color: var(--text-faint); }
+.ev-tl-sev-crit > .ev-tl-body .ev-tl-sev-text { color: var(--red); }
+.ev-tl-sev-warn > .ev-tl-body .ev-tl-sev-text { color: var(--amber); }
+.ev-tl-when { font-size: var(--fs-xs); color: var(--text-faint); }
+.ev-tl-anchor-tag {
+  font-size: 10px; font-weight: 700; color: var(--primary-strong);
+  background: var(--primary-weak); border-radius: 3px; padding: 0 5px;
+}
+.ev-tl-title { margin: 0; font-size: var(--fs-body); font-weight: 600; color: var(--text); line-height: 1.35; }
+.ev-tl-detail { margin: 0; font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.35; }
+
+/* 추정 원인(강조 노드) → 영향. 인과 연결선(스틸블루)으로 신호에서 원인으로 잇는다. */
+.ev-tl-cause { position: relative; margin-top: 3px; padding-left: 12px; }
+.ev-tl-connector {
+  position: absolute; left: 0; top: 2px; bottom: 4px; width: 2px;
+  background: var(--primary); border-radius: 2px;
+}
+.ev-tl-cause-body { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-sm); }
+.ev-tl-cause-label {
+  font-size: 10px; font-weight: 700; color: var(--primary-strong);
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.ev-tl-cause-text { color: var(--text-dim); line-height: 1.4; }
+.ev-tl-impact { color: var(--text); line-height: 1.4; }
+.ev-tl-arrow { color: var(--primary); font-weight: 700; margin-right: 4px; }
+/* 인용(IMP-93) — ev-cite/ev-cite-link 규약 재사용 + 타임라인 배치 여백. */
+.ev-tl-cite { align-self: flex-start; margin-top: 3px; }
+
+/* compact 변형(KineticStrip 슬롯2 등) — 여백 축소, 타입 한 단계 작게. */
+.ev-tl-compact .ev-tl-item { padding-bottom: var(--sp-2); padding-left: 20px; }
+.ev-tl-compact .ev-tl-title { font-size: var(--fs-sm); }
 
 /* (3) Related — 목록/그래프 토글(IMP-84). 목록=a11y-safe 기본, 그래프=클릭형 토폴로지. */
 .ov-rel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
@@ -3303,7 +3508,7 @@ tr.row-sel { background: var(--primary-weak) !important; }
   padding: 1px 6px; border-radius: 999px; color: var(--text-dim);
   background: var(--surface-2); border: 1px solid var(--border);
 }
-.kinetic-sig-kind.kind-throttle, .kinetic-sig-kind.kind-saturation { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
+.kinetic-sig-kind.kind-throttle, .kinetic-sig-kind.kind-saturation, .kinetic-sig-kind.kind-backpressure { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
 .kinetic-sig-kind.kind-alertrule { color: var(--red); background: var(--red-weak); border-color: var(--red-border); }
 .kinetic-sig-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .kinetic-sig-label { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }

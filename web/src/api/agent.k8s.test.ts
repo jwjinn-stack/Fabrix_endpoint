@@ -27,10 +27,14 @@ const LINKS: OntologyLink[] = [
 
 const K8S_ONLY: K8sToolName[] = ["list_pods", "list_nodes", "get_events", "describe_deployment"];
 
-describe("K8S_TOOL_REGISTRY — 4 read tool 등록 + read-only(two-tier)", () => {
-  it("list_pods/list_nodes/get_events/describe_deployment 4종이 레지스트리에 존재", () => {
+// IMP-98 — 복합(coarse-grained) 진단 read-only tool 2종(원자 tool 유지 하이브리드).
+const K8S_COMPOSITE = ["get_incident_context", "get_pod_diagnostics"];
+
+describe("K8S_TOOL_REGISTRY — 원자 4 + 복합 2 read tool 등록 + read-only(two-tier)", () => {
+  it("원자 4종(list/get/describe) + 복합 2종(IMP-98)이 레지스트리에 존재", () => {
     for (const n of K8S_ONLY) expect(K8S_TOOL_REGISTRY[n]).toBeTruthy();
-    expect(Object.keys(K8S_TOOL_REGISTRY).sort()).toEqual([...K8S_ONLY].sort());
+    for (const n of K8S_COMPOSITE) expect(K8S_TOOL_REGISTRY[n]).toBeTruthy();
+    expect(Object.keys(K8S_TOOL_REGISTRY).sort()).toEqual([...K8S_ONLY, ...K8S_COMPOSITE].sort());
   });
   it("**안전**: read-only 불변식 통과(mutating 성격 이름 없음)", () => {
     expect(() => assertReadOnly(K8S_TOOL_REGISTRY)).not.toThrow();

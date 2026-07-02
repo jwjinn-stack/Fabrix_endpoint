@@ -18,8 +18,12 @@ import { ACTION_REGISTRY, getActionSpec } from "../actions/registry";
 import { objectViewSchema, useUrlState } from "../urlState";
 import SlidePanel, { DetailRow } from "./SlidePanel";
 import Badge, { type BadgeTone } from "./Badge";
+// IMP-97 — 상태 용어 InfoTip(단일 glossary: statusGlossary.ts). COP/KineticStrip 과 공유.
+import StatusInfoTip from "./StatusInfoTip";
 import Gauge from "./Gauge";
 import ActionForm from "./ActionForm";
+import EvidencePanel from "./EvidencePanel";
+import CausePanel from "./CausePanel";
 import GpuHardwareSection from "./GpuHardwareSection";
 import MetricExplorer from "./MetricExplorer";
 import type { GpuHardware } from "../api/types";
@@ -209,6 +213,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   const obj = poll.data?.obj ?? null;
   const links = useMemo(() => poll.data?.links ?? [], [poll.data]);
   const index = useMemo(() => poll.data?.index ?? {}, [poll.data]);
+  // IMP-93 — 근거 패널이 소비할 객체 배열(index 전량). links 는 head 링크(K8s 상관은 objectId 결정적이라 충분).
+  const objectsArr = useMemo(() => Object.values(index), [index]);
   const loading = poll.loading;
   // 미존재 — 로드가 끝났는데(데이터 도착) obj 가 null. head 없거나 로딩 중엔 미표시.
   const missing = !!head && poll.data != null && poll.data.obj == null;
@@ -398,6 +404,8 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
               {/* 상태 밴드 — 게이지(IMP-54)로 강도 인코딩 + 텍스트 Badge 병기(색-only 금지, WCAG 1.4.1). */}
               <div className="ov-status-band">
                 <Badge tone={STATUS_TONE[obj.status]} dot>{STATUS_LABEL[obj.status]}</Badge>
+                {/* IMP-97 — 상태 용어 InfoTip(단일 glossary). warn/crit 항목만(ok/unknown skip). */}
+                {(obj.status === "warn" || obj.status === "crit") && <StatusInfoTip termKey={obj.status} />}
                 {obj.status !== "unknown" && (
                   <Gauge
                     value={STATUS_GAUGE_VALUE[obj.status]}
@@ -459,6 +467,25 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
           {/* (2b) GPU 하드웨어(IMP-76) — GpuDevice 이고 props.hw(GpuHardware)가 있으면 전용 섹션.
               XID·throttle reason·NVLink·PCIe·ECC·clock 을 그룹+단위+뱃지로. 없으면(레거시/실백엔드) skip. */}
           {obj.type === "GpuDevice" && gpuHw && <GpuHardwareSection hw={gpuHw} />}
+
+          {/* (2c) 근거(Evidence) — IMP-93: 채팅 없이 신호→추정원인→영향 접지. 순수 파생(IMP-99 seam).
+              인용 클릭 → 같은 패널에서 참조 객체로 in-place traverse(그래프에 있을 때). 채팅은 별도 화면(보조). */}
+          <EvidencePanel
+            objectId={obj.id}
+            objects={objectsArr}
+            links={links}
+            onCite={(id) => { if (index[id]) traverse(id); }}
+          />
+
+          {/* (2d) AI 원인 설명(IMP-95) — 채팅 없이 '무엇이/왜/영향/다음 조치' 자동 생성(OPT-IN·staged·HARD grounding).
+              동일 IMP-99 seam 을 소비(get_incident_context)해 근거 인용을 자연어화. 인용 클릭 → 같은 패널 traverse.
+              룰기반 폴백 badge(mock 시), zero auto-mutation — 실행은 아래 Actions 섹션(ActionForm confirm)만. */}
+          <CausePanel
+            objectId={obj.id}
+            objects={objectsArr}
+            links={links}
+            onCite={(id) => { if (index[id]) traverse(id); }}
+          />
 
           {/* (3) Related — 목록(linkKind 그룹, a11y-safe 기본) / 그래프(클릭형 토폴로지) 토글(IMP-84).
               목록은 항상 도달·키보드 순회 가능한 접근성 폴백(WCAG complex-image). 그래프 노드 클릭은

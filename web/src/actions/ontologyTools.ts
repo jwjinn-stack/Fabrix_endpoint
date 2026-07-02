@@ -161,6 +161,37 @@ export const K8S_TOOL_REGISTRY: Record<string, OntologyToolSpec> = {
       additionalProperties: false,
     },
   },
+
+  // ── 복합(coarse-grained) 진단 tool(IMP-98) — 하이브리드: 위 원자 tool 은 드릴다운용으로 유지 ────
+  // 2025 MCP "workflow/coarse-grained tool" 패턴: 흔한 유스케이스(인시던트 원인 컨텍스트)를 한 tool 로
+  // 캡슐화해 다중 round-trip(list_pods→get_events→describe_deployment)과 중간 스키마 반복 직렬화를 없앤다.
+  // **단일 출처**: 아래 두 tool 은 IMP-99 seam(buildIncidentEvidence) 하나만 소비한다 → UI(ObjectView/COP)와
+  // MCP 가 동일 shape(신호→추정원인→영향 + 인용 refs)를 반환. 새 파생 규칙을 발명하지 않는다.
+  // **read-only**: 조회 동사(get_*)라 assertReadOnly() 자동 커버. mutating 부작용 없음(순수 seam 소비).
+  get_incident_context: {
+    name: "get_incident_context",
+    description: "read-only diagnostic bundle, no mutation. 한 온톨로지 객체(Endpoint/Model/Node)의 인시던트 원인 컨텍스트를 한 호출로 반환한다 — 상관 파드·이벤트·배포 rollout·큐 신호 + 추정 근본원인 요약 + 근거 인용(objectId/podRef). 원자 tool(list_pods/get_events/describe_deployment)을 여러 번 부를 필요 없이 여기서 번들로 받는다(mock-first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        objectId: { type: "string", description: "진단 대상 온톨로지 객체 id(필수)" },
+      },
+      required: ["objectId"],
+      additionalProperties: false,
+    },
+  },
+  get_pod_diagnostics: {
+    name: "get_pod_diagnostics",
+    description: "read-only diagnostic bundle, no mutation. 한 파드(pod/<name> 또는 <name>)의 진단 번들을 반환한다 — waiting reason·재시작 횟수·OOMKilled·연관 이벤트 + 상관된 온톨로지 객체의 원인 컨텍스트(동일 seam). 특정 파드가 왜 재시작/OOM 했는지 한 호출로 받는다(mock-first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pod: { type: "string", description: "파드 이름(pod/<name> 접두 허용, 필수)" },
+      },
+      required: ["pod"],
+      additionalProperties: false,
+    },
+  },
 };
 
 // ── read-only 불변식 가드(two-tier 안전) ────────────────────────────────────

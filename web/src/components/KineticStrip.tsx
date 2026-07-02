@@ -14,7 +14,7 @@
 //   confirm 게이팅으로만. 이 컴포넌트에 자동 mutation 경로 없음(추천은 "제안"일 뿐). 고정 카피 "상관≠인과, 근거로 확인".
 import { useState } from "react";
 import { fetchKineticAlerts } from "../api/client";
-import type { KineticAlert, DetectionSignal, ObjectStatus } from "../api/types";
+import type { KineticAlert, ObjectStatus } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
 import { getActionSpec } from "../actions/registry";
 import { useCap } from "../capabilities";
@@ -23,6 +23,11 @@ import Badge, { type BadgeTone } from "./Badge";
 import DataFreshness from "./DataFreshness";
 import PauseToggle from "./PauseToggle";
 import ActionForm from "./ActionForm";
+import { ActionInfoTip, ReversibleChip } from "./ActionInfoTip";
+// IMP-97 — 상태 용어 InfoTip(단일 glossary: statusGlossary.ts). COP/ObjectView 와 공유.
+import StatusInfoTip from "./StatusInfoTip";
+// IMP-100 — 근거 슬롯을 세로 evidence timeline 시각언어로(단일 재사용 컴포넌트 + signals→마커 어댑터).
+import EvidenceTimeline, { markersFromSignals } from "./EvidenceTimeline";
 import type { NavFn } from "../router";
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
@@ -30,14 +35,7 @@ const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의
 const CONF_LABEL: Record<KineticAlert["confidence"], string> = { high: "높음", med: "보통" };
 const CONF_TONE: Record<KineticAlert["confidence"], BadgeTone> = { high: "red", med: "amber" };
 
-// 감지 신호 계열 → 근거 슬롯 접두 라벨(사람용).
-const SIGNAL_KIND_LABEL: Record<DetectionSignal["kind"], string> = {
-  alertrule: "알림 룰",
-  throttle: "하드웨어",
-  idleAlloc: "유휴 갭",
-  saturation: "포화",
-  firstAnomaly: "시간축",
-};
+// 감지 신호 계열 → 근거 접두 라벨은 IMP-100 EvidenceTimeline(단일 규약)으로 이관.
 
 export interface KineticStripProps {
   onNavigate?: NavFn;               // 조사/ack rung — /agent·/investigate 딥링크(없으면 rung 숨김)
@@ -139,31 +137,21 @@ function KineticCard({
         </button>
         <div className="kinetic-object-meta">
           <Badge tone={STATUS_TONE[alert.status]} dot>{STATUS_LABEL[alert.status]}</Badge>
+          {/* IMP-97 — 상태 용어 InfoTip(단일 glossary). warn/crit 항목만(ok/unknown skip). */}
+          {(alert.status === "warn" || alert.status === "crit") && <StatusInfoTip termKey={alert.status} />}
+          {/* Kinetic 알림은 본질적으로 '발생·미확인(triggered)' — 아래 '확인·배정' rung 으로 ack. */}
+          <StatusInfoTip termKey="triggered" />
           {alert.breachCount > 1 && (
             <span className="kinetic-breach" title="지속 임계초과(누적)">지속 ×{alert.breachCount}</span>
           )}
         </div>
       </div>
 
-      {/* ── [슬롯 2] 근거(evidence) — 어느 신호가 언제 임계 초과 + objectId/시각 인용 ── */}
+      {/* ── [슬롯 2] 근거(evidence) — IMP-100 세로 evidence timeline(first-anomaly→now, severity 색·경과시간).
+          신호 순서·인용(citation)은 그대로 유지. cause/impact 는 슬롯3(추정 원인)에 있어 마커엔 생략(중복 회피). ── */}
       <div className="kinetic-slot kinetic-slot-evidence">
         <span className="kinetic-slot-h">근거</span>
-        <ul className="kinetic-signals">
-          {alert.signals.map((s, i) => (
-            <li className="kinetic-signal" key={`${s.kind}-${i}`}>
-              <span className={`kinetic-sig-kind kind-${s.kind}`}>{SIGNAL_KIND_LABEL[s.kind]}</span>
-              <span className="kinetic-sig-body">
-                <span className="kinetic-sig-label">{s.label}</span>
-                <span className="kinetic-sig-detail">{s.detail}</span>
-                <span className="kinetic-sig-cite">
-                  <time className="kinetic-sig-when">{s.observedAt}</time>
-                  <span className="kinetic-sig-sep" aria-hidden="true">·</span>
-                  <code className="kinetic-sig-src" title="근거 인용(objectId/룰)">{s.citation}</code>
-                </span>
-              </span>
-            </li>
-          ))}
-        </ul>
+        <EvidenceTimeline markers={markersFromSignals(alert.signals)} onCite={onOpenObject} compact />
       </div>
 
       {/* ── [슬롯 3] 추정 원인 경로(Probable Cause) + confidence ── */}
@@ -171,6 +159,8 @@ function KineticCard({
         <span className="kinetic-slot-h">
           추정 원인
           <Badge tone={CONF_TONE[alert.confidence]}>신뢰도 {CONF_LABEL[alert.confidence]}</Badge>
+          {/* IMP-97 — 큐 적체(backpressure) 신호가 있으면 용어 InfoTip(단일 glossary). */}
+          {alert.signals.some((s) => s.kind === "backpressure") && <StatusInfoTip termKey="backpressure" />}
         </span>
         <p className="kinetic-cause">{alert.probableCause}</p>
       </div>
@@ -201,6 +191,8 @@ function KineticCard({
               <span className="kinetic-rung-n" aria-hidden="true">2</span>확인·배정
             </button>
           )}
+          {/* IMP-97 — 확인·배정 = ack(확인·배정됨) 용어 설명(단일 glossary). */}
+          {onNavigate && <StatusInfoTip termKey="acked" />}
           {/* (c) 추천 Action 실행 — ActionForm confirm(capability+status 게이팅). observe=비활성+사유. */}
           {spec && alert.suggestedAction && (
             !canExecute ? (
@@ -218,6 +210,13 @@ function KineticCard({
                 {spec.label} — 확인 후 실행 →
               </button>
             ) : null
+          )}
+          {/* IMP-96 — 실행 rung 앞 인라인 설명(접근가능 InfoTip, native title 대체) + 되돌리기 칩. registry 단일 출처. */}
+          {spec && alert.suggestedAction && (
+            <span className="kinetic-rung-explain">
+              <ActionInfoTip spec={spec} />
+              <ReversibleChip spec={spec} />
+            </span>
           )}
         </div>
 

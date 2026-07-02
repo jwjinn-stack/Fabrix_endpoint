@@ -192,6 +192,25 @@ describe("ObjectView — 시각 언어(IMP-64: 타입 칩·상태 밴드·방향
   });
 });
 
+// IMP-93 — 근거(Evidence) 패널: 채팅 없이 신호→추정원인→영향 접지. 순수 파생(IMP-99 seam) 렌더.
+describe("ObjectView — 근거(Evidence) 패널(IMP-93)", () => {
+  it("문제 객체(crit)를 열면 근거 섹션이 렌더된다(신호/추정원인/영향)", async () => {
+    renderView("incident:i1"); // crit → 감지 신호로 근거 조립
+    await waitFor(() => expect(screen.getByText("지연 급증")).toBeInTheDocument());
+    const region = screen.getByRole("region", { name: "근거" });
+    expect(region).toBeInTheDocument();
+    // 근거 줄(신호 what → 추정원인 → 영향)이 하나 이상.
+    expect(within(region).getAllByRole("listitem").length).toBeGreaterThan(0);
+  });
+
+  it("상관 근거 없는 정상 객체 → '수집된 이벤트 없음'(환각 금지)", async () => {
+    renderView("model:foo"); // ok, 상관 신호 없음
+    await waitFor(() => expect(screen.getByText("Foo 7B")).toBeInTheDocument());
+    const region = screen.getByRole("region", { name: "근거" });
+    expect(within(region).getByText("수집된 이벤트 없음")).toBeInTheDocument();
+  });
+});
+
 describe("ObjectView — deep-link / 미존재 id", () => {
   it("deep-link: objectId 로 마운트 시 해당 객체 복원", async () => {
     renderView("gpu:g1");

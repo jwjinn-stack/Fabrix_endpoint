@@ -22,6 +22,7 @@ import type {
   ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
   ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
   MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
+  SchedulerSignals,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
@@ -34,6 +35,7 @@ import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 import { runAgentLoop, buildAgentInsights, runK8sQuery } from "./agent";
 // Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
 import { attributeDetections } from "./detection";
+import { buildK8sSnapshot } from "./k8sSnapshot";
 
 // ───────────────────────── 결정적 난수 (mulberry32) ─────────────────────────
 function rng(seed: number): () => number {
@@ -958,6 +960,40 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
+// ── 스케줄러 backpressure 신호 결정적 파생 (IMP-94) ────────────────────────────
+// 기존 waiting seed 하나에서 큐 깊이 추이·처리율·동시성·대기 p95 를 **고정 함수**로 파생한다.
+// NO Date.now — 오직 waiting 의 순수 함수(입력 동일 → 출력 동일). detection.signalsForObject 가
+// Incident.props 에서 이 값을 읽어 backpressure 클러스터를 방출한다. 전부 mock(source:"mock").
+// vLLM 표준 시맨틱 매핑: 큐깊이~vllm:num_requests_waiting, 동시성~max_num_seqs, 대기~vllm:request_queue_time_seconds.
+export function deriveSchedulerSignals(waiting: number): SchedulerSignals {
+  const w = Math.max(0, Math.round(waiting));
+  // 큐 깊이 추이 — 6포인트, 낮은 baseline 에서 현재 waiting 으로 단조 수렴(적체가 "쌓여온" 모양). 결정적.
+  const trend = [0, 1, 2, 3, 4, 5].map((i) => Math.round((w * i) / 5));
+  // 동시성 한도 — mock 배치 상한(max_num_seqs 근사). inUse 는 한도까지 채워짐(포화) + 큐 대기 초과분.
+  const concurrencyLimit = 16;
+  const concurrencyInUse = concurrencyLimit + w; // 한도 포화(inUse≥limit) + 대기 초과분(적체가 슬롯을 못 얻음)
+  // 처리율(req/s) — admitted 는 수용력 상한(동시성/평균 서비스타임 근사), offered 는 admitted + 대기 유입.
+  const admittedRate = concurrencyLimit; // 16 req/s 수용력(mock)
+  const offeredRate = admittedRate + w;  // 유입 = 수용 + 적체분(유입>수용력의 직접 표현)
+  // 대기 p95(초) — 큐 깊이/수용력 ≈ 대기시간(리틀의 법칙 근사). SLO=2s(bare constant 아님 — SLO 임계).
+  const queueWaitP95 = +(w / Math.max(1, admittedRate) * 4).toFixed(2); // waiting=12 → 3.0s
+  const queueWaitSlo = 2.0;
+  // TTFT 동반 상승 — 대기 p95 가 SLO 를 넘고 큐가 지속(≥ alarm 임계 8)일 때만 true(상관 게이팅 seed).
+  const ttftRising = queueWaitP95 > queueWaitSlo && w >= 8;
+  return {
+    queueDepthTrend: trend,
+    admittedRate, offeredRate,
+    concurrencyLimit, concurrencyInUse,
+    queueWaitP95, queueWaitSlo,
+    ttftRising,
+    waiting: w,
+    source: "mock",
+  };
+}
+
+// backpressure 인시던트 seed waiting — 기존 alarm 문자열(waiting>8)과 정합하는 고정값(결정적, Date.now 아님).
+const BACKPRESSURE_WAITING_SEED = 12;
+
 // (IMP-90: PROCESS 레이어 Task / Workflow(assignee·priority·status·workflow 승격)는 제거 —
 //  관제 콘솔은 과업 배정이 아니라 알림+즉시대응(KineticStrip)으로 수렴. Incident 라이프사이클은 유지.)
 
@@ -1145,11 +1181,16 @@ function buildOntologyFresh(): OntologySnapshot {
 
   // ── Incident (INCIDENTS 승격) ── affects→{object}. dedup_key 로 영향 대상을 유추.
   for (const inc of INCIDENTS) {
-    add(`incident:${inc.id}`, "Incident", inc.title, severityToStatus(inc.severity), {
-      dedup_key: inc.dedup_key, severity: inc.severity, state: inc.state, count: inc.count,
-    });
     // dedup_key 형식 "endpoint:<name>:..." / "scheduler:..." / "guard:..." 에서 대상 추론.
     const parts = inc.dedup_key.split(":");
+    // backpressure 인시던트(scheduler:queue-backpressure) — waiting seed 로 큐/스케줄러 신호를 결정적 파생해 props 에 실음(IMP-94).
+    const schedulerProps = parts[0] === "scheduler"
+      ? { scheduler: deriveSchedulerSignals(BACKPRESSURE_WAITING_SEED) }
+      : {};
+    add(`incident:${inc.id}`, "Incident", inc.title, severityToStatus(inc.severity), {
+      dedup_key: inc.dedup_key, severity: inc.severity, state: inc.state, count: inc.count,
+      ...schedulerProps,
+    });
     if (parts[0] === "endpoint" && parts[1]) {
       const ep = ENDPOINTS.find((x) => x.name === parts[1]);
       if (ep) links.push({ from: `incident:${inc.id}`, to: `endpoint:${ep.name}`, linkKind: "affects" });
@@ -1211,108 +1252,10 @@ function runAgentInsightsMock(): import("./types").AgentInsightRun {
 }
 
 // ── Kubernetes 클러스터 상태 스냅샷(IMP-91) — 온톨로지 상관 결정적 파생 ──
-// 에이전트의 K8s read tool(list_pods/list_nodes/get_events/describe_deployment)이 조회할 스냅샷을
-// 온톨로지 객체/링크에서 **결정적으로** 파생한다. 실 클러스터 상태가 아니라 mock 이며(direction 8 정직성),
-// 실연동은 official kubernetes-mcp-server SPIKE — 이 함수 자리만 실 kube-mcp 응답으로 스왑하면 된다.
-//
-// **온톨로지 상관(요구사항 2)**: crit GPU/Node → 그 노드가 NotReady, 그 위 파드에 OOMKilled + 재시작↑ +
-//   OOMKilling/BackOff 이벤트. crit Endpoint(NotReady 엔드포인트) → 그 배포 rollout unavailable.
-//   → k8s 답이 온톨로지(gpu-node-02 crit 등)와 정합하게 상관된다.
-// **순수·격리(direction 9)**: objects/links 배열만 받는 순수 함수 → 빈/부분 스냅샷에서 throw 없이 빈 결과.
-export function buildK8sSnapshot(objects: OntologyObject[], links: OntologyLink[]): import("./types").K8sSnapshot {
-  const pods: import("./types").K8sPod[] = [];
-  const nodes: import("./types").K8sNode[] = [];
-  const events: import("./types").K8sEvent[] = [];
-  const deployments: import("./types").K8sDeployment[] = [];
-
-  const nodeObjs = objects.filter((o) => o.type === "Node");
-  const gpuObjs = objects.filter((o) => o.type === "GpuDevice");
-  const epObjs = objects.filter((o) => o.type === "Endpoint");
-
-  // GpuDevice --hostedBy--> Node 로 각 노드의 GPU 상태를 모아 노드 이상 판정(단일 출처: 온톨로지 링크).
-  const gpuById = new Map(gpuObjs.map((o) => [o.id, o]));
-  const nodeGpuStatuses = new Map<string, string[]>();
-  for (const l of links) {
-    if (l.linkKind === "hostedBy" && gpuById.has(l.from)) {
-      const arr = nodeGpuStatuses.get(l.to) ?? [];
-      arr.push(gpuById.get(l.from)!.status);
-      nodeGpuStatuses.set(l.to, arr);
-    }
-  }
-
-  // ── Node ── 온톨로지 Node crit 또는 그 위 GPU 가 crit 이면 NotReady 로 상관.
-  for (const n of nodeObjs) {
-    const hostName = String((n.props as Record<string, unknown>).hostname ?? n.title);
-    const gpuStatuses = nodeGpuStatuses.get(n.id) ?? [];
-    const gpuCrit = gpuStatuses.includes("crit");
-    const notReady = n.status === "crit" || gpuCrit;
-    nodes.push({
-      name: hostName,
-      condition: notReady ? "NotReady" : "Ready",
-      reason: notReady ? (gpuCrit ? "GPU 장애로 kubelet 이 Ready 조건을 잃음(추정)" : "KubeletNotReady") : undefined,
-      objectId: n.id,
-    });
-    if (notReady) {
-      events.push({
-        reason: "NodeNotReady",
-        message: `Node ${hostName} status is now: NodeNotReady`,
-        involvedObject: `node/${hostName}`,
-        count: 1,
-        objectId: n.id,
-      });
-    }
-  }
-
-  // ── Pod ── Endpoint 를 파드의 상위로 삼는다(각 Endpoint = 하나의 서빙 배포). replicas 만큼 파드 생성.
-  //   Endpoint 가 crit(NotReady) 이거나 그 Model 이 crit 이면 파드에 OOMKilled + 재시작↑ 을 상관시킨다.
-  const nodeNames = nodes.map((x) => x.name);
-  for (const ep of epObjs) {
-    const p = ep.props as Record<string, unknown>;
-    const ns = String(p.namespace ?? "fabrix");
-    const replicas = Math.max(1, Number(p.replicas) || 1);
-    const epName = ep.title;
-    // 이 엔드포인트가 얹힌 노드(결정적): 이름 해시로 노드 배정(노드 없으면 이름만).
-    const nodeName = nodeNames.length ? nodeNames[hash(ep.id) % nodeNames.length] : "";
-    const nodeNotReady = nodes.find((x) => x.name === nodeName)?.condition === "NotReady";
-    const bad = ep.status === "crit"; // NotReady 엔드포인트 → 파드 기동 실패/OOM 상관.
-    for (let i = 0; i < replicas; i++) {
-      const podName = `${epName}-${(hash(`${ep.id}:${i}`) % 90000 + 10000).toString(36)}`;
-      const oom = bad && i === 0; // 대표 파드 1개가 OOMKilled(결정적).
-      const failedSched = nodeNotReady && i === 0;
-      const restarts = oom ? 5 + (hash(podName) % 8) : failedSched ? 3 : 0;
-      const phase: import("./types").K8sPod["phase"] = oom ? "Failed" : bad ? "Pending" : "Running";
-      pods.push({
-        name: podName, namespace: ns,
-        phase, ready: phase === "Running",
-        restarts, oomKilled: oom, node: nodeName,
-        objectId: ep.id,
-        reason: oom ? "CrashLoopBackOff" : failedSched ? "FailedScheduling" : undefined,
-      });
-      if (oom) {
-        events.push({ reason: "OOMKilling", message: `Container 가 메모리 한계를 초과해 OOMKilled 되었습니다 (pod ${podName})`, involvedObject: `pod/${podName}`, count: restarts, objectId: ep.id });
-        events.push({ reason: "BackOff", message: `Back-off restarting failed container (pod ${podName})`, involvedObject: `pod/${podName}`, count: restarts, objectId: ep.id });
-      } else if (failedSched) {
-        events.push({ reason: "FailedScheduling", message: `0/${nodeNames.length} nodes are available: 노드 ${nodeName} NotReady`, involvedObject: `pod/${podName}`, count: 1, objectId: ep.id });
-      }
-    }
-    // ── Deployment ── Endpoint 하나당 배포 하나. crit → unavailable rollout.
-    const desired = replicas;
-    const available = bad ? Math.max(0, replicas - 1) : replicas;
-    const unavailable = desired - available;
-    deployments.push({
-      name: epName, namespace: ns, desired, updated: desired, available, unavailable,
-      rollout: unavailable === 0 ? "complete" : available === 0 ? "stalled" : "progressing",
-      objectId: ep.id,
-    });
-  }
-
-  // 결정적 정렬(재현 가능).
-  pods.sort((a, b) => (a.name < b.name ? -1 : 1));
-  nodes.sort((a, b) => (a.name < b.name ? -1 : 1));
-  events.sort((a, b) => (a.involvedObject + a.reason < b.involvedObject + b.reason ? -1 : 1));
-  deployments.sort((a, b) => (a.name < b.name ? -1 : 1));
-  return { pods, nodes, events, deployments };
-}
+// buildK8sSnapshot 은 순수 파생이라 IMP-93 에서 ./k8sSnapshot 순수 모듈로 분리했다(EvidencePanel 이
+// mock.ts 정적 import 없이 소비 → IMP-85 mock 부트-청크 격리 유지). 여기서 재-export 해 기존 소비처
+// (runK8sQuery 아래·agent.k8s.test·에이전트)의 import 경로("./mock")를 그대로 보존한다(단일 출처).
+export { buildK8sSnapshot };
 
 // POST /agent/k8s — K8s 클러스터 상태 질의(IMP-91). runAgentMock 과 동일한 순수/부작용 경계(IMP-81):
 //   (1) 순수: buildK8sSnapshot(공유 스냅샷) → runK8sQuery(결정적 ReAct + 진단).

@@ -22,6 +22,8 @@ import type {
 } from "./types";
 import { buildRootCausePath, defaultEntry, pickEntryCandidates } from "./investigate";
 import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
+import { buildIncidentEvidence, type IncidentEvidence, type IncidentSnapshot } from "./incidentEvidence";
+import type { PodDiagnostics } from "./types";
 
 // AGENT_TOOL_CONTRACT — ReAct 루프가 자동 실행하는 read tool(agent 내부명)을 MCP-canonical tool 명에 바인딩.
 // getIncidents 는 query_objects{type:Incident} 의 편의 별칭이라 같은 계약(query_objects)에 매핑된다.
@@ -565,6 +567,57 @@ export function toolDescribeDeployment(k8s: K8sSnapshot, args: { name?: string; 
     objectIds,
     summary: rows.length ? `배포 ${rows.length}건(미완료 rollout ${stalled.length}건)` : "일치하는 배포 없음",
     found: rows.length > 0,
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// IMP-98 — 복합(coarse-grained) 진단 read-only tool: get_incident_context / get_pod_diagnostics
+// ══════════════════════════════════════════════════════════════════════════
+// 하이브리드: 위 원자 tool(list_pods/get_events/describe_deployment)은 드릴다운(coarse→fine)용으로 유지하고,
+// 흔한 유스케이스("이 인시던트 왜 났나")를 한 호출로 묶는 복합 tool 을 추가한다. 다중 round-trip
+// (list_pods→get_events→describe_deployment 3콜 + 결과 직접 상관)을 1콜로 제거(2025 MCP workflow-tool 패턴).
+//
+// **단일 출처(핵심)**: 두 tool 은 IMP-99 seam(buildIncidentEvidence) 하나만 소비한다 → UI(ObjectView/COP)와
+// MCP 가 동일 shape(신호→추정원인→영향 + 인용 refs objectId/podRef)를 반환. 새 파생 규칙을 발명하지 않는다.
+// **read-only**: 조회 동사(get_*)만 — assertReadOnly() + Go contract_test 이중 강제. 순수 seam 소비라 부작용 0.
+// **정직성**: 스냅샷은 mock 파생(buildK8sSnapshot). 실 kube-mcp = SPIKE — 이 계약은 그대로 두고 소스만 스왑.
+
+// 모듈 로드 시 1회 — 복합 tool 계약이 K8S_TOOL_REGISTRY 에 실재하는지 강제(drift 즉시 감지).
+const COMPOSITE_DIAG_TOOLS = ["get_incident_context", "get_pod_diagnostics"] as const;
+for (const name of COMPOSITE_DIAG_TOOLS) {
+  if (!K8S_TOOL_REGISTRY[name]) {
+    throw new Error(`복합 진단 tool ${name} 이 K8S_TOOL_REGISTRY 에 없습니다(계약 불일치)`);
+  }
+}
+
+// tool: get_incident_context(objectId) — IMP-99 seam 을 한 호출로 그대로 노출(단일 출처).
+//   snapshot(objects/links/k8s)은 mock BFF 가 주입한다. UI 와 동일한 buildIncidentEvidence 결과를 반환.
+export function toolGetIncidentContext(snapshot: IncidentSnapshot, args: { objectId: string }): IncidentEvidence {
+  return buildIncidentEvidence(args.objectId, snapshot);
+}
+
+// tool: get_pod_diagnostics(pod) — 파드 사실(waiting reason/재시작/OOM/연관 events) + 상관 객체의 원인 컨텍스트.
+//   파드를 상관 온톨로지 객체(objectId)로 이어 **동일 seam**(buildIncidentEvidence)을 태운다(단일 출처).
+//   pod 미발견 → found=false + 지어내지 않는 요약(환각 금지).
+export function toolGetPodDiagnostics(snapshot: IncidentSnapshot, args: { pod: string }): PodDiagnostics {
+  const name = args.pod.replace(/^pod\//, ""); // pod/<name> 접두 허용 — 정규화.
+  const pod = snapshot.k8s?.pods.find((p) => p.name === name);
+  if (!pod) {
+    return {
+      pod: name, found: false, relatedEvents: [],
+      summary: `파드 ${name} 를 스냅샷에서 찾을 수 없습니다(mock).`, mock: true,
+    };
+  }
+  // 이 파드가 involvedObject 인 이벤트(원인 접지) — 결정적.
+  const relatedEvents = (snapshot.k8s?.events ?? []).filter((e) => e.involvedObject === `pod/${pod.name}`);
+  const summary =
+    `파드 ${pod.name} — ${pod.phase}${pod.oomKilled ? " · OOMKilled" : ""} · 재시작 ${pod.restarts}회` +
+    `${pod.reason ? ` (${pod.reason})` : ""}${relatedEvents.length ? ` · 이벤트 ${relatedEvents.length}건` : ""} (mock).`;
+  return {
+    pod: pod.name, found: true,
+    phase: pod.phase, ready: pod.ready, restarts: pod.restarts, oomKilled: pod.oomKilled,
+    waitingReason: pod.reason, node: pod.node, objectId: pod.objectId,
+    relatedEvents, summary, mock: true,
   };
 }
 
