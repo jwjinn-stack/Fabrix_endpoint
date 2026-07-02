@@ -13,6 +13,7 @@
   --primary-lite: #6ba3cd; /* 상단 바 그라데이션 끝점 */
   --primary-weak: #e9f1f8;
   --primary-strong: #2f6690; /* 텍스트/링크용 진한 블루 (#fff 위 AA) */
+  --on-primary: #ffffff; /* IMP-87 — --primary 위 텍스트 색(상단 바 워드마크·프리뷰). 커스텀 색상 시 WCAG 대비로 흰/검 자동선택 */
   --brand-gray: #aeb2b7; /* MAYMUST 그레이 (로고 삼각형) — 보조 중성 액센트 */
   --brand-gray-strong: #6b7178; /* 그레이 데이터/텍스트용 (AA) */
   --brand-gray-weak: #f0f1f3;
@@ -156,7 +157,7 @@ body {
   gap: 14px;
   padding: 0 16px;
   background: linear-gradient(90deg, var(--primary) 0%, var(--primary-lite) 100%);
-  color: #fff;
+  color: var(--on-primary);
 }
 .topbar .brand {
   font-weight: 700;
@@ -165,10 +166,18 @@ body {
   display: flex;
   align-items: baseline;
   gap: 2px;
+  color: var(--on-primary);
+}
+/* IMP-87 — 고객사 로고(data-URI) 렌더 시 상단 바 높이에 맞춰 축소 */
+.topbar .brand-logo {
+  height: 24px;
+  max-width: 180px;
+  object-fit: contain;
+  display: block;
 }
 .topbar .brand sup {
   font-size: 9px;
-  background: #fff;
+  background: var(--on-primary);
   color: var(--primary);
   border-radius: 3px;
   padding: 1px 3px;

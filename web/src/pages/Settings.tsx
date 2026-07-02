@@ -8,7 +8,10 @@ import Modal from "../components/Modal";
 import { SkeletonRows } from "../components/Skeleton";
 import ReconfigurePanel from "../components/ReconfigurePanel";
 import { useCap } from "../capabilities";
-import { BRAND_PRESETS, deriveBrand, useBrand } from "../theme";
+import {
+  BRAND_PRESETS, deriveBrand, useBrand, wcagAssess, isImageDataUri, withinSizeCap,
+  LOGO_MAX_BYTES, FAVICON_MAX_BYTES, DEFAULT_TENANT, type TenantBrand,
+} from "../theme";
 import {
   loadModelConfig, saveModelConfig, probeModel, resolveConnState, isMockMode, DYNAMO_PRESET,
   type ModelConnConfig, type ProbeResult,
@@ -22,6 +25,8 @@ import FieldError from "../components/FieldError";
 // 외관 · 브랜드 색상 — 고객사 표준 색상에 맞춰 전체 강조색(--primary 계열)을 전환.
 function BrandColorCard() {
   const { brand, setBrand } = useBrand();
+  // IMP-87 — 텍스트-on-primary 조합의 WCAG 대비만 검증(브랜드 색 자체는 막지 않는다).
+  const wcag = wcagAssess(brand.primary, brand.onPrimary);
   return (
     <div className="card">
       <div className="card-head">
@@ -76,6 +81,136 @@ function BrandColorCard() {
         </label>
       </div>
       <div className="policy-hint">미리보기 — 현재 강조색: <button type="button" className="btn-primary btn-sm" style={{ marginLeft: 6 }}>버튼</button> <a href="#" onClick={(e) => e.preventDefault()} style={{ marginLeft: "var(--sp-2)" }}>링크 예시</a></div>
+      {/* WCAG 대비 경고 — 강조색 위 텍스트(--on-primary) 조합이 AA 미달이면 안내(색 자체는 유효 유지). */}
+      {!wcag.passAA && (
+        <p className="policy-hint" role="status" style={{ marginBottom: 0, color: "var(--amber)" }}>
+          ⚠ 강조색 위 텍스트 대비 {wcag.ratio.toFixed(1)}:1 — {wcag.passUI ? "대형·UI 요소(3:1)는 충족하나 본문(4.5:1) 미달" : "WCAG 최소(3:1) 미달"}입니다. 텍스트 색은 대비가 나은 쪽(흰/검)으로 자동 선택되나, 더 진하거나 옅은 강조색을 권장합니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// IMP-87 — 화이트라벨 카드. 제품명·위첨자 + 로고/favicon(data-URI) 업로드 + 라이브 프리뷰.
+//   BrandColorCard/LocalModelCard 의 localStorage 패턴을 재사용하되 tenant 는 useBrand 컨텍스트가 영속.
+//   manage-gated: canEdit(=credentials cap) 아니면 읽기 전용(observe). 향후 /capabilities tenant 오버라이드 대비.
+//   업로드는 FileReader→data-URI, 이미지 MIME·크기·(favicon)정사각 가드 후에만 반영(보안 라이트체크).
+function WhiteLabelCard({ canEdit }: { canEdit: boolean }) {
+  const toast = useToast();
+  const { tenant, setTenant, brand } = useBrand();
+  const [name, setName] = useState(tenant.productName);
+  const [suffix, setSuffix] = useState(tenant.productSuffix);
+
+  const dirty = name.trim() !== tenant.productName || suffix.trim() !== tenant.productSuffix;
+
+  const patch = (p: Partial<TenantBrand>) => setTenant({ ...tenant, ...p });
+
+  const saveText = () => {
+    patch({ productName: name.trim() || DEFAULT_TENANT.productName, productSuffix: suffix.trim() });
+    toast.success("제품명을 저장했습니다(이 브라우저).");
+  };
+
+  const reset = () => {
+    setName(DEFAULT_TENANT.productName);
+    setSuffix(DEFAULT_TENANT.productSuffix);
+    setTenant({ productName: DEFAULT_TENANT.productName, productSuffix: DEFAULT_TENANT.productSuffix });
+    toast.success("기본값(FABRIX)으로 되돌렸습니다.");
+  };
+
+  // 로고: 이미지 MIME + 크기 캡. favicon: 추가로 정사각(±2px) 요구.
+  const onUpload = (kind: "logo" | "favicon", file: File | undefined) => {
+    if (!file) return;
+    const cap = kind === "logo" ? LOGO_MAX_BYTES : FAVICON_MAX_BYTES;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const uri = String(reader.result ?? "");
+      if (!isImageDataUri(uri)) { toast.error("이미지 파일(png·jpeg·svg·webp·gif·ico)만 업로드할 수 있습니다."); return; }
+      if (!withinSizeCap(uri, cap)) { toast.error(`파일이 너무 큽니다(최대 ${Math.round(cap / 1024)}KB).`); return; }
+      if (kind === "favicon") {
+        // 정사각 검증 — 비정사각 favicon 은 브라우저 탭에서 찌그러진다.
+        const img = new Image();
+        img.onload = () => {
+          if (Math.abs(img.width - img.height) > 2) { toast.error("favicon 은 정사각형 이미지여야 합니다."); return; }
+          patch({ faviconDataUri: uri });
+          toast.success("favicon 을 적용했습니다.");
+        };
+        img.onerror = () => toast.error("이미지를 읽을 수 없습니다.");
+        img.src = uri;
+      } else {
+        patch({ logoDataUri: uri });
+        toast.success("로고를 적용했습니다.");
+      }
+    };
+    reader.onerror = () => toast.error("파일을 읽을 수 없습니다.");
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h3>외관 · 화이트라벨</h3>
+        <InfoTip>제품명·로고·favicon 을 고객사 브랜드로 교체합니다. 로고/favicon 은 이 브라우저에 이미지로 저장(data-URI)되며, 문서 제목과 탭 아이콘도 함께 바뀝니다. 강조색은 아래 “브랜드 색상”에서 별도로 설정합니다.</InfoTip>
+      </div>
+      <p className="policy-hint" style={{ marginTop: 0 }}>
+        상단 바 워드마크·부팅 화면·문서 제목·탭 아이콘에 즉시 반영되며 이 브라우저에 저장됩니다. 로고 ≤{Math.round(LOGO_MAX_BYTES / 1024)}KB, favicon ≤{Math.round(FAVICON_MAX_BYTES / 1024)}KB·정사각.
+      </p>
+
+      <div className="pg-field-row">
+        <label className="pg-field">
+          <span>제품명</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="FABRIX" maxLength={40} disabled={!canEdit} />
+        </label>
+        <label className="pg-field">
+          <span>위첨자(선택)</span>
+          <input value={suffix} onChange={(e) => setSuffix(e.target.value)} placeholder="AI" maxLength={8} disabled={!canEdit} />
+        </label>
+      </div>
+
+      {canEdit && (
+        <div className="pg-field-row">
+          <label className="pg-field">
+            <span>로고 이미지</span>
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" onChange={(e) => onUpload("logo", e.target.files?.[0])} />
+          </label>
+          <label className="pg-field">
+            <span>favicon(정사각)</span>
+            <input type="file" accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,image/webp" onChange={(e) => onUpload("favicon", e.target.files?.[0])} />
+          </label>
+        </div>
+      )}
+
+      {!canEdit && <p className="policy-hint" style={{ marginTop: 0 }}>읽기 전용(observe) 프로파일입니다 — 편집은 manage 프로파일에서만 가능합니다.</p>}
+
+      {/* 라이브 프리뷰 — 실제 topbar 그라데이션·onPrimary 로 워드마크/로고를 그대로 렌더 */}
+      <div className="policy-hint" style={{ marginTop: "var(--sp-2)" }}>미리보기</div>
+      <div
+        aria-label="상단 바 미리보기"
+        style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 8,
+          background: `linear-gradient(90deg, ${brand.primary} 0%, ${brand.lite} 100%)`,
+          color: brand.onPrimary, fontWeight: 700, letterSpacing: ".02em",
+        }}
+      >
+        {tenant.logoDataUri ? (
+          <img src={tenant.logoDataUri} alt={tenant.productName} style={{ height: 24, maxWidth: 180, objectFit: "contain" }} />
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "baseline", gap: 2 }}>
+            {tenant.productName}
+            {tenant.productSuffix && (
+              <sup style={{ fontSize: 9, background: brand.onPrimary, color: brand.primary, borderRadius: 3, padding: "1px 3px", fontWeight: 800 }}>{tenant.productSuffix}</sup>
+            )}
+          </span>
+        )}
+      </div>
+
+      {canEdit && (
+        <div className="modal-actions" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btn-primary" onClick={saveText} disabled={!dirty}>제품명 저장</button>
+          {tenant.logoDataUri && <button type="button" className="btn-ghost" onClick={() => patch({ logoDataUri: undefined })}>로고 제거</button>}
+          {tenant.faviconDataUri && <button type="button" className="btn-ghost" onClick={() => patch({ faviconDataUri: undefined })}>favicon 제거</button>}
+          <button type="button" className="btn-ghost" onClick={reset}>기본값(FABRIX)</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -610,6 +745,8 @@ export default function Settings() {
         <div className="policy-hint">모든 권한 토글·역할 변경은 감사 이벤트로 캡처됩니다. 상향 권한 부여 차단(자신보다 높은 역할 부여 불가)은 현재 사용자 컨텍스트 연동 후 활성화됩니다.</div>
       </div>
 
+      {/* IMP-87 — 화이트라벨(제품명·로고·favicon)은 색상 프리셋 위에. 편집은 manage(credentials)에서만. */}
+      <WhiteLabelCard canEdit={canConfig} />
       <BrandColorCard />
 
       <SlidePanel

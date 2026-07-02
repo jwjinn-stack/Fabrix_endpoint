@@ -4,6 +4,7 @@ import CommandPalette, { type Command } from "./CommandPalette";
 import { useSearchAround } from "./useSearchAround";
 import { useObjectView } from "./ObjectView";
 import { useCap } from "../capabilities";
+import { useBrand } from "../theme";
 import { capForPage } from "../router";
 
 export type Page =
@@ -120,6 +121,8 @@ export default function Layout({
   onNavigate: (p: Page) => void;
 }) {
   const { can, caps } = useCap();
+  // IMP-87 — 화이트라벨: 워드마크/로고를 고객사 브랜드로 렌더(하드코딩 'FABRIX' 대체).
+  const { tenant } = useBrand();
   // 배포 프로파일에 따라 보이는 NAV — 화면별 cap 이 꺼져 있으면 메뉴·하위메뉴를 숨긴다.
   const allow = (p?: Page) => {
     const c = p ? capForPage(p) : undefined;
@@ -199,7 +202,15 @@ export default function Layout({
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          FABRIX<sup>AI</sup>
+          {tenant.logoDataUri ? (
+            // data-URI 는 theme.tsx 에서 이미지 MIME·크기 검증됨 — src 대입만(innerHTML 미사용).
+            <img className="brand-logo" src={tenant.logoDataUri} alt={tenant.productName} />
+          ) : (
+            <>
+              {tenant.productName}
+              {tenant.productSuffix && <sup>{tenant.productSuffix}</sup>}
+            </>
+          )}
         </div>
         <div className="project-pill">
           프로젝트 <b>default ▾</b>
