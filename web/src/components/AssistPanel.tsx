@@ -3,6 +3,8 @@ import { useDialogA11y, useStreamingLog, StreamingLog } from "../a11y";
 import ModelStatusChip from "./ModelStatusChip";
 import { loadModelConfig } from "../api/modelConnection";
 import { buildAssistAnswer, describeScreen, buildScreenCtx, chunkAnswer, type AssistAnswer } from "../api/assist";
+import { lookupTerm } from "../api/glossary";
+import type { AssistPrefill } from "./assistBus";
 import type { Page } from "./Layout";
 
 // IMP-103 — 전역 in-context Assist 패널(⌘/ '무엇이든 물어보기').
@@ -27,10 +29,14 @@ export default function AssistPanel({
   open,
   onClose,
   route,
+  prefill,
 }: {
   open: boolean;
   onClose: () => void;
   route: Page;
+  // IMP-104 — explain-this 프리필. data-explain-key/선택 팝오버가 "콕 집어" 열 때 채운다.
+  //   explainKey(glossary key/alias) 우선 → 큐레이션 정의 자동 ask, 없으면 label 로 자유질문(정직 폴백).
+  prefill?: AssistPrefill | null;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -103,6 +109,29 @@ export default function AssistPanel({
     log.pushUser(`이 화면(${ctx.title}) 설명`);
     stream(describeScreen(route));
   }, [log, stream, route, ctx.title]);
+
+  // IMP-104 — 프리필 자동 ask. data-explain-key/선택 팝오버로 "콕 집어" 열렸을 때(사용자 조작 결과)
+  //   해당 용어/라벨을 자동으로 물어 답을 흘린다. focus theft 아님 — 패널이 dialog 로 포커스를 받는다(IMP-102).
+  //   explainKey(glossary key/alias) 우선: 등록 용어면 그 term 을, 아니면 label 로 자유질문(정직 폴백, 환각 금지).
+  //   handledRef 로 동일 prefill 재발화를 막는다(open 전이 시 1회).
+  const handledRef = useRef<AssistPrefill | null>(null);
+  useEffect(() => {
+    if (!open) {
+      handledRef.current = null;
+      return;
+    }
+    if (!prefill || handledRef.current === prefill) return;
+    handledRef.current = prefill;
+    // 조회는 explainKey(glossary key/alias 완전일치) 우선, 없으면 label 문자열로 자유질문(정직 폴백).
+    //   buildAssistAnswer 가 key/alias 를 해석하므로 원본 문자열을 그대로 넘긴다(term.term 표시라벨은 매칭 실패 위험).
+    const askText = (prefill.explainKey ?? prefill.label ?? "").trim();
+    if (!askText) return;
+    // 사람이 읽는 대화 라벨: 등록 용어면 term 라벨, 아니면 입력 그대로.
+    const term = prefill.explainKey ? lookupTerm(prefill.explainKey) : null;
+    log.pushUser(term ? term.term : (prefill.label ?? askText));
+    stream(buildAssistAnswer(askText, route));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {

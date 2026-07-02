@@ -7,10 +7,13 @@ import { useCap } from "../capabilities";
 import { useBrand } from "../theme";
 import { capForPage } from "../router";
 import { useGlobalShortcutGuard } from "../a11y";
+import { subscribeExplain, type AssistPrefill } from "./assistBus";
 
 // IMP-103 — 전역 in-context Assist 패널(⌘/ '무엇이든 물어보기'). lazy import 로 초기 번들 0
 //   (미오픈 시 청크 미로딩). 패널 제거해도 앱은 동작한다(IMP-88 격리 — 셸-로컬 상태 + 조건부 렌더).
 const AssistPanel = lazy(() => import("./AssistPanel"));
+// IMP-104 — 텍스트 선택 설명 팝오버(SECONDARY, 마우스 편의). lazy(선택 전엔 렌더 0).
+const ExplainSelectionPopover = lazy(() => import("./ExplainSelectionPopover"));
 
 export type Page =
   | "dashboard"
@@ -147,6 +150,8 @@ export default function Layout({
   const [cmdOpen, setCmdOpen] = useState(false);
   // IMP-103 — 전역 Assist 패널 오픈 상태(셸-로컬 — 전역 provider 리렌더 회피).
   const [assistOpen, setAssistOpen] = useState(false);
+  // IMP-104 — explain-this 프리필(콕 집어 물어보기). data-explain-key/선택 팝오버가 assistBus 로 요청.
+  const [assistPrefill, setAssistPrefill] = useState<AssistPrefill | null>(null);
   // page 없는 그룹(예: 인프라·관측)의 수동 확장/접힘 상태. label 키로 토글한다.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [dark, setDark] = useState(() => {
@@ -170,7 +175,18 @@ export default function Layout({
 
   // IMP-103 — ⌘/(primary) · '?'(secondary)로 Assist 패널 열기(IMP-102 useGlobalShortcutGuard).
   //   input/textarea/contenteditable·IME 조합 중엔 무시. ⌘K(IMP-75)와 다른 키라 충돌 없음.
-  useGlobalShortcutGuard({ onTrigger: () => setAssistOpen(true) });
+  //   ⌘/ 는 빈 상태로 열도록 프리필을 지운다(콕 집어 열기와 구분).
+  useGlobalShortcutGuard({ onTrigger: () => { setAssistPrefill(null); setAssistOpen(true); } });
+
+  // IMP-104 — explain-this 프리필 구독. data-explain-key 어포던스(ExplainThis)·선택 팝오버가
+  //   assistBus.openExplain 을 호출하면 여기서 패널을 프리필로 연다(prop-drilling 없이, 격리 유지).
+  useEffect(() => {
+    const off = subscribeExplain((prefill) => {
+      setAssistPrefill(prefill);
+      setAssistOpen(true);
+    });
+    return off;
+  }, []);
 
   // IMP-57 — ObjectView 는 urlState(obj) 를 단일 출처로 페이지 무관하게 열린다. 팔레트의 Search Around
   //  런처가 객체를 열 때 이 open(id) 을 쓴다(팔레트는 mutate 하지 않고 ObjectView 로 유도 — trust boundary).
@@ -329,9 +345,18 @@ export default function Layout({
           현재 page 를 넘겨 자동 화면-컨텍스트 주입(IMP-105/106 seam). Suspense fallback 은 무음(오버레이 로드는 순간). */}
       {assistOpen && (
         <Suspense fallback={null}>
-          <AssistPanel open={assistOpen} onClose={() => setAssistOpen(false)} route={page} />
+          <AssistPanel
+            open={assistOpen}
+            onClose={() => { setAssistOpen(false); setAssistPrefill(null); }}
+            route={page}
+            prefill={assistPrefill}
+          />
         </Suspense>
       )}
+      {/* IMP-104 — 텍스트 선택 설명 팝오버(SECONDARY, 마우스 편의). 항상 마운트되나 선택 전엔 null 렌더. */}
+      <Suspense fallback={null}>
+        <ExplainSelectionPopover />
+      </Suspense>
     </div>
   );
 }

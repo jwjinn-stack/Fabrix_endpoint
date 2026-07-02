@@ -3,6 +3,8 @@ import Sparkline from "./Sparkline";
 import InfoTip from "./InfoTip";
 // IMP-105 — 위젯 메타(선언적). data-widget-id 부착 + info 미지정 시 whatItShows passive 노출.
 import { widgetMeta } from "./widgetMeta";
+// IMP-104 — explain-this: 메트릭 라벨을 콕 집어 물어볼 수 있게(키보드 우선 data-explain-key).
+import ExplainThis from "./ExplainThis";
 
 export type Tone = "green" | "red" | "amber" | "pink" | "teal";
 
@@ -22,6 +24,8 @@ export interface Metric {
   deltaGood?: "up" | "down";
   /** 미니 스파크라인 데이터(최근 추세). */
   spark?: number[];
+  /** IMP-104 — explain-this glossary key(예: "ttft"). 있으면 라벨이 콕 집어 물어보기 어포던스(⌘ 키보드 우선). */
+  explainKey?: string;
 }
 
 const TONE_COLOR: Record<Tone, string> = {
@@ -122,7 +126,14 @@ export default function StatCard({
                   />
                 </div>
               )}
-              <div className="lbl">{m.label}</div>
+              {/* IMP-104 — explainKey 있으면 라벨을 콕 집어 물어보기 어포던스로(키보드 우선), 없으면 평문. */}
+              {m.explainKey ? (
+                <ExplainThis className="lbl explain-lbl" explainKey={m.explainKey} label={m.label} widgetId={widgetId}>
+                  {m.label}
+                </ExplainThis>
+              ) : (
+                <div className="lbl">{m.label}</div>
+              )}
             </div>
           </div>
         ))}

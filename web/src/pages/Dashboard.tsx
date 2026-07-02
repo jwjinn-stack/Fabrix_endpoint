@@ -167,9 +167,9 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
                 onLink={() => onNavigate?.("traffic")}
                 onRefresh={() => load()}
                 metrics={[
-                  { label: "QPS", value: overview.traffic.qps.toFixed(1), spark: sparkQps, delta: deltaPct(sparkQps), deltaGood: "up" },
+                  { label: "QPS", value: overview.traffic.qps.toFixed(1), spark: sparkQps, delta: deltaPct(sparkQps), deltaGood: "up", explainKey: "qps" },
                   { label: "실행중", value: overview.traffic.running },
-                  { label: "대기", value: overview.traffic.waiting, tone: overview.traffic.waiting > 5 ? "amber" : undefined },
+                  { label: "대기", value: overview.traffic.waiting, tone: overview.traffic.waiting > 5 ? "amber" : undefined, explainKey: "queue-depth" },
                   {
                     label: "성공률",
                     value: pct1(overview.traffic.success_rate),
@@ -194,7 +194,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
                 onLink={() => onNavigate?.("usage")}
                 onRefresh={() => load()}
                 metrics={[
-                  { label: "TTFT p95", value: overview.quality.ttft_p95_ms, unit: "ms", tone: overview.quality.ttft_p95_ms > 140 ? "amber" : undefined, spark: sparkTtft, delta: deltaPct(sparkTtft), deltaGood: "down" },
+                  { label: "TTFT p95", value: overview.quality.ttft_p95_ms, unit: "ms", tone: overview.quality.ttft_p95_ms > 140 ? "amber" : undefined, spark: sparkTtft, delta: deltaPct(sparkTtft), deltaGood: "down", explainKey: "ttft" },
                   { label: "ITL avg", value: overview.quality.itl_avg_ms, unit: "ms" },
                   { label: "캐시 hit", value: pct(overview.quality.cache_hit_rate), bar: overview.quality.cache_hit_rate, barColor: "var(--teal)" },
                 ]}
@@ -214,7 +214,7 @@ export default function Dashboard({ onNavigate }: { onNavigate?: NavFn }) {
                 onLink={() => onNavigate?.("guard")}
                 onRefresh={() => load()}
                 metrics={[
-                  { label: "차단", value: overview.guardrail.blocked, tone: overview.guardrail.blocked > 0 ? "red" : undefined, spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down" },
+                  { label: "차단", value: overview.guardrail.blocked, tone: overview.guardrail.blocked > 0 ? "red" : undefined, spark: sparkBlocked, delta: deltaPct(sparkBlocked), deltaGood: "down", explainKey: "block-rate" },
                   { label: "PII", value: overview.guardrail.pii, tone: "pink" },
                   { label: "flagged", value: overview.guardrail.flagged, tone: "amber" },
                 ]}

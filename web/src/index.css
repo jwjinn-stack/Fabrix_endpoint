@@ -2502,6 +2502,35 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .status-infotip { display: inline-flex; align-items: center; margin-left: 2px; }
 .status-infotip-why { display: block; margin-top: 4px; color: var(--text-dim, #6b7280); }
 
+/* IMP-104: explain-this(콕 집어 물어보기, 키보드 우선). data-explain-key 요소가 focusable + hover/focus 시 ⓘ.
+   자동 발화 아님(WCAG 2.2 3.2.6) — 사용자 조작(Enter/우클릭/롱프레스/클릭)으로만 AssistPanel 프리필 오픈. */
+.explain-this {
+  display: inline-flex; align-items: center; gap: 3px; cursor: help;
+  border-radius: 3px; outline: none;
+}
+.explain-this:focus-visible { outline: 2px solid var(--primary, #4a6da7); outline-offset: 2px; }
+/* ⓘ 어포던스 — 기본 숨김(공간 예약 없이 opacity), hover/focus 시 노출. 대비 ≥4.5:1(text-muted 이상). */
+.explain-this-aff {
+  font-size: 0.72em; line-height: 1; color: var(--text-muted, #6b7280);
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.explain-this.hot .explain-this-aff,
+.explain-this:focus-visible .explain-this-aff { opacity: 1; }
+/* 메트릭 라벨에 얹을 때 기존 .lbl 흐름을 깨지 않게 inline-flex 정렬만 보강. */
+.explain-lbl { font: inherit; }
+
+/* IMP-104: 텍스트 선택 설명 팝오버(SECONDARY, 마우스 편의). viewport 고정 floating 버튼. */
+.explain-selection-pop {
+  position: fixed; z-index: 60; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 9px; font-size: 0.78rem; font-weight: 600;
+  color: #fff; background: var(--primary, #4a6da7);
+  border: 0; border-radius: 6px; cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+.explain-selection-pop:hover { filter: brightness(1.06); }
+.explain-selection-pop:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+
 /* IMP-97: 인시던트 '이 화면 읽는 법' 온보딩 — default-collapsed·persistent '?' 트리거(NN/g progressive disclosure). */
 .incident-guide {
   margin-bottom: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
