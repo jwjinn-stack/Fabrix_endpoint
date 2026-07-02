@@ -20,6 +20,13 @@ import { OBJECT_TYPES, LINK_KINDS } from "../api/ontologySchema";
 // 메트릭 시간 범위 — 백엔드 domain.ParseRange 와 동일 허용값(단일 출처 정합).
 export const METRIC_RANGES = ["1h", "6h", "24h", "7d"] as const;
 
+// ── K8s 조회 enum(IMP-91) ────────────────────────────────────────────────────
+// Kubernetes 표준 값. enum 밖 인자는 스키마가 거부(LLM hallucinated args 방어). 전부 read 축이라
+// mutating 값(scale/restart/…)은 애초에 존재하지 않는다 — tool 자체가 조회(list/get/describe)만.
+export const K8S_POD_PHASES = ["Pending", "Running", "Succeeded", "Failed", "Unknown"] as const;
+export const K8S_NODE_CONDITIONS = ["Ready", "NotReady", "MemoryPressure", "DiskPressure", "PIDPressure"] as const;
+export const K8S_EVENT_REASONS = ["OOMKilling", "BackOff", "CrashLoopBackOff", "FailedScheduling", "Unhealthy", "NodeNotReady", "Evicted"] as const;
+
 // JSON Schema(우리가 쓰는 최소 부분집합) — go-sdk jsonschema-go 와 호환되는 필드만.
 export interface JsonSchemaProp {
   type: "string";
@@ -95,6 +102,67 @@ export const ONTOLOGY_TOOL_REGISTRY: Record<string, OntologyToolSpec> = {
   },
 };
 
+// ── K8s read tool 레지스트리(IMP-91) — 병렬 단일 출처, 온톨로지와 동일하게 소비 ──────────
+// kagent/k8sgpt/Datadog K8s 식 자연어 클러스터 진단의 read 축. Dynamo/vLLM 워크로드가 K8s 위에 돌기에
+// GPU/Node 온톨로지 이상 ↔ 파드 재시작·노드 NotReady·OOMKilled 이벤트를 상관시켜 답한다.
+//
+// **핵심 안전(two-tier)**: 여기에는 조회(list/get/describe)만 담긴다. mutating k8s verb(scale/restart/
+// drain/cordon/delete/apply)는 물리적으로 없다 → 에이전트가 auto-callable tool 로 클러스터를 변경할
+// 구조적 경로가 없다. assertReadOnly() 가 이 레지스트리에도 걸려 불변식을 못박는다(아래 호출부).
+//
+// **정직성(direction 8)**: mock-first. 실연동은 official kubernetes-mcp-server SPIKE(IMP-79 K8s 백본과 짝).
+// 이 계약(name/args/enum)은 그대로 두고 transport 만 스왑하면 실 kube-mcp 로 교체된다.
+export const K8S_TOOL_REGISTRY: Record<string, OntologyToolSpec> = {
+  list_pods: {
+    name: "list_pods",
+    description: "Kubernetes 파드를 조회한다(재시작 카운트·OOMKilled·phase). objectId 로 온톨로지 객체(Endpoint/Model/Node)와 상관시킬 수 있다(조회 전용, mock-first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        namespace: { type: "string", description: "네임스페이스(미지정=전체)" },
+        phase: { type: "string", description: "파드 phase 로 필터(미지정=전체)", enum: [...K8S_POD_PHASES] },
+        objectId: { type: "string", description: "상관시킬 온톨로지 객체 id(미지정=전체)" },
+      },
+      additionalProperties: false,
+    },
+  },
+  list_nodes: {
+    name: "list_nodes",
+    description: "Kubernetes 노드를 조회한다(condition·NotReady 사유). NotReady 노드를 찾는 데 쓴다(조회 전용, mock-first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        condition: { type: "string", description: "노드 condition 으로 필터(미지정=전체)", enum: [...K8S_NODE_CONDITIONS] },
+      },
+      additionalProperties: false,
+    },
+  },
+  get_events: {
+    name: "get_events",
+    description: "최근 Kubernetes 이벤트를 조회한다(reason·message·involvedObject). OOMKilling/BackOff 등 파드 재시작 원인을 접지한다(조회 전용, mock-first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        objectId: { type: "string", description: "상관시킬 온톨로지 객체 id(미지정=전체)" },
+        reason: { type: "string", description: "이벤트 reason 으로 필터(미지정=전체)", enum: [...K8S_EVENT_REASONS] },
+      },
+      additionalProperties: false,
+    },
+  },
+  describe_deployment: {
+    name: "describe_deployment",
+    description: "Kubernetes 배포(Deployment)의 rollout 상태(desired/updated/available/unavailable·조건)를 조회한다(조회 전용, mock-first).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "배포 이름(미지정=전체)" },
+        objectId: { type: "string", description: "상관시킬 온톨로지 객체 id(미지정=전체)" },
+      },
+      additionalProperties: false,
+    },
+  },
+};
+
 // ── read-only 불변식 가드(two-tier 안전) ────────────────────────────────────
 // mutating 성격의 이름이 이 레지스트리에 들어오면 즉시 실패(mutation 은 ACTION_REGISTRY 에만).
 // tools/list 를 이 레지스트리에서 파생하므로, 여기 가드가 곧 "auto-callable mutation 없음" 보장.
@@ -110,8 +178,9 @@ export function assertReadOnly(reg: Record<string, OntologyToolSpec> = ONTOLOGY_
     }
   }
 }
-// 모듈 로드 시 1회 강제(개발 중 실수로 mutating tool 추가 시 즉시 터짐).
-assertReadOnly();
+// 모듈 로드 시 1회 강제(개발 중 실수로 mutating tool 추가 시 즉시 터짐). 온톨로지+K8s 두 레지스트리 모두.
+assertReadOnly(ONTOLOGY_TOOL_REGISTRY);
+assertReadOnly(K8S_TOOL_REGISTRY);
 
 // ── 계약 아티팩트 emit(TS→Go 단일 출처) ─────────────────────────────────────
 // 레지스트리에서 committed .json 아티팩트(ontology-tools.schema.json)를 결정적으로 만든다.
@@ -137,8 +206,10 @@ export interface OntologyToolsArtifact {
   tools: OntologyToolSpec[];
 }
 
+// 아티팩트는 온톨로지 read tool + K8s read tool(IMP-91)을 합쳐 name 순으로 담는다 —
+// 둘 다 read-only 계약의 단일 출처라 하나의 아티팩트로 emit 하면 3-way drift canary 가 함께 강제한다.
 export function buildOntologyToolsArtifact(): OntologyToolsArtifact {
-  const tools = Object.values(ONTOLOGY_TOOL_REGISTRY)
+  const tools = [...Object.values(ONTOLOGY_TOOL_REGISTRY), ...Object.values(K8S_TOOL_REGISTRY)]
     .slice()
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   return { version: 1, tools };

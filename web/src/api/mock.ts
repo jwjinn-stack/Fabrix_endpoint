@@ -24,14 +24,14 @@ import type {
   MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
-import { ONTOLOGY_TOOL_REGISTRY } from "../actions/ontologyTools";
+import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } from "./mockFactory";
 // GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
 import { XID_LABELS, xidLabel, decodeClocksEventReasons } from "./gpuHardware";
 // AI Agent(IMP-60) — 온톨로지 접지 ReAct 루프(순수). mutating tool 없음(two-tier 게이팅).
 // IMP-78 — 클러스터 인사이트(생성적) 순수 조립. HARD grounding(인용 강제)은 buildAgentInsights 내부에서.
-import { runAgentLoop, buildAgentInsights } from "./agent";
+import { runAgentLoop, buildAgentInsights, runK8sQuery } from "./agent";
 // Kinetic 감지→객체 귀속(IMP-72) — 순수 파생. 스냅샷 위에서 이상을 객체에 결정적으로 귀속.
 import { attributeDetections } from "./detection";
 
@@ -1210,6 +1210,125 @@ function runAgentInsightsMock(): import("./types").AgentInsightRun {
   return run;
 }
 
+// ── Kubernetes 클러스터 상태 스냅샷(IMP-91) — 온톨로지 상관 결정적 파생 ──
+// 에이전트의 K8s read tool(list_pods/list_nodes/get_events/describe_deployment)이 조회할 스냅샷을
+// 온톨로지 객체/링크에서 **결정적으로** 파생한다. 실 클러스터 상태가 아니라 mock 이며(direction 8 정직성),
+// 실연동은 official kubernetes-mcp-server SPIKE — 이 함수 자리만 실 kube-mcp 응답으로 스왑하면 된다.
+//
+// **온톨로지 상관(요구사항 2)**: crit GPU/Node → 그 노드가 NotReady, 그 위 파드에 OOMKilled + 재시작↑ +
+//   OOMKilling/BackOff 이벤트. crit Endpoint(NotReady 엔드포인트) → 그 배포 rollout unavailable.
+//   → k8s 답이 온톨로지(gpu-node-02 crit 등)와 정합하게 상관된다.
+// **순수·격리(direction 9)**: objects/links 배열만 받는 순수 함수 → 빈/부분 스냅샷에서 throw 없이 빈 결과.
+export function buildK8sSnapshot(objects: OntologyObject[], links: OntologyLink[]): import("./types").K8sSnapshot {
+  const pods: import("./types").K8sPod[] = [];
+  const nodes: import("./types").K8sNode[] = [];
+  const events: import("./types").K8sEvent[] = [];
+  const deployments: import("./types").K8sDeployment[] = [];
+
+  const nodeObjs = objects.filter((o) => o.type === "Node");
+  const gpuObjs = objects.filter((o) => o.type === "GpuDevice");
+  const epObjs = objects.filter((o) => o.type === "Endpoint");
+
+  // GpuDevice --hostedBy--> Node 로 각 노드의 GPU 상태를 모아 노드 이상 판정(단일 출처: 온톨로지 링크).
+  const gpuById = new Map(gpuObjs.map((o) => [o.id, o]));
+  const nodeGpuStatuses = new Map<string, string[]>();
+  for (const l of links) {
+    if (l.linkKind === "hostedBy" && gpuById.has(l.from)) {
+      const arr = nodeGpuStatuses.get(l.to) ?? [];
+      arr.push(gpuById.get(l.from)!.status);
+      nodeGpuStatuses.set(l.to, arr);
+    }
+  }
+
+  // ── Node ── 온톨로지 Node crit 또는 그 위 GPU 가 crit 이면 NotReady 로 상관.
+  for (const n of nodeObjs) {
+    const hostName = String((n.props as Record<string, unknown>).hostname ?? n.title);
+    const gpuStatuses = nodeGpuStatuses.get(n.id) ?? [];
+    const gpuCrit = gpuStatuses.includes("crit");
+    const notReady = n.status === "crit" || gpuCrit;
+    nodes.push({
+      name: hostName,
+      condition: notReady ? "NotReady" : "Ready",
+      reason: notReady ? (gpuCrit ? "GPU 장애로 kubelet 이 Ready 조건을 잃음(추정)" : "KubeletNotReady") : undefined,
+      objectId: n.id,
+    });
+    if (notReady) {
+      events.push({
+        reason: "NodeNotReady",
+        message: `Node ${hostName} status is now: NodeNotReady`,
+        involvedObject: `node/${hostName}`,
+        count: 1,
+        objectId: n.id,
+      });
+    }
+  }
+
+  // ── Pod ── Endpoint 를 파드의 상위로 삼는다(각 Endpoint = 하나의 서빙 배포). replicas 만큼 파드 생성.
+  //   Endpoint 가 crit(NotReady) 이거나 그 Model 이 crit 이면 파드에 OOMKilled + 재시작↑ 을 상관시킨다.
+  const nodeNames = nodes.map((x) => x.name);
+  for (const ep of epObjs) {
+    const p = ep.props as Record<string, unknown>;
+    const ns = String(p.namespace ?? "fabrix");
+    const replicas = Math.max(1, Number(p.replicas) || 1);
+    const epName = ep.title;
+    // 이 엔드포인트가 얹힌 노드(결정적): 이름 해시로 노드 배정(노드 없으면 이름만).
+    const nodeName = nodeNames.length ? nodeNames[hash(ep.id) % nodeNames.length] : "";
+    const nodeNotReady = nodes.find((x) => x.name === nodeName)?.condition === "NotReady";
+    const bad = ep.status === "crit"; // NotReady 엔드포인트 → 파드 기동 실패/OOM 상관.
+    for (let i = 0; i < replicas; i++) {
+      const podName = `${epName}-${(hash(`${ep.id}:${i}`) % 90000 + 10000).toString(36)}`;
+      const oom = bad && i === 0; // 대표 파드 1개가 OOMKilled(결정적).
+      const failedSched = nodeNotReady && i === 0;
+      const restarts = oom ? 5 + (hash(podName) % 8) : failedSched ? 3 : 0;
+      const phase: import("./types").K8sPod["phase"] = oom ? "Failed" : bad ? "Pending" : "Running";
+      pods.push({
+        name: podName, namespace: ns,
+        phase, ready: phase === "Running",
+        restarts, oomKilled: oom, node: nodeName,
+        objectId: ep.id,
+        reason: oom ? "CrashLoopBackOff" : failedSched ? "FailedScheduling" : undefined,
+      });
+      if (oom) {
+        events.push({ reason: "OOMKilling", message: `Container 가 메모리 한계를 초과해 OOMKilled 되었습니다 (pod ${podName})`, involvedObject: `pod/${podName}`, count: restarts, objectId: ep.id });
+        events.push({ reason: "BackOff", message: `Back-off restarting failed container (pod ${podName})`, involvedObject: `pod/${podName}`, count: restarts, objectId: ep.id });
+      } else if (failedSched) {
+        events.push({ reason: "FailedScheduling", message: `0/${nodeNames.length} nodes are available: 노드 ${nodeName} NotReady`, involvedObject: `pod/${podName}`, count: 1, objectId: ep.id });
+      }
+    }
+    // ── Deployment ── Endpoint 하나당 배포 하나. crit → unavailable rollout.
+    const desired = replicas;
+    const available = bad ? Math.max(0, replicas - 1) : replicas;
+    const unavailable = desired - available;
+    deployments.push({
+      name: epName, namespace: ns, desired, updated: desired, available, unavailable,
+      rollout: unavailable === 0 ? "complete" : available === 0 ? "stalled" : "progressing",
+      objectId: ep.id,
+    });
+  }
+
+  // 결정적 정렬(재현 가능).
+  pods.sort((a, b) => (a.name < b.name ? -1 : 1));
+  nodes.sort((a, b) => (a.name < b.name ? -1 : 1));
+  events.sort((a, b) => (a.involvedObject + a.reason < b.involvedObject + b.reason ? -1 : 1));
+  deployments.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return { pods, nodes, events, deployments };
+}
+
+// POST /agent/k8s — K8s 클러스터 상태 질의(IMP-91). runAgentMock 과 동일한 순수/부작용 경계(IMP-81):
+//   (1) 순수: buildK8sSnapshot(공유 스냅샷) → runK8sQuery(결정적 ReAct + 진단).
+//   (2) 부작용: transcript audit 를 AGENT_AUDIT 에 append.
+// VITE_MOCK=off 면 buildK8sSnapshot 자리만 실 kube-mcp 응답으로 스왑되고 응답 스키마(K8sQueryRun)는 고정.
+function runK8sQueryMock(body: Record<string, unknown>): import("./types").K8sQueryRun {
+  const { objects, links } = buildOntology(); // 요청단위 공유 스냅샷(재구성 중복 없음).
+  const k8s = buildK8sSnapshot(objects, links);
+  const intent = typeof body.intent === "string" ? body.intent : undefined;
+  AGENT_SEQ++;
+  const traceId = `agk8s_${AGENT_SEQ.toString(36)}_${hash(`${intent ?? ""}`).toString(36)}`;
+  const run = runK8sQuery(k8s, { intent, traceId }); // (1) 순수
+  for (const a of run.audit) AGENT_AUDIT.unshift(a);  // (2) 부작용
+  return run;
+}
+
 // GET /ontology/detections — 감지 이상을 온톨로지 객체에 귀속시킨 Kinetic 알림(IMP-72).
 // buildOntology() 메모이즈 스냅샷(IMP-81) 재사용 후 attributeDetections(순수) 호출. read-only.
 //  - 노이즈 억제(dedupe/state-transition/sustained collapse)는 파생 레이어(detection.ts) 내장.
@@ -2085,6 +2204,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "POST /agent/run": return ok(runAgentMock((body as Record<string, unknown>) ?? {}));
     // AI Agent 클러스터 인사이트(IMP-78) — 로컬 모델이 온톨로지 근거로 군집·패턴 도출(HARD grounding·read-only).
     case "POST /agent/insights": return ok(runAgentInsightsMock());
+    case "POST /agent/k8s": return ok(runK8sQueryMock((body as Record<string, unknown>) ?? {}));
   }
 
   // 패턴 매칭 (path 변수 포함)
@@ -2387,10 +2507,11 @@ const MCP_AGGREGATE_TOOLS = [
   { name: "top_outliers", description: "차원별 분해에서 카탈로그 임계치를 위반한(이상) 그룹만 추려 사유와 함께 반환한다." },
   { name: "summarize_endpoint_health", description: "전체 추론 서빙 건강도 요약(QPS·TTFT p95·ITL·캐시적중·차단·알람)을 자연어로 반환한다." },
 ];
-// aggregate + 온톨로지 read tool(레지스트리 파생, name 순). inputSchema 도 실어 패널이 계약을 그대로 노출.
+// aggregate + 온톨로지 read tool + K8s read tool(IMP-91)(레지스트리 파생, name 순). inputSchema 도 실어
+// 패널이 계약을 그대로 노출한다. K8s tool 도 read-only(list/get/describe) — mutating 동사 없음(two-tier).
 const MCP_TOOLS = [
   ...MCP_AGGREGATE_TOOLS,
-  ...Object.values(ONTOLOGY_TOOL_REGISTRY)
+  ...[...Object.values(ONTOLOGY_TOOL_REGISTRY), ...Object.values(K8S_TOOL_REGISTRY)]
     .slice()
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),

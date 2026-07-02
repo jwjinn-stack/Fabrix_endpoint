@@ -1,6 +1,51 @@
 {
   "tools": [
     {
+      "description": "Kubernetes 배포(Deployment)의 rollout 상태(desired/updated/available/unavailable·조건)를 조회한다(조회 전용, mock-first).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "배포 이름(미지정=전체)",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "상관시킬 온톨로지 객체 id(미지정=전체)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "describe_deployment"
+    },
+    {
+      "description": "최근 Kubernetes 이벤트를 조회한다(reason·message·involvedObject). OOMKilling/BackOff 등 파드 재시작 원인을 접지한다(조회 전용, mock-first).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "objectId": {
+            "description": "상관시킬 온톨로지 객체 id(미지정=전체)",
+            "type": "string"
+          },
+          "reason": {
+            "description": "이벤트 reason 으로 필터(미지정=전체)",
+            "enum": [
+              "OOMKilling",
+              "BackOff",
+              "CrashLoopBackOff",
+              "FailedScheduling",
+              "Unhealthy",
+              "NodeNotReady",
+              "Evicted"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "get_events"
+    },
+    {
       "description": "단일 객체의 canonical 표현(type/title/status/props)을 id 로 조회한다(조회 전용).",
       "inputSchema": {
         "additionalProperties": false,
@@ -45,6 +90,56 @@
       "name": "get_object_metrics"
     },
     {
+      "description": "Kubernetes 노드를 조회한다(condition·NotReady 사유). NotReady 노드를 찾는 데 쓴다(조회 전용, mock-first).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "condition": {
+            "description": "노드 condition 으로 필터(미지정=전체)",
+            "enum": [
+              "Ready",
+              "NotReady",
+              "MemoryPressure",
+              "DiskPressure",
+              "PIDPressure"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_nodes"
+    },
+    {
+      "description": "Kubernetes 파드를 조회한다(재시작 카운트·OOMKilled·phase). objectId 로 온톨로지 객체(Endpoint/Model/Node)와 상관시킬 수 있다(조회 전용, mock-first).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "namespace": {
+            "description": "네임스페이스(미지정=전체)",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "상관시킬 온톨로지 객체 id(미지정=전체)",
+            "type": "string"
+          },
+          "phase": {
+            "description": "파드 phase 로 필터(미지정=전체)",
+            "enum": [
+              "Pending",
+              "Running",
+              "Succeeded",
+              "Failed",
+              "Unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "list_pods"
+    },
+    {
       "description": "온톨로지 객체(명사)를 type / 부분일치(filter)로 조회한다. 접지 대상 objectId 목록을 반환한다(조회 전용).",
       "inputSchema": {
         "additionalProperties": false,
@@ -62,7 +157,8 @@
               "GpuDevice",
               "Node",
               "Trace",
-              "Incident"
+              "Incident",
+              "App"
             ],
             "type": "string"
           }
@@ -81,6 +177,7 @@
             "enum": [
               "consumes",
               "serves",
+              "routes",
               "runsOn",
               "hostedBy",
               "routedTo",

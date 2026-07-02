@@ -71,11 +71,11 @@ export const investigateSchema = {
 
 // AI Agent(IMP-60) deep-link 스키마 — entity=접지 진입 Object id(옵션), intent=자연어 의도(옵션).
 // 둘 다 빈 문자열이면 에이전트가 기본 시나리오(가장 아픈 진입)를 결정한다. intent 는 자유 텍스트라 debounce 되쓰기.
-// IMP-78 — mode=화면 모드. ""|"rca"=근본원인(현행 기본), "insights"=클러스터 인사이트(생성적 레이어).
+// IMP-78/91 — mode=화면 모드. ""|"rca"=근본원인(현행 기본), "insights"=클러스터 인사이트(생성적), "k8s"=K8s 클러스터 상태.
 export const agentSchema = {
   entity: strField(""),
   intent: strField(""),
-  mode: enumField(["", "rca", "insights"] as const, ""),
+  mode: enumField(["", "rca", "insights", "k8s"] as const, ""),
 } as const;
 
 // Search Around 팔레트(IMP-75) deep-link 스키마 — ⌘K 중첩 팔레트의 **컨텍스트만** 공유(팔레트 열림 자체는 휘발).

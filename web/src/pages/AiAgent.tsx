@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { runAgent, runAgentInsights } from "../api/client";
-import type { AgentInsightRun, AgentRun, AgentStep, ClusterInsight, InsightKind, ObjectType, RcaCandidate } from "../api/types";
+import { runAgent, runAgentInsights, runK8sQuery } from "../api/client";
+import type { AgentInsightRun, AgentRun, AgentStep, ClusterInsight, InsightKind, ObjectType, RcaCandidate, K8sQueryRun, K8sStep, K8sFinding } from "../api/types";
 import { getActionSpec } from "../actions/registry";
 import Badge, { type BadgeTone } from "../components/Badge";
 import { SkeletonCards } from "../components/Skeleton";
@@ -35,7 +35,19 @@ const TOOL_LABEL: Record<string, string> = {
   queryObjects: "객체 조회",
   traverseLinks: "관계 추적",
   getIncidents: "인시던트 조회",
+  // IMP-91 — K8s read-only tool.
+  list_pods: "파드 조회",
+  list_nodes: "노드 조회",
+  get_events: "이벤트 조회",
+  describe_deployment: "배포 상태 조회",
 };
+
+// IMP-91 — K8s 질의 프리셋(자연어). 재시작/NotReady/rollout 진단.
+const K8S_PRESETS = [
+  "왜 이 파드가 재시작했나?",
+  "어느 노드가 NotReady 인가?",
+  "배포 rollout 상태를 확인해줘",
+];
 
 // IMP-78 — 인사이트 종류 라벨/글리프(무채색, 네온 금지). RCA(단일 원인)와 구분되는 패턴·군집 축.
 const INSIGHT_LABEL: Record<InsightKind, string> = {
@@ -63,12 +75,12 @@ const INTENT_PRESETS = [
   "지금 발생한 인시던트의 영향 경로를 분석해줘",
 ];
 
-// 화면 모드 — 근본원인(RCA, 현행 기본) / 클러스터 인사이트(IMP-78 생성적 레이어).
-type Mode = "rca" | "insights";
+// 화면 모드 — 근본원인(RCA, 현행 기본) / 클러스터 인사이트(IMP-78) / K8s 클러스터 상태(IMP-91).
+type Mode = "rca" | "insights" | "k8s";
 
 export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?: NavParams) => void }) {
   const [urlSt, patchUrl] = useUrlState(agentSchema);
-  const [mode, setMode] = useState<Mode>(() => (urlSt.mode === "insights" ? "insights" : "rca"));
+  const [mode, setMode] = useState<Mode>(() => (urlSt.mode === "insights" ? "insights" : urlSt.mode === "k8s" ? "k8s" : "rca"));
   const [intent, setIntent] = useState<string>(() => urlSt.intent || INTENT_PRESETS[0]);
   const [run, setRun] = useState<AgentRun | null>(null);
   const [loading, setLoading] = useState(false);
@@ -78,6 +90,11 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
   const [insightRun, setInsightRun] = useState<AgentInsightRun | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightError, setInsightError] = useState<string | null>(null);
+  // IMP-91 — K8s 클러스터 상태 질의 상태(RCA/인사이트와 독립). k8s 탭에서만 로드.
+  const [k8sRun, setK8sRun] = useState<K8sQueryRun | null>(null);
+  const [k8sLoading, setK8sLoading] = useState(false);
+  const [k8sError, setK8sError] = useState<string | null>(null);
+  const [k8sIntent, setK8sIntent] = useState<string>(K8S_PRESETS[0]);
   const view = useObjectView(); // 카드/인용 클릭 → ObjectView(IMP-57) + inline Action(IMP-59)
   // IMP-82 — 로컬 모델 연결 설정(설정·관리에서 localStorage 저장). 마운트 1회 로드 → 상태 칩에 전달.
   //   기본은 mock(정직) — 실 연결 여부/모델/지연을 칩이 정직하게 드러낸다("연결됨" 위장 금지).
@@ -117,12 +134,30 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
     }
   }, []);
 
+  // IMP-91 — K8s 클러스터 상태 질의. read-only k8s tool 을 서버(mock)가 자동 실행하고, 응답에 mutation 없음(two-tier).
+  //   **정직성**: 응답 mock=true → UI 가 MOCK 뱃지로 명시. VITE_MOCK=off 면 transport 만 스왑되어 실 kube-mcp 로.
+  const loadK8s = useCallback(async (intentText: string, signal?: AbortSignal) => {
+    setK8sLoading(true);
+    setK8sError(null);
+    try {
+      const r = await runK8sQuery({ intent: intentText }, signal);
+      setK8sRun(r);
+      setLastLoaded(Date.now());
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setK8sError(humanizeError((e as Error).message));
+    } finally {
+      setK8sLoading(false);
+    }
+  }, []);
+
   // 최초 마운트 — URL(intent/entity)로 시드해 RCA 를 한 번 실행(관제 콘솔이 바로 결과를 보여준다).
   useEffect(() => {
     const ctrl = new AbortController();
     analyze(urlSt.intent || INTENT_PRESETS[0], urlSt.entity || undefined, ctrl.signal);
     // insights 모드로 진입(deep-link)한 경우 인사이트도 초기 로드.
     if (urlSt.mode === "insights") loadInsights(ctrl.signal);
+    // IMP-91 — k8s 모드로 진입(deep-link)한 경우 K8s 질의도 초기 로드.
+    if (urlSt.mode === "k8s") loadK8s(K8S_PRESETS[0], ctrl.signal);
     return () => ctrl.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -132,7 +167,8 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
     setMode(next);
     patchUrl({ mode: next });
     if (next === "insights" && !insightRun && !insightLoading) loadInsights();
-  }, [patchUrl, insightRun, insightLoading, loadInsights]);
+    if (next === "k8s" && !k8sRun && !k8sLoading) loadK8s(k8sIntent);
+  }, [patchUrl, insightRun, insightLoading, loadInsights, k8sRun, k8sLoading, loadK8s, k8sIntent]);
 
   const submit = useCallback(
     (e: React.FormEvent) => {
@@ -178,6 +214,15 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
           onClick={() => switchMode("insights")}
         >
           클러스터 인사이트
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "k8s"}
+          className={`pill ${mode === "k8s" ? "active" : ""}`}
+          onClick={() => switchMode("k8s")}
+        >
+          클러스터 상태 (K8s)
         </button>
       </div>
 
@@ -281,7 +326,7 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
         </div>
       )}
       </>
-      ) : (
+      ) : mode === "insights" ? (
         // IMP-78 — 클러스터 인사이트 모드(생성적). 로컬 모델이 온톨로지 근거로 군집·패턴 도출.
         <InsightsPanel
           run={insightRun}
@@ -290,6 +335,17 @@ export default function AiAgent({ onNavigate }: { onNavigate?: (p: Page, params?
           onReload={() => loadInsights()}
           onCite={(id) => view.open(id)}
           modelConfig={modelConfig}
+        />
+      ) : (
+        // IMP-91 — K8s 클러스터 상태 질의(read-only). 파드 재시작·노드 NotReady·rollout 을 자연어로 진단(mock).
+        <K8sPanel
+          run={k8sRun}
+          loading={k8sLoading}
+          error={k8sError}
+          intent={k8sIntent}
+          setIntent={setK8sIntent}
+          onRun={(t) => { setK8sIntent(t); loadK8s(t); }}
+          onCite={(id) => view.open(id)}
         />
       )}
 
@@ -508,6 +564,167 @@ function InsightCard({ insight, onCite }: { insight: ClusterInsight; onCite: (id
           <button key={id} type="button" className="agent-cite" onClick={() => onCite(id)} title={`${id} 열기`}>
             {id}
           </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// IMP-91 — K8s 클러스터 상태 패널. read-only k8s tool(list_pods/list_nodes/get_events/describe_deployment)로
+//   파드 재시작·노드 NotReady·rollout 을 자연어로 진단. **정직성(direction 8)**: mock=true 면 MOCK 뱃지로 명시,
+//   실 k8s 접속을 주장하지 않는다(실연동은 kubernetes-mcp-server SPIKE). read-only — Action/ActionForm 없음.
+function K8sPanel({
+  run, loading, error, intent, setIntent, onRun, onCite,
+}: {
+  run: K8sQueryRun | null;
+  loading: boolean;
+  error: string | null;
+  intent: string;
+  setIntent: (t: string) => void;
+  onRun: (t: string) => void;
+  onCite: (id: string) => void;
+}) {
+  const submit = (e: React.FormEvent) => { e.preventDefault(); const t = intent.trim(); if (t) onRun(t); };
+  return (
+    <section className="agent-insights" aria-label="Kubernetes 클러스터 상태">
+      {/* intent 입력 — 자연어 질의(프리셋 + 자유 입력). 제출 시 read-only k8s tool 자동 실행. */}
+      <form className="agent-intent" onSubmit={submit} aria-label="K8s 질의 의도">
+        <label htmlFor="k8s-intent-input" className="sr-only">K8s 질의</label>
+        <input
+          id="k8s-intent-input"
+          type="text"
+          className="agent-intent-input"
+          value={intent}
+          onChange={(e) => setIntent(e.target.value)}
+          placeholder="예: 왜 이 파드가 재시작했나?"
+          aria-label="K8s 질의 입력"
+        />
+        <button type="submit" className="btn-primary" disabled={loading || !intent.trim()}>
+          {loading ? "조회 중…" : "질의 실행"}
+        </button>
+      </form>
+      <div className="agent-presets" role="group" aria-label="예시 질의">
+        {K8S_PRESETS.map((p) => (
+          <button key={p} type="button" className={`pill ${intent === p ? "active" : ""}`} onClick={() => { setIntent(p); onRun(p); }}>
+            {p}
+          </button>
+        ))}
+      </div>
+
+      <InfoTip>
+        에이전트가 <b>read-only Kubernetes tool</b>(파드·노드·이벤트·배포)로 클러스터 상태를 조회해 파드 재시작·노드 NotReady·rollout 이상을
+        진단합니다. 조회는 자동이며 <b>어떤 변경(scale·restart·drain 등)도 하지 않습니다</b>(two-tier). 표시는 <b>추정</b>입니다.
+      </InfoTip>
+
+      {error && <div className="state error" role="alert">클러스터 상태 조회에 실패했습니다. ({error})</div>}
+      {!error && loading && !run && <SkeletonCards count={3} />}
+
+      {!error && run && (
+        <>
+          <div className="cop-panel-h">
+            클러스터 진단 · Kubernetes
+            {run.grounded && run.findings.length > 0 && <span className="cop-count">{run.findings.length} 발견</span>}
+            {/* 정직성(direction 8) — mock 데이터임을 명시(실 k8s 접속 주장 금지). */}
+            {run.mock && <Badge tone="amber" dot>MOCK</Badge>}
+          </div>
+          <div className="agent-insights-meta muted">
+            trace <code>{run.traceId}</code> · 의도 “{run.intent}” · 소스 {run.source}
+          </div>
+
+          <div className="agent-grid">
+            {/* LEFT — ReAct 타임라인(k8s tool call + result) */}
+            <section className="agent-trace card" aria-label="K8s 조회 타임라인">
+              <div className="card-head">
+                <h3>조회 타임라인 (ReAct)</h3>
+                {run.grounded
+                  ? <Badge tone="green" dot>클러스터 접지됨</Badge>
+                  : <Badge tone="neutral" dot>이상 없음</Badge>}
+              </div>
+              <ol className="agent-steps">
+                {run.steps.map((s, i) => <K8sStepRow key={i} step={s} index={i} onOpen={onCite} />)}
+              </ol>
+            </section>
+
+            {/* RIGHT — 진단 발견(파드/노드/배포 이상) */}
+            <section className="agent-output" aria-label="K8s 진단 발견">
+              <div className="cop-panel-h">진단 발견 · 근거</div>
+              {run.grounded && run.findings.length > 0 ? (
+                <div className="agent-cards">
+                  {run.findings.map((f) => <K8sFindingCard key={f.id} finding={f} onCite={onCite} />)}
+                </div>
+              ) : (
+                <div className="agent-fallback" role="note">
+                  <div className="agent-fallback-h">
+                    <Badge tone="neutral" dot>이상 없음</Badge>
+                    <span>{run.fallbackNote ?? "조회 범위에서 이상이 관측되지 않았습니다."}</span>
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+// K8s ReAct 타임라인 한 줄 — reasoning 또는 k8s tool(name+args+result). result 는 k8s ref + objectId 칩.
+function K8sStepRow({ step, index, onOpen }: { step: K8sStep; index: number; onOpen: (id: string) => void }) {
+  if (step.kind === "reasoning") {
+    return (
+      <li className="agent-step agent-step-reason">
+        <span className="agent-step-badge" aria-hidden="true">생각</span>
+        <span className="agent-step-text">{step.text}</span>
+      </li>
+    );
+  }
+  const { call, result } = step;
+  return (
+    <li className={`agent-step agent-step-tool ${result.found ? "" : "empty"}`}>
+      <span className="agent-step-badge tool" aria-hidden="true">도구</span>
+      <div className="agent-step-body">
+        <div className="agent-tool-call">
+          <code className="agent-tool-name">{TOOL_LABEL[call.tool] ?? call.tool}</code>
+          <code className="agent-tool-args">{JSON.stringify(call.args)}</code>
+          <span className="agent-tool-auto" title="조회 tool 은 자동 실행됩니다(변경 아님)">자동</span>
+        </div>
+        <div className="agent-tool-result">
+          <span className="agent-tool-summary">{result.summary}</span>
+          {(result.resourceRefs.length > 0 || result.objectIds.length > 0) && (
+            <span className="agent-cites">
+              {result.resourceRefs.slice(0, 4).map((ref) => (
+                <span key={ref} className="agent-cite as-text" title={ref}>{ref}</span>
+              ))}
+              {/* 온톨로지 objectId 는 클릭 가능(ObjectView) — k8s↔온톨로지 상관 접지. */}
+              {result.objectIds.slice(0, 4).map((id) => (
+                <button key={id} type="button" className="agent-cite" onClick={() => onOpen(id)} title={`${id} 열기`}>{id}</button>
+              ))}
+            </span>
+          )}
+        </div>
+      </div>
+      <span className="sr-only">step {index + 1}</span>
+    </li>
+  );
+}
+
+// K8s 진단 발견 카드 — 제목 + claim + k8s ref(정적) + 온톨로지 objectId 인용(클릭 → ObjectView). read-only.
+function K8sFindingCard({ finding, onCite }: { finding: K8sFinding; onCite: (id: string) => void }) {
+  return (
+    <div className="agent-card insight-card">
+      <div className="agent-card-top">
+        <span className="agent-card-glyph" aria-hidden="true">▥</span>
+        <span className="agent-card-title as-text">{finding.title}</span>
+        <Badge tone={sevTone(finding.severity)}>{finding.severity === "crit" ? "위험" : finding.severity === "warn" ? "주의" : "정보"}</Badge>
+      </div>
+      <p className="agent-card-claim">{finding.claim}</p>
+      <div className="agent-card-cites">
+        <span className="agent-card-cites-h">근거</span>
+        {finding.resourceRefs.map((ref) => (
+          <span key={ref} className="agent-cite as-text" title={ref}>{ref}</span>
+        ))}
+        {finding.citations.map((id) => (
+          <button key={id} type="button" className="agent-cite" onClick={() => onCite(id)} title={`${id} 열기`}>{id}</button>
         ))}
       </div>
     </div>

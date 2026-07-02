@@ -55,6 +55,7 @@ import type {
   ActionResult,
   AgentRun,
   AgentInsightRun,
+  K8sQueryRun,
   OrgTree,
   TopologyGraph,
   ProxyStats,
@@ -651,6 +652,29 @@ export async function runAgentInsights(signal?: AbortSignal): Promise<AgentInsig
     throw new Error(`API ${res.status}${detail}`);
   }
   return (await res.json()) as AgentInsightRun;
+}
+
+// AI Agent — Kubernetes 클러스터 상태 질의(IMP-91). POST /agent/k8s.
+// read-only K8s tool(list_pods/list_nodes/get_events/describe_deployment)을 서버가 자동 실행하고, 응답에
+// mutating 은 없다(two-tier). **정직성(direction 8)**: mock=true·source 에 "mock" 로 mock 임을 명시하며,
+// 실연동은 official kubernetes-mcp-server SPIKE — VITE_MOCK=off 면 이 함수는 그대로 실 kube-mcp 백엔드로
+// 나가고(transport 만 스왑) 응답 스키마는 K8sQueryRun 로 고정.
+export async function runK8sQuery(
+  req?: { intent?: string },
+  signal?: AbortSignal,
+): Promise<K8sQueryRun> {
+  const res = await fetch(apiPath(`/agent/k8s`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ intent: req?.intent }),
+    signal,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { const b = (await res.json()) as { error?: string }; detail = b.error ? `: ${b.error}` : ""; } catch { /* ignore */ }
+    throw new Error(`API ${res.status}${detail}`);
+  }
+  return (await res.json()) as K8sQueryRun;
 }
 
 export function fetchHarborModels(signal?: AbortSignal): Promise<{ models: HarborModel[]; available: boolean }> {

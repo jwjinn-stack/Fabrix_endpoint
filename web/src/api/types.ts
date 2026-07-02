@@ -1378,6 +1378,101 @@ export interface AgentInsightRun {
   source: string;                  // "agent-insights (mock)" | 실백엔드
 }
 
+// ── Kubernetes 클러스터 상태 질의(IMP-91) — read-only K8s MCP tool ──────────────
+// AI Agent 가 온톨로지 스냅샷을 넘어 실 클러스터 상태(파드 재시작·노드 NotReady·OOMKilled·rollout)를
+// 조회한다. mock-first(source 에 "mock" 표기·mock=true), 실연동은 official kubernetes-mcp-server SPIKE.
+// **read-only ONLY** — list/get/describe 만. mutating k8s verb(scale/restart/drain/cordon/delete)는 tool 로 없다.
+
+// K8s 파드 — 재시작 카운트·OOMKilled·phase. objectId 로 온톨로지 객체(Endpoint/Model/Node)와 상관.
+export interface K8sPod {
+  name: string;
+  namespace: string;
+  phase: "Pending" | "Running" | "Succeeded" | "Failed" | "Unknown";
+  ready: boolean;
+  restarts: number;          // 컨테이너 재시작 누적
+  oomKilled: boolean;        // 최근 종료가 OOMKilled 인지
+  node: string;              // 스케줄된 노드 이름
+  objectId?: string;         // 상관된 온톨로지 객체 id(인용 소스)
+  reason?: string;           // 비정상 phase 사유(CrashLoopBackOff 등)
+}
+
+// K8s 노드 — condition(Ready/NotReady) + NotReady 사유. objectId 로 온톨로지 Node 와 상관.
+export interface K8sNode {
+  name: string;
+  condition: "Ready" | "NotReady" | "MemoryPressure" | "DiskPressure" | "PIDPressure";
+  reason?: string;           // NotReady 사유(KubeletNotReady 등)
+  objectId?: string;         // 상관된 온톨로지 Node id(인용 소스)
+}
+
+// K8s 이벤트 — reason·message·involvedObject(파드/노드). 파드 재시작 원인 접지.
+export interface K8sEvent {
+  reason: "OOMKilling" | "BackOff" | "CrashLoopBackOff" | "FailedScheduling" | "Unhealthy" | "NodeNotReady" | "Evicted";
+  message: string;           // 사람용 이벤트 메시지(escape 렌더)
+  involvedObject: string;    // 대상(pod/<name> 또는 node/<name>)
+  count: number;
+  objectId?: string;         // 상관된 온톨로지 객체 id(인용 소스)
+}
+
+// K8s 배포 rollout 상태 — desired/updated/available/unavailable + 조건. objectId 로 Endpoint 와 상관.
+export interface K8sDeployment {
+  name: string;
+  namespace: string;
+  desired: number;
+  updated: number;
+  available: number;
+  unavailable: number;
+  rollout: "complete" | "progressing" | "stalled"; // 파생 상태
+  objectId?: string;         // 상관된 온톨로지 Endpoint id(인용 소스)
+}
+
+// K8s 스냅샷(결정적 파생) — 온톨로지 객체/링크에서 상관 파생. 실연동 시 이 스키마를 kube-mcp 가 채운다.
+export interface K8sSnapshot {
+  pods: K8sPod[];
+  nodes: K8sNode[];
+  events: K8sEvent[];
+  deployments: K8sDeployment[];
+}
+
+// K8s 질의 tool 이름(read-only 4종) — 모델이 자동 실행. mutating 은 의도적으로 배제(two-tier).
+export type K8sToolName = "list_pods" | "list_nodes" | "get_events" | "describe_deployment";
+
+// K8s tool 실행 결과 — 접지한 리소스 이름 + 온톨로지 objectId 인용(RCA 인용의 출처).
+export interface K8sToolResult {
+  resourceRefs: string[];    // 이 tool 이 접지한 k8s 리소스(pod/<name>·node/<name>)
+  objectIds: string[];       // 상관된 온톨로지 객체 id(인용 소스)
+  summary: string;           // 사람용 한 줄 요약(escape 렌더)
+  found: boolean;
+}
+
+// ReAct 타임라인 한 스텝(K8s) — reasoning 또는 k8s tool 호출+결과.
+export type K8sStep =
+  | { kind: "reasoning"; text: string }
+  | { kind: "tool"; call: { tool: K8sToolName; args: Record<string, string> }; result: K8sToolResult };
+
+// K8s 답 한 건 — 파드/노드 진단 서술 + 근거(k8s 리소스 + 온톨로지 objectId 인용).
+export interface K8sFinding {
+  id: string;
+  title: string;
+  claim: string;             // 진단 서술(escape 렌더 — "추정")
+  severity: "info" | "warn" | "crit";
+  resourceRefs: string[];    // 근거 k8s 리소스
+  citations: string[];       // 근거 온톨로지 objectId(비면 상관 없음)
+}
+
+// K8s 질의 실행 1회 결과 — AgentRun 의 형제. mock=true + source 에 "mock" 로 정직 표기.
+export interface K8sQueryRun {
+  traceId: string;
+  intent: string;
+  steps: K8sStep[];
+  findings: K8sFinding[];
+  grounded: boolean;         // 답할 근거(파드/노드/이벤트)가 있으면 true
+  mock: boolean;             // true = mock 데이터(실 k8s 아님, direction 8 정직성)
+  fallbackNote?: string;     // grounded=false 시 안내(지어내지 않음)
+  audit: AgentAuditEntry[];
+  generated_at: string;
+  source: string;            // "kubernetes (mock)" | 실 kube-mcp
+}
+
 // ── Kinetic 감지→객체 귀속 파생 레이어(IMP-72) ──────────────────────────────
 // 감지된 이상을 온톨로지 객체(Model/GpuDevice/Node)에 결정적으로 귀속시켜, "어느 객체가 왜 아픈지 +
 // 지금 무엇을 눌러야 하는지" 를 4-슬롯 카드로 낸다. 순수 파생(api/detection.ts), 새 데이터 모델 발명 없음.
