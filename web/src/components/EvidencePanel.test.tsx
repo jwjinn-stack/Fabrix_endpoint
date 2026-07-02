@@ -78,6 +78,22 @@ describe("EvidencePanel — empty-state(환각 금지)", () => {
   });
 });
 
+describe("EvidencePanel — 정직성(mock 근거는 실 수집 아님)", () => {
+  it("mock 모드면 'mock · 실 수집 아님' 태그 표시(실 클러스터 수집으로 오인 금지)", () => {
+    // 테스트 env 는 VITE_MOCK !== "off" → isMockMode()=true.
+    render(<EvidencePanel objectId="gpu:g" objects={OBJECTS} links={LINKS} />);
+    expect(screen.getByText("mock · 실 수집 아님")).toBeInTheDocument();
+  });
+  it("empty-state 여도 mock 태그는 남는다(근거 0 도 실 수집 아님)", () => {
+    const okObjs: OntologyObject[] = [
+      { id: "gpu:ok", type: "GpuDevice", title: "정상 GPU", props: { util_perc: 0.4, mem_perc: 0.3, throttle: "제약 없음" }, status: "ok", revision: 1 },
+    ];
+    render(<EvidencePanel objectId="gpu:ok" objects={okObjs} links={[]} />);
+    expect(screen.getByText("mock · 실 수집 아님")).toBeInTheDocument();
+    expect(screen.getByText("수집된 이벤트 없음")).toBeInTheDocument();
+  });
+});
+
 describe("EvidencePanel — clickable citation(navigate/highlight)", () => {
   it("온톨로지 objectId 인용 클릭 → onCite(objectId) 호출", () => {
     const onCite = vi.fn();

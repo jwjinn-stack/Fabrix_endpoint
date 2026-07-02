@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import type { OntologyLink, OntologyObject } from "../api/types";
 import { buildIncidentEvidence, type EvidenceLine } from "../api/incidentEvidence";
 import { buildK8sSnapshot } from "../api/k8sSnapshot";
+import { isMockMode } from "../api/modelConnection";
 // IMP-100 — 근거를 세로 evidence timeline 시각언어로 렌더(단일 재사용 컴포넌트 + seam→마커 어댑터).
 import EvidenceTimeline, { markersFromEvidence } from "./EvidenceTimeline";
 
@@ -39,6 +40,9 @@ export interface EvidencePanelProps {
 
 export default function EvidencePanel({ objectId, objects, links, onCite, dense = false }: EvidencePanelProps) {
   const [expanded, setExpanded] = useState(false);
+  // 정직성(direction 8): mock/미연결이면 K8s 이벤트·파드·큐 신호가 실 클러스터 수집이 아니라
+  // 결정적 mock 파생임을 명시한다(실 수집으로 오인 금지). 실연동(kube-state-metrics/cAdvisor/kube-mcp)이면 미표기.
+  const mock = isMockMode();
 
   // IMP-99 seam 소비 — 순수·결정적. k8s 는 mock-first 데이터 계약(buildK8sSnapshot)에서 파생(신규 fetch 없음).
   const evidence = useMemo(() => {
@@ -60,11 +64,22 @@ export default function EvidencePanel({ objectId, objects, links, onCite, dense 
     <section className={`ev-panel ${dense ? "ev-dense" : "ov-section"}`} aria-label="근거">
       <div className="ev-head">
         <Header className={dense ? "ev-h-dense" : "ov-h"}>근거</Header>
-        {!evidence.empty && (
-          <span className={`ev-conf ev-conf-${evidence.confidence}`} title="상관 신호 ≥2 = 높음(detection 규약)">
-            신뢰도 {CONF_LABEL[evidence.confidence]}
-          </span>
-        )}
+        <span className="ev-head-tags">
+          {/* mock 폴백 표기 — K8s 이벤트·파드·큐 신호가 실 클러스터 수집이 아니라 결정적 mock 파생임을 명시(정직). */}
+          {mock && (
+            <span
+              className="ev-mock-tag"
+              title="mock 모드 — 이 근거(K8s 이벤트·파드·큐 신호)는 실제 클러스터에서 수집한 값이 아니라 결정적 mock 파생입니다. 실 수집은 VITE_MOCK=off + kube-state-metrics/cAdvisor/kube-mcp 연동으로."
+            >
+              mock · 실 수집 아님
+            </span>
+          )}
+          {!evidence.empty && (
+            <span className={`ev-conf ev-conf-${evidence.confidence}`} title="상관 신호 ≥2 = 높음(detection 규약)">
+              신뢰도 {CONF_LABEL[evidence.confidence]}
+            </span>
+          )}
+        </span>
       </div>
 
       {/* 추정 근본원인 요약(probableCauseText 재사용). 상관≠인과 hedging 은 seam 문구에 이미 포함. */}

@@ -2614,10 +2614,13 @@ tr.row-sel { background: var(--primary-weak) !important; }
 
 /* ── 근거(Evidence) 패널 — IMP-93. 채팅 없이 신호→추정원인→영향 접지(ObjectView + COP hop 공유). ── */
 .ev-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.ev-head-tags { display: inline-flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; justify-content: flex-end; }
 .ev-h-dense { font-size: var(--fs-xs); font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
 /* 신뢰도 배지 — 색-only 금지(텍스트 병기). high=스틸블루, med=중립. */
 .ev-conf { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-dim); background: var(--surface-2); }
 .ev-conf-high { color: var(--primary-strong); background: var(--primary-weak); border-color: var(--primary-weak); }
+/* mock 폴백 표기 — 실 수집 아님(무채색·정직). CausePanel 'rule-based (no model)' badge 와 동일 톤. */
+.ev-mock-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; border: 1px dashed var(--border); color: var(--text-faint); background: var(--surface-2); white-space: nowrap; }
 .ev-summary { font-size: var(--fs-sm); color: var(--text); margin: var(--sp-2) 0; line-height: 1.4; }
 .ev-empty { font-size: var(--fs-sm); color: var(--text-faint); margin: var(--sp-2) 0 0; font-style: italic; }
 .ev-lines { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
