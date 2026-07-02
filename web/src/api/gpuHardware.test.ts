@@ -2,7 +2,7 @@
 // (1) 순수 디코더/라벨 맵(clocksEventReasons 비트마스크·XID enum) — 경계·fallback.
 // (2) mock 계약: fetchGPU device.hw 존재·결정성, ontology GpuDevice props.hw + throttle 요약.
 // 프로젝트 ethos(백엔드 0개): installMockFetch 로 실제 라우터 경로를 통과시킨다.
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { installMockFetch, decodeClocksEventReasons, xidLabel } from "./mock";
 import { fetchGPU, fetchOntologyObjects, fetchOntologyObject } from "./client";
 import type { GpuHardware } from "./types";
@@ -85,12 +85,20 @@ describe("GET /gpu — device.hw 풀 필드(normal)", () => {
   });
 
   it("결정적(retry) — 같은 15s 버킷에서 두 번 호출 시 동일 hw", async () => {
-    const a = await fetchGPU();
-    const b = await fetchGPU();
-    // uuid 로 매칭해 hw 동일성 확인(같은 시각 버킷 → 같은 seed).
-    const byUuidB = new Map(b.devices.map((d) => [d.uuid, d.hw]));
-    for (const d of a.devices) {
-      expect(byUuidB.get(d.uuid)).toEqual(d.hw);
+    // 클록 고정: 두 호출이 실제 벽시계로 15s 버킷 경계를 넘으면 다른 seed → flaky. 경계 레이스 방지.
+    // Date 만 가짜로(mock 라우터의 setTimeout 지연은 실제 타이머로 유지해야 await 가 풀린다).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-02T00:00:00.000Z"));
+    try {
+      const a = await fetchGPU();
+      const b = await fetchGPU();
+      // uuid 로 매칭해 hw 동일성 확인(같은 시각 버킷 → 같은 seed).
+      const byUuidB = new Map(b.devices.map((d) => [d.uuid, d.hw]));
+      for (const d of a.devices) {
+        expect(byUuidB.get(d.uuid)).toEqual(d.hw);
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
@@ -121,13 +129,21 @@ describe("ontology GpuDevice — props.hw + throttle 요약(IMP-76)", () => {
   });
 
   it("단일 객체 조회에서도 hw 가 유지된다(결정성)", async () => {
-    const list = await fetchOntologyObjects("GpuDevice");
-    const id = list.objects[0].id;
-    const one = await fetchOntologyObject(id);
-    assertHwShape(one.props.hw as GpuHardware);
-    // 같은 객체 재조회 시 동일 hw.
-    const again = await fetchOntologyObject(id);
-    expect(again.props.hw).toEqual(one.props.hw);
+    // 클록 고정: 두 재조회가 15s 버킷 경계를 넘으면 hw seed 가 달라진다. 경계 레이스 방지.
+    // Date 만 가짜로(mock 라우터의 setTimeout 지연은 실제 타이머로 유지해야 await 가 풀린다).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-02T00:00:00.000Z"));
+    try {
+      const list = await fetchOntologyObjects("GpuDevice");
+      const id = list.objects[0].id;
+      const one = await fetchOntologyObject(id);
+      assertHwShape(one.props.hw as GpuHardware);
+      // 같은 객체 재조회 시 동일 hw.
+      const again = await fetchOntologyObject(id);
+      expect(again.props.hw).toEqual(one.props.hw);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("throttle 요약은 reason 문자열 또는 '제약 없음'", async () => {
