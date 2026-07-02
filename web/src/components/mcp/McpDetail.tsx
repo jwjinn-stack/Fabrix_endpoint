@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from "react";
 import type { McpTool, McpResource } from "../../api/client";
+import { isMockMode } from "../../api/modelConnection";
 import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY, type OntologyToolSpec } from "../../actions/ontologyTools";
 import Badge from "../Badge";
 import { Accordion, SchemaTable, CodeBlock, StatusDot, type DotState } from "./primitives";
@@ -106,6 +107,7 @@ export default function McpDetail({
   resources: McpResource[];
 }) {
   const [tab, setTab] = useState<Tab>("tools");
+  const mock = isMockMode();
   const rows = useMemo(registryRows, []);
   const liveNames = useMemo(() => new Set(tools.map((t) => t.name)), [tools]);
   const regNames = useMemo(() => new Set(rows.map((r) => r.spec.name)), [rows]);
@@ -125,6 +127,18 @@ export default function McpDetail({
 
   return (
     <div className="mcp-detail">
+      {/* 정직성(direction 8) — mock 모드에서는 "라이브" tools/list·resources/list 가 실제 MCP 서버가 아니라
+          mock 라우터가 되돌려준 응답이다. green "연결됨"·"라이브 연결됨" 이 실 연결로 읽히지 않도록 명시. */}
+      {mock && (
+        <div className="mcp-mock-banner state" role="note">
+          <Badge tone="amber" dot>MOCK</Badge>
+          <span>
+            현재 mock 모드입니다 — 아래 tools/list·resources/list 는 <b>실제 MCP 서버가 아니라 mock 라우터가 되돌려준 카탈로그</b>입니다.
+            “연결됨/라이브”는 mock 응답과 TS 레지스트리의 정합을 뜻하며, 실 MCP 연결이 아닙니다(VITE_MOCK=off 로 실서버 연결).
+          </span>
+        </div>
+      )}
+
       {/* 상단 탭 — Inspector 3분류 */}
       <div className="mcp-tabs" role="tablist" aria-label="MCP 카탈로그">
         {TABS.map((t) => (
@@ -153,7 +167,7 @@ export default function McpDetail({
             {liveOnly.length > 0 && (<>
               {" · "}<StatusDot state="info" /> 라이브 전용 {liveOnly.length}
             </>)}
-            <span className="mcp-drift-note">— TS 레지스트리(단일 출처) ↔ 라이브 tools/list drift</span>
+            <span className="mcp-drift-note">— TS 레지스트리(단일 출처) ↔ {mock ? "mock" : "라이브"} tools/list drift</span>
           </div>
 
           <div className="mcp-cards">

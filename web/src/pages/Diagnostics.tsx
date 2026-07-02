@@ -7,6 +7,7 @@ import { SkeletonRows } from "../components/Skeleton";
 import InspectDrawer from "../components/InspectDrawer";
 import InfoTip from "../components/InfoTip";
 import McpDetail from "../components/mcp/McpDetail";
+import { isMockMode } from "../api/modelConnection";
 import { humanizeError } from "../utils/errors";
 import { useCap } from "../capabilities";
 import { useToast } from "../toast";
@@ -382,7 +383,7 @@ function McpPanel({ enabled, onNavigate }: { enabled: boolean; onNavigate: (p: P
 
           {/* (b) LIVE 카탈로그 상세(IMP-86) — Tools/Resources/Prompts 3-탭 + tool별 스키마·예시·drift.
               레지스트리(단일 출처)에서 렌더 + 라이브 tools/list 와 diff 시각화. */}
-          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>tool · resource · prompt 상세 (라이브)</div>
+          <div className="diag-sec-h" style={{ marginTop: "var(--sp-3)" }}>tool · resource · prompt 상세 ({isMockMode() ? "mock 카탈로그" : "라이브"})</div>
           {loading ? (
             <SkeletonRows rows={4} cols={2} />
           ) : catErr ? (

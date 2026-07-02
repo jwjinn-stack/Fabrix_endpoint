@@ -3427,6 +3427,13 @@ tr.row-sel { background: var(--primary-weak) !important; }
 }
 .mcp-drift-note { color: var(--text-faint); }
 
+/* 정직성 — mock 모드 카탈로그 배너(실 MCP 연결 아님) */
+.mcp-mock-banner {
+  display: flex; align-items: flex-start; gap: var(--sp-2); flex-wrap: wrap;
+  font-size: var(--fs-xs); margin-bottom: var(--sp-3);
+}
+.mcp-mock-banner > span { flex: 1; min-width: 200px; }
+
 /* 상태 점 — 스틸블루/녹색/주의(네온 금지) */
 .mcp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .mcp-dot-ok { background: var(--green); }
