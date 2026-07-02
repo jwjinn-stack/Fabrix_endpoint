@@ -6,7 +6,7 @@
 //    deep-link + 브라우저 back 을 일관되게 만든다. 페이지 무관하게 obj 가 있으면 열린다.
 //  - 데이터: fetchOntologyObjects()(이웃 해석 인덱스) + fetchOntologyObject(id)(canonical) +
 //    fetchOntologyLinks(id)(관계). 전부 mock/실백엔드 동일 계약. 미존재 id → 빈 상태(throw 소비).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchOntologyLinks, fetchOntologyObject, fetchOntologyObjects } from "../api/client";
 import { usePolling } from "../utils/usePolling";
 import DataFreshness from "./DataFreshness";
@@ -150,6 +150,10 @@ export interface ObjectViewProps {
 export default function ObjectView({ objectId, onClose, onNavigateFull, stack: initialStack, onStackChange, relView = "list", onRelViewChange }: ObjectViewProps) {
   // back 스택 — 마지막이 현재 head. 상위가 준 objectId/stack 로 시드.
   const [stack, setStack] = useState<string[]>(() => (objectId ? [...(initialStack ?? []), objectId] : []));
+  // 최신 stack 을 동기 참조 — traverse/back 이 setStack 업데이터 밖에서 현재값을 읽어
+  // 부모 setState(onStackChange)를 렌더 단계에서 부르지 않도록 한다.
+  const stackRef = useRef(stack);
+  stackRef.current = stack;
 
   // 상위에서 objectId 가 바뀌면(다른 진입점에서 새로 열기) 스택 리셋.
   useEffect(() => {
@@ -282,25 +286,24 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   );
 
   // traverse — 이웃 push. URL 동기화.
+  //   onStackChange(부모 patch → setState)는 setStack 업데이터 밖에서 호출한다:
+  //   업데이터는 렌더 단계에서 실행될 수 있어, 그 안에서 부모 setState 를 부르면
+  //   "Cannot update a component while rendering a different component" 경고가 난다.
   const traverse = useCallback(
     (id: string) => {
-      setStack((prev) => {
-        const next = [...prev, id];
-        onStackChange?.(next.slice(0, -1), id);
-        return next;
-      });
+      setStack((prev) => [...prev, id]);
+      onStackChange?.(stackRef.current, id);
     },
     [onStackChange],
   );
 
   // back — pop(스택에 이전이 있을 때만).
   const back = useCallback(() => {
-    setStack((prev) => {
-      if (prev.length <= 1) return prev;
-      const next = prev.slice(0, -1);
-      onStackChange?.(next.slice(0, -1), next[next.length - 1]);
-      return next;
-    });
+    const prev = stackRef.current;
+    if (prev.length <= 1) return;
+    const next = prev.slice(0, -1);
+    setStack(next);
+    onStackChange?.(next.slice(0, -1), next[next.length - 1]);
   }, [onStackChange]);
 
   // Action 반영 후 canonical 갱신 → 현재 head 재로딩(리렌더). 폴링 규약의 reload 재사용(IMP-77).
