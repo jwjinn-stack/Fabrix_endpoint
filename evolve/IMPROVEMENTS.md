@@ -130,7 +130,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | grounded | 2026-07-02 |
 | IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | grounded | 2026-07-02 |
 | IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | grounded | 2026-07-02 |
-| IMP-86 | aesthetic | MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태(IMP-73 확장, Stripe식 2열·Inspector 3탭) | medium | M | high | grounded | 2026-07-02 |
+| IMP-86 | aesthetic | MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태(IMP-73 확장, Stripe식 2열·Inspector 3탭) | medium | M | high | done | 2026-07-02 |
 | IMP-87 | aesthetic | 고객사 화이트라벨 — 로고·제품명·favicon + 디자인 토큰 확장(색상 프리셋 위에, WCAG on-primary 대비 검증) | medium | M | high | grounded | 2026-07-02 |
 | IMP-88 | code | 기능 격리 회귀 테스트 — cap-off/라우트 미등록 시 나머지 앱 동작 보장(cap 매트릭스·mock 파생 크래시 가드) | high | S | medium | done | 2026-07-02 |
 | IMP-89 | ux | Endpoint↔app_id 라우팅을 온톨로지 관계로 노출(ObjectView·COP·목록 drill-through) | medium | M | medium | done | 2026-07-02 |
@@ -969,6 +969,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Deep-dive suggestion**: benchmark (전후 번들·FCP/TTI 측정). IMP-14 로딩 스켈레톤·IMP-81 mock 파생 정리와 정합.
 
 ### IMP-86 — MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태
+- **Status**: done (2026-07-02) — Diagnostics McpPanel 카탈로그를 전용 상세 뷰로 승격. Tools/Resources/Prompts 3-탭(Inspector 3분류), tool별 접이식 카드(snake_case + 연결상태 dot) + Stripe식 2열(좌=설명+SchemaTable[name·type·enum·description·required], 우=예시 JSON-RPC req/res 코드블록). ONTOLOGY+K8S 레지스트리 단일 출처 렌더 + 라이브 tools/list diff 시각화(연결됨/라이브전용/라이브미노출). Prompts 는 정직한 coming-soon. 신규 자체완결 primitive(CodeBlock 자체 JSON 토크나이저·Accordion·SchemaTable·StatusDot, 외부 CDN 없음). read-only(mutating Run 없음). Spec: specs/2026-07-02/IMP-86-mcp-detail-screen.md. 신규: web/src/components/mcp/{primitives,McpDetail,examples,McpDetail.test}. 테스트 725 pass(isolation+drift canary green), tsc+vite build green.
 - **Type**: aesthetic (sev=medium, effort=M)
 - **Area**: `web/src/pages/Diagnostics.tsx`, `web/src/api/client.ts`(mcpListTools/mcpListResources), `web/src/actions/ontologyTools.ts`
 - **Problem**: Diagnostics의 MCP 섹션(291~430행)은 tool/resource 이름을 dt/dd(name+description, 391~397행)로만 얇게 나열할 뿐, 각 tool의 입력 스키마·예시 호출·응답·호출 로그·prompts가 없다. Anthropic MCP Inspector / Postman급 상세가 없어 '매우 자세하게'(direction 5)·aesthetic 완성도 모두 미달 — Linear/Stripe API 콘솔 대비 원시적. 그런데 렌더 재료는 이미 있음: ONTOLOGY_TOOL_REGISTRY(actions/ontologyTools.ts:45~)가 tool마다 name/description/inputSchema(prop별 type·description·enum) 단일 출처 보유.
