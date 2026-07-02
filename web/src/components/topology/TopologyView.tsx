@@ -51,7 +51,16 @@ function edgeColor(errorRate?: number): string {
   return "var(--border-strong)";
 }
 
-const NODE_R: Record<TopologyNode["kind"], number> = { server: 16, service: 14, gpu: 10 };
+// IMP-84: kind union 이 온톨로지 타입까지 넓어져 exhaustive Record 대신 부분 맵 + fallback.
+// 운영 토폴로지 3종은 기존 반경 그대로(회귀 0), 온톨로지 kind 는 위계별 반경(model/endpoint 큼).
+const NODE_R_MAP: Partial<Record<TopologyNode["kind"], number>> = {
+  server: 16, service: 14, gpu: 10,
+  node: 15, model: 15, endpoint: 14, app: 13, trace: 12, incident: 13,
+};
+const NODE_R_DEFAULT = 13;
+function nodeR(kind: TopologyNode["kind"]): number {
+  return NODE_R_MAP[kind] ?? NODE_R_DEFAULT;
+}
 
 export interface TopologyViewProps {
   graph: TopologyGraph;
@@ -144,7 +153,7 @@ export default function TopologyView({ graph, interactive = true, onSelect, heig
       const dx = p.x - vx;
       const dy = p.y - vy;
       const d = dx * dx + dy * dy;
-      const r = NODE_R[n.kind] + 14; // 히트 반경(약간 여유)
+      const r = nodeR(n.kind) + 14; // 히트 반경(약간 여유)
       if (d < bestD && d <= r * r) { bestD = d; best = n.id; }
     }
     return best;
@@ -305,7 +314,7 @@ export default function TopologyView({ graph, interactive = true, onSelect, heig
           {graph.nodes.map((n) => {
             const p = posOf(n.id);
             if (!p) return null;
-            const r = NODE_R[n.kind];
+            const r = nodeR(n.kind);
             const isActive = n.id === activeId;
             const isSelected = n.id === selectedId;
             const isFocus = focusIdx != null && graph.nodes[focusIdx]?.id === n.id;

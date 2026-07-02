@@ -20,7 +20,9 @@ function nodeToObjectId(n: TopologyNode): string {
 }
 
 const REFRESH_MS = 15_000;
-const KIND_LABEL: Record<TopologyNode["kind"], string> = { server: "서버", service: "서비스", gpu: "GPU" };
+// IMP-84: kind union 이 온톨로지 타입까지 넓어져 부분 맵 + fallback(운영 토폴로지는 3종만 emit).
+const KIND_LABEL_MAP: Partial<Record<TopologyNode["kind"], string>> = { server: "서버", service: "서비스", gpu: "GPU" };
+const kindLabel = (k: TopologyNode["kind"]): string => KIND_LABEL_MAP[k] ?? k;
 const STATUS_LABEL: Record<TopologyNode["status"], string> = { ok: "정상", warn: "주의", crit: "위험" };
 
 // 병목 엣지 판정: 에러율 ≥ 5%(위험) 인 링크. 요약·표에 공유.
@@ -120,7 +122,7 @@ export default function Topology({ onNavigate }: { onNavigate?: NavFn }) {
             노드 <b>{nodes.length}</b>개 · 링크 <b>{edges.length}</b>개 —
             {" "}위험 노드 <b className={riskNodes > 0 ? "topo-summary-risk" : ""}>{riskNodes}</b>개 ·
             {" "}병목 엣지 <b className={bottleneckEdges > 0 ? "topo-summary-risk" : ""}>{bottleneckEdges}</b>개
-            {selectedNode && <> · 선택: <b>{selectedNode.label}</b> ({KIND_LABEL[selectedNode.kind]})</>}
+            {selectedNode && <> · 선택: <b>{selectedNode.label}</b> ({kindLabel(selectedNode.kind)})</>}
           </p>
 
           {isEmpty ? (
@@ -184,7 +186,7 @@ function TopologyTables({
               {nodes.map((n) => (
                 <tr key={n.id} className="clickable" onClick={() => onSelect(n.id)}>
                   <td>{n.label}</td>
-                  <td>{KIND_LABEL[n.kind]}</td>
+                  <td>{kindLabel(n.kind)}</td>
                   <td>
                     <span className={`tag tag-${n.status === "ok" ? "green" : n.status === "warn" ? "amber" : "red"}`}>
                       {STATUS_LABEL[n.status]}

@@ -128,7 +128,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-81 | code | 온톨로지 mock 매 호출 재구성 + 결정적 agent 루프의 상태·성능 리스크 정리(요청단위 스냅샷 메모이즈·writeback 병합·테스트) | low | M | medium | accepted | 2026-07-02 |
 | IMP-82 | ux | AI Agent 로컬 모델 연결 상태 칩 + Settings 모델 연결 카드(엔드포인트·모델·타임아웃, Dynamo :8000 프리셋, /health·/v1/models 프로브) | high | M | high | done | 2026-07-02 |
 | IMP-83 | ux | 온톨로지 무엇/왜 온보딩 — 과업→객체→조치 3단 개념(진행형 on-demand disclosure·용어 InfoTip·첫 at-risk 행 인라인 예시) | medium | S | high | grounded | 2026-07-02 |
-| IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | grounded | 2026-07-02 |
+| IMP-84 | ux | 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 — ObjectView Related에 TopologyView/layout.ts 재사용(목록 a11y 폴백 유지) | medium | M | high | done | 2026-07-02 |
 | IMP-85 | code | 페이지 지연 로딩(code-splitting) — 40+ 페이지 eager 번들을 React.lazy/Suspense 라우트 분할 + mock.ts 동적 import | medium | M | high | grounded | 2026-07-02 |
 | IMP-86 | aesthetic | MCP 연동 상세 화면 — tools/resources/prompts 스키마·예시·호출 로그·연결 상태(IMP-73 확장, Stripe식 2열·Inspector 3탭) | medium | M | high | done | 2026-07-02 |
 | IMP-87 | aesthetic | 고객사 화이트라벨 — 로고·제품명·favicon + 디자인 토큰 확장(색상 프리셋 위에, WCAG on-primary 대비 검증) | medium | M | high | grounded | 2026-07-02 |
@@ -951,6 +951,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Deep-dive suggestion**: 없음 (진행형 disclosure로 정정 반영, 구현 직행). IMP-68 스코어카드·IMP-4 InfoTip 접근성에 종속.
 
 ### IMP-84 — 객체 관계를 목록이 아닌 클릭형 토폴로지 그래프로 (TopologyView/layout.ts 재사용)
+- **Status**: done (2026-07-02) — ObjectView Related 에 "목록/그래프" 세그먼트 토글(기본=목록 a11y-safe, urlState `ovrel` 기억). 그래프 모드는 head 로드 결과(links+index)만 재사용해 head+1-hop(옵션 2-hop) 이웃을 {TopologyNode[],TopologyEdge[]}로 매핑 → layoutTopology()/TopologyView 렌더(신규 fetch·graph lib 0). 노드 클릭은 기존 traverse(id) 재사용(재중심+breadcrumb, 새 순회 상태 없음). 비자명 변경=layout kind 타이핑 확장: TopologyNode["kind"] union 을 온톨로지 kind(model/endpoint/node/trace/incident/app)까지 넓히고 layout KIND_ORDER 를 부분맵+kindRank() fallback 으로 전환(미지 kind 'service' 붕괴·tier tie-break 손실 방지), 소비처 NODE_R·KIND_LABEL 도 부분맵+fallback(운영 토폴로지 회귀 0). objectTypeToTopoKind 매핑으로 8개 타입 각기 다른 kind. 색·glyph 이중 인코딩·방향 화살표·edgeStatusColor(끝점 status)는 objectTypeVisual/IMP-64 단일 출처 재사용. 목록은 항상 도달·키보드 순회 폴백(WCAG complex-image). Spec: specs/2026-07-02/IMP-84-relationship-graph.md. 테스트 732 pass(isolation router.cap 6 + topology layout 7/TopologyView green, ObjectView +6 IMP-84 케이스), tsc+vite build green.
 - **Type**: ux (sev=medium, effort=M)
 - **Area**: `web/src/components/ObjectView.tsx`, `web/src/components/topology/TopologyView.tsx`, `web/src/components/topology/layout.ts`
 - **Problem**: ObjectView의 Related 섹션은 linkKind별 그룹 '목록(글)'로만 이웃을 보여준다. 이미 layoutTopology()·TopologyView(계층 DAG + 엣지)라는 완성된 그래프 렌더러가 components/topology에 있는데 객체 이웃 시각화에 재사용되지 않는다. 관계가 3~4단(Service→Endpoint→Model→GPU→Node)으로 뻗을 때 목록으로는 위상을 못 읽는다(direction 4).

@@ -1059,10 +1059,21 @@ export interface SessionDetail {
 // 임계 상태는 단일 출처(mockFactory.statusFromThresholds) — GPU tempColor/gpuStatus 와 통일.
 export type NodeStatus = "ok" | "warn" | "crit";
 
+// 토폴로지 그래프 노드 kind. 운영 토폴로지(IMP-45/47/48)는 server/service/gpu 3종만 쓰지만,
+// IMP-84 에서 ObjectView 관계 그래프가 layoutTopology()/TopologyView 를 재사용하면서 온톨로지
+// ObjectType(Model/Endpoint/Service/GpuDevice/Node/Trace/Incident/App)을 각기 다른 kind 로 실어보낸다.
+// union 을 넓히지 않으면 미지 kind 가 전부 'service' 로 붕괴해 layout tier tie-break(KIND_ORDER)를
+// 잃는다(IMP-84 유일한 비자명 변경). kind 는 layout 정렬·노드 반경 tie-break 힌트일 뿐 — 상태색·
+// 라벨은 objectTypeVisual 단일 출처가 담당한다. exhaustive Record 소비처(NODE_R·KIND_LABEL)는
+// 부분 맵 + fallback 조회로 넓힌 union 을 흡수한다(운영 토폴로지 회귀 0).
+export type TopologyNodeKind =
+  | "server" | "service" | "gpu" // 운영 토폴로지(IMP-45)
+  | "model" | "endpoint" | "node" | "trace" | "incident" | "app"; // 온톨로지 관계 그래프(IMP-84)
+
 // 토폴로지 그래프 노드. server=GPU 노드 호스트, service=엔드포인트/서빙, gpu=개별 GPU 디바이스.
 export interface TopologyNode {
   id: string;
-  kind: "server" | "service" | "gpu";
+  kind: TopologyNodeKind;
   status: NodeStatus;
   label: string;
   metrics?: Record<string, number>; // 노드 요약 지표(util·qps 등) — 화면 툴팁/셀 강조용

@@ -2,8 +2,10 @@
 // back pop, Action 게이팅(observe disabled+사유 / manage enabled), deep-link 복원, 미존재 id 빈 상태.
 // client 온톨로지 fetch 와 capabilities 를 모킹해 결정적으로 구동한다(백엔드 0개).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useState } from "react";
 import { render, screen, fireEvent, waitFor, cleanup, within, act } from "@testing-library/react";
-import ObjectView from "./ObjectView";
+import ObjectView, { objectTypeToTopoKind } from "./ObjectView";
+import type { ObjectType } from "../api/types";
 import { ToastProvider } from "../toast";
 import * as client from "../api/client";
 import type { ActionResult, OntologyObject, OntologyLink, OntologyObjectList, OntologyLinkList } from "../api/types";
@@ -54,6 +56,20 @@ function renderView(objectId: string | null = "model:foo") {
     </ToastProvider>,
   );
   return { onClose, ...utils };
+}
+
+// IMP-84 — relView(list/graph) 는 상위(urlState)가 제어하는 controlled prop. 토글 배선을 재현하기 위해
+// 로컬 state 로 relView 를 관리하는 래퍼(useObjectView 의 onRelViewChange 배선 미러).
+function StatefulRelView({ objectId = "model:foo" }: { objectId?: string }) {
+  const [relView, setRelView] = useState<"list" | "graph">("list");
+  return (
+    <ToastProvider>
+      <ObjectView objectId={objectId} onClose={() => {}} relView={relView} onRelViewChange={setRelView} />
+    </ToastProvider>
+  );
+}
+function renderRel(objectId = "model:foo") {
+  return render(<StatefulRelView objectId={objectId} />);
 }
 
 beforeEach(() => {
@@ -267,5 +283,84 @@ describe("ObjectView — IMP-77 신선도·폴링(열릴 때만)", () => {
     await act(async () => { vi.advanceTimersByTime(30_000); });
     expect(spy).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+// IMP-84 — Related 를 목록/그래프 토글. 기본=목록(a11y-safe). 그래프=클릭형 토폴로지(TopologyView 재사용),
+// 노드 클릭 → 기존 traverse 재사용. 목록은 항상 도달·키보드 순회 폴백(WCAG complex-image).
+describe("ObjectView — IMP-84 관계 그래프/목록 토글", () => {
+  it("kind 매핑: 8개 ObjectType 이 각기 다른 topology kind 로(‘service’ 붕괴 없음)", () => {
+    const types: ObjectType[] = ["Model", "Endpoint", "Service", "GpuDevice", "Node", "Trace", "Incident", "App"];
+    const kinds = types.map(objectTypeToTopoKind);
+    // 전부 유일 — 미지 kind 가 'service' 로 뭉치지 않는다(tier tie-break 보존).
+    expect(new Set(kinds).size).toBe(types.length);
+    expect(objectTypeToTopoKind("Model")).toBe("model");
+    expect(objectTypeToTopoKind("GpuDevice")).toBe("gpu");
+  });
+
+  it("default=목록: 마운트 시 linkKind 그룹 목록 렌더 + 토글 존재, 그래프 SVG 없음", async () => {
+    renderRel();
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    // 목록 그룹(실행 GPU) 렌더, 그래프 SVG(.topo-svg) 없음.
+    expect(screen.getByText("실행 GPU")).toBeInTheDocument();
+    expect(document.querySelector(".topo-svg")).toBeNull();
+    // 토글 두 버튼(목록/그래프) 존재.
+    expect(screen.getByRole("button", { name: "목록" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "그래프" })).toBeInTheDocument();
+  });
+
+  it("그래프 토글: 그래프 클릭 → TopologyView 렌더 + head 포함 1-hop 노드", async () => {
+    renderRel();
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "그래프" }));
+    await waitFor(() => expect(document.querySelector(".topo-svg")).not.toBeNull());
+    // head(model:foo) + 1-hop(endpoint:e1·gpu:g1·incident:i1) = 4 노드, head 링크 3개 엣지.
+    expect(document.querySelectorAll(".topo-node").length).toBe(4);
+    expect(document.querySelectorAll(".topo-edge").length).toBe(3);
+    // WCAG 이중 인코딩 — 상태 glyph 병기(색-only 아님).
+    expect(document.querySelectorAll(".topo-node-glyph").length).toBe(4);
+  });
+
+  it("그래프 노드 클릭 → 기존 traverse 재사용(재중심 + breadcrumb push)", async () => {
+    renderRel();
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "그래프" }));
+    await waitFor(() => expect(document.querySelector(".topo-svg")).not.toBeNull());
+    // gpu:g1 노드(label host/gpu0) 클릭 → traverse.
+    const gpuNode = Array.from(document.querySelectorAll(".topo-node")).find((g) =>
+      g.getAttribute("aria-label")?.startsWith("host/gpu0"),
+    )!;
+    fireEvent.click(gpuNode);
+    // 재중심 — 헤더가 GPU 로, breadcrumb 뒤로 버튼 등장.
+    await waitFor(() => expect(screen.getByText("GPU · rev 1")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /이전 객체로/ })).toBeInTheDocument();
+  });
+
+  it("목록 폴백 항상 도달: 그래프 → 목록 토글 복귀 + 이웃 버튼 포커스 가능(키보드)", async () => {
+    renderRel();
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "그래프" }));
+    await waitFor(() => expect(document.querySelector(".topo-svg")).not.toBeNull());
+    // 목록으로 복귀.
+    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    await waitFor(() => expect(document.querySelector(".topo-svg")).toBeNull());
+    const neighborBtn = screen.getByRole("button", { name: /host\/gpu0/ });
+    neighborBtn.focus();
+    expect(document.activeElement).toBe(neighborBtn);
+  });
+
+  it("2-hop expand: 그래프 모드에서만 depth 토글 노출, 2-hop 노드 집합 ≥ 1-hop", async () => {
+    renderRel();
+    await waitFor(() => expect(screen.getByText("host/gpu0")).toBeInTheDocument());
+    // 목록 모드에서는 depth 토글 없음.
+    expect(screen.queryByRole("button", { name: "1-hop" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "그래프" }));
+    await waitFor(() => expect(document.querySelector(".topo-svg")).not.toBeNull());
+    expect(screen.getByRole("button", { name: "1-hop" })).toBeInTheDocument();
+    const oneHopCount = document.querySelectorAll(".topo-node").length;
+    fireEvent.click(screen.getByRole("button", { name: "2-hop" }));
+    await waitFor(() =>
+      expect(document.querySelectorAll(".topo-node").length).toBeGreaterThanOrEqual(oneHopCount),
+    );
   });
 });

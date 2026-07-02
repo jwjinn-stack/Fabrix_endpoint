@@ -59,6 +59,8 @@ export const rangeField: UrlField<TimeRange> = enumField(RANGE_VALUES, "24h");
 export const objectViewSchema = {
   obj: strField(""),      // 현재 head object id(빈 문자열 = 닫힘)
   objstack: csvField([]), // 이전 스택(breadcrumb 복원)
+  // IMP-84 — Related 섹션 표현 모드. 기본=list(a11y-safe·complex-image 동등 목록). graph=클릭형 토폴로지.
+  ovrel: enumField(["list", "graph"] as const, "list"),
 } as const;
 
 // Investigate COP(IMP-58) deep-link 스키마 — entity=진입 Object id(문제 Endpoint/Incident).

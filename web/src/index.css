@@ -2545,6 +2545,24 @@ tr.row-sel { background: var(--primary-weak) !important; }
 .ov-section { margin-top: var(--sp-4); }
 .ov-h { font-size: var(--fs-sm); font-weight: 700; color: var(--text-dim); margin: 0 0 var(--sp-2); text-transform: uppercase; letter-spacing: .03em; }
 
+/* (3) Related — 목록/그래프 토글(IMP-84). 목록=a11y-safe 기본, 그래프=클릭형 토폴로지. */
+.ov-rel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.ov-rel-head .ov-h { margin: 0; }
+.ov-rel-toggle, .ov-rel-depth { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.ov-seg {
+  padding: 3px 10px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-dim);
+  background: var(--surface, #fff); border: none; cursor: pointer; border-right: 1px solid var(--border);
+  transition: background var(--ease), color var(--ease);
+}
+.ov-seg:last-child { border-right: none; }
+.ov-seg:hover { background: var(--surface-2); color: var(--text); }
+/* active = 스틸블루 강조(3:1 대비 확보). 색-only 아님 — aria-pressed 로도 상태 노출. */
+.ov-seg.active { background: var(--primary-weak); color: var(--primary-strong); }
+.ov-seg-sm { padding: 2px 8px; font-size: 10px; }
+.ov-rel-graph { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); padding: var(--sp-2); }
+.ov-rel-depth { margin-bottom: var(--sp-2); }
+.ov-rel-graph-hint { font-size: var(--fs-xs); margin: var(--sp-2) 0 0; }
+
 /* (3) Related — linkKind 그룹 + 클릭 가능한 이웃 */
 .ov-group { margin-bottom: var(--sp-3); }
 /* IMP-64: 그룹 헤더 = 방향 지시자(의미 화살표+관계 라벨) + count. */

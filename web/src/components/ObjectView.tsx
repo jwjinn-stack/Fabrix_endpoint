@@ -11,8 +11,9 @@ import { fetchOntologyLinks, fetchOntologyObject, fetchOntologyObjects } from ".
 import { usePolling } from "../utils/usePolling";
 import DataFreshness from "./DataFreshness";
 import PauseToggle from "./PauseToggle";
-import type { ActionAuditEntry, ActionOutcome, LinkKind, ObjectStatus, OntologyLink, OntologyObject } from "../api/types";
+import type { ActionAuditEntry, ActionOutcome, LinkKind, NodeStatus, ObjectStatus, ObjectType, OntologyLink, OntologyObject, TopologyEdge, TopologyGraph, TopologyNode, TopologyNodeKind } from "../api/types";
 import { typeVisual } from "../api/objectTypeVisual";
+import TopologyView, { worseStatus } from "./topology/TopologyView";
 import { ACTION_REGISTRY, getActionSpec } from "../actions/registry";
 import { objectViewSchema, useUrlState } from "../urlState";
 import SlidePanel, { DetailRow } from "./SlidePanel";
@@ -44,10 +45,12 @@ export function useObjectView() {
   const open = useCallback((id: string) => patch({ obj: id, objstack: [] }), [patch]);
   const onClose = useCallback(() => patch({ obj: "", objstack: [] }), [patch]);
   const onStackChange = useCallback((stack: string[], head: string) => patch({ obj: head, objstack: stack }), [patch]);
+  // IMP-84 — Related 표현 모드(list/graph)를 urlState 에 기억(deep-link·back 재현).
+  const onRelViewChange = useCallback((v: "list" | "graph") => patch({ ovrel: v }), [patch]);
   return {
     objectId,
     open,
-    props: { objectId, stack: state.objstack, onClose, onStackChange } as Pick<ObjectViewProps, "objectId" | "stack" | "onClose" | "onStackChange">,
+    props: { objectId, stack: state.objstack, relView: state.ovrel, onClose, onStackChange, onRelViewChange } as Pick<ObjectViewProps, "objectId" | "stack" | "relView" | "onClose" | "onStackChange" | "onRelViewChange">,
   };
 }
 
@@ -87,6 +90,22 @@ const KIND_ORDER: LinkKind[] = ["serves", "routes", "consumes", "routedTo", "run
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
 const STATUS_LABEL: Record<ObjectStatus, string> = { ok: "정상", warn: "주의", crit: "위험", unknown: "미측정" };
 
+// IMP-84 — 온톨로지 ObjectType → 토폴로지 노드 kind(layout tier tie-break 힌트). 8개 타입을 각기 다른
+// kind 로 매핑해 미지 kind 가 'service' 로 붕괴하지 않게 한다(색·라벨은 objectTypeVisual 단일 출처).
+const OBJTYPE_TOPO_KIND: Record<ObjectType, TopologyNodeKind> = {
+  Model: "model", Endpoint: "endpoint", Service: "service", GpuDevice: "gpu",
+  Node: "node", Trace: "trace", Incident: "incident", App: "app",
+};
+export function objectTypeToTopoKind(type: ObjectType): TopologyNodeKind {
+  return OBJTYPE_TOPO_KIND[type] ?? "service";
+}
+
+// IMP-84 — ObjectStatus(ok|warn|crit|unknown) → TopologyView NodeStatus(ok|warn|crit).
+// unknown(미배포/미측정)은 중립으로 'ok' 밴드에 둔다(색-only 아님; glyph 병기로 구분).
+function toNodeStatus(s: ObjectStatus): NodeStatus {
+  return s === "warn" || s === "crit" ? s : "ok";
+}
+
 // Action outcome → 감사 타임라인 배지 톤/라벨(IMP-65). ok=반영, conflict/denied=주의, error=위험.
 const OUTCOME_TONE: Record<ActionOutcome, BadgeTone> = { ok: "green", conflict: "amber", denied: "amber", error: "red" };
 const OUTCOME_LABEL: Record<ActionOutcome, string> = { ok: "반영됨", conflict: "충돌", denied: "거부", error: "실패" };
@@ -124,9 +143,11 @@ export interface ObjectViewProps {
   onNavigateFull?: () => void;      // '전체 페이지 열기' escape hatch(선택)
   stack?: string[];                 // breadcrumb 이전 스택(deep-link 복원용, 옵션)
   onStackChange?: (stack: string[], head: string) => void; // traverse 시 상위(URL) 동기화
+  relView?: "list" | "graph";       // IMP-84 — Related 표현 모드(기본 list). urlState 동기화용.
+  onRelViewChange?: (v: "list" | "graph") => void; // 토글 시 상위(URL) 동기화
 }
 
-export default function ObjectView({ objectId, onClose, onNavigateFull, stack: initialStack, onStackChange }: ObjectViewProps) {
+export default function ObjectView({ objectId, onClose, onNavigateFull, stack: initialStack, onStackChange, relView = "list", onRelViewChange }: ObjectViewProps) {
   // back 스택 — 마지막이 현재 head. 상위가 준 objectId/stack 로 시드.
   const [stack, setStack] = useState<string[]>(() => (objectId ? [...(initialStack ?? []), objectId] : []));
 
@@ -146,11 +167,14 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
   // IMP-71 — GpuDevice/Node 는 '요약'(기본, 큐레이션 KNOWNS)과 '전체 메트릭'(explorer, UNKNOWNS) 탭을 갖는다.
   // 요약이 DEFAULT — '전체 메트릭'은 명시적 탈출구(IMP-46 회귀 없음). head 바뀌면 요약으로 리셋.
   const [tab, setTab] = useState<"summary" | "metrics">("summary");
+  // IMP-84 — 관계 그래프 hop 깊이(1-hop 기본 = focus+context; 2-hop 은 명시적 expand로만). head 바뀌면 1로.
+  const [graphDepth, setGraphDepth] = useState<1 | 2>(1);
 
-  // head 변경 시 객체별 로컬 컨텍스트 리셋(감사 로그·탭) — 데이터 폴링과 독립.
+  // head 변경 시 객체별 로컬 컨텍스트 리셋(감사 로그·탭·그래프 깊이) — 데이터 폴링과 독립.
   useEffect(() => {
     setAuditLog([]); // 새 객체(traverse/재진입) — 감사 로그는 객체별 컨텍스트.
     setTab("summary"); // 새 객체는 큐레이션 요약이 기본(IMP-71 — explorer 는 명시적 탈출구).
+    setGraphDepth(1); // 새 객체는 1-hop(hairball 방지) — 2-hop 은 재중심 후 다시 명시적으로.
   }, [head]);
 
   // head 의 canonical + 관계 + 이웃 해석 인덱스 로드를 IMP-51 폴링 규약으로 승격(IMP-77).
@@ -200,6 +224,56 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
     }
     return KIND_ORDER.filter((k) => byKind.has(k)).map((k) => ({ kind: k, neighbors: byKind.get(k)! }));
   }, [links, index, head]);
+
+  // IMP-84 — Related '그래프' 모드용 {TopologyNode[], TopologyEdge[]}. head 로드 결과(links+index)만 재사용,
+  // 신규 fetch 없음. 노드 = head + 1-hop 이웃(depth=2면 이웃의 이웃까지 노드 집합 확장). 엣지 = head 링크 중
+  // 양끝이 표시 노드 집합에 있는 것(방향 from→to 보존). kind 는 objectTypeToTopoKind(붕괴 없음), 상태색은
+  // objectTypeVisual/status 단일 출처. 결정적: neighbors 정렬 + layoutTopology 순수.
+  const relGraph = useMemo<TopologyGraph | null>(() => {
+    if (!head) return null;
+    const headObj = index[head] ?? obj;
+    if (!headObj) return null;
+    // 1-hop 이웃 id(head 링크에서 반대편, index 에 실재하는 것만).
+    const oneHop = new Set<string>();
+    for (const l of links) {
+      const otherId = l.from === head ? l.to : l.from;
+      if (index[otherId]) oneHop.add(otherId);
+    }
+    // depth=2: 1-hop 이웃 각각의 index 기반 확장(현 mock 계약에선 head 링크만 로드되므로, 표시 노드 집합만
+    //  넓히고 엣지는 아래에서 head 링크로 유도한다). hairball 방지 위해 노드 집합만 확장.
+    const shownIds = new Set<string>([head, ...oneHop]);
+    if (graphDepth === 2) {
+      for (const l of links) {
+        // 이미 1-hop 인 이웃과 연결된 다른 링크 끝점도 표시(head 링크 범위 내 2-hop 근사).
+        if (oneHop.has(l.from) && index[l.to]) shownIds.add(l.to);
+        if (oneHop.has(l.to) && index[l.from]) shownIds.add(l.from);
+      }
+    }
+    const nodes: TopologyNode[] = [...shownIds]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((id) => {
+        const o = index[id] ?? (id === head ? headObj : null);
+        if (!o) return null;
+        return {
+          id: o.id,
+          kind: objectTypeToTopoKind(o.type),
+          status: toNodeStatus(o.status),
+          label: o.title,
+        } as TopologyNode;
+      })
+      .filter((n): n is TopologyNode => n != null);
+    // 엣지 — head 링크 중 양끝이 표시 노드 집합에 있는 것(방향 유지). dedup(from|to|kind).
+    const seen = new Set<string>();
+    const edges: TopologyEdge[] = [];
+    for (const l of links) {
+      if (!shownIds.has(l.from) || !shownIds.has(l.to)) continue;
+      const key = `${l.from}|${l.to}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ from: l.from, to: l.to });
+    }
+    return { generated_at: "", nodes, edges, source: "ontology-relations (IMP-84)" };
+  }, [head, obj, links, index, graphDepth]);
 
   // 대상 type 에 유효한 Action 목록(레지스트리 target 매칭). 게이팅은 ActionForm 이 담당.
   const actions = useMemo(
@@ -383,10 +457,68 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
               XID·throttle reason·NVLink·PCIe·ECC·clock 을 그룹+단위+뱃지로. 없으면(레거시/실백엔드) skip. */}
           {obj.type === "GpuDevice" && gpuHw && <GpuHardwareSection hw={gpuHw} />}
 
-          {/* (3) Related — linkKind 그룹. 이웃 클릭 → in-place traverse. */}
+          {/* (3) Related — 목록(linkKind 그룹, a11y-safe 기본) / 그래프(클릭형 토폴로지) 토글(IMP-84).
+              목록은 항상 도달·키보드 순회 가능한 접근성 폴백(WCAG complex-image). 그래프 노드 클릭은
+              기존 traverse(id) 재사용 — 새 순회 상태 발명 없음. */}
           <section className="ov-section" aria-label="관계">
-            <h4 className="ov-h">관계</h4>
-            {groups.length === 0 ? (
+            <div className="ov-rel-head">
+              <h4 className="ov-h">관계</h4>
+              <div className="ov-rel-toggle" role="group" aria-label="관계 표현 방식">
+                <button
+                  type="button"
+                  className={`ov-seg ${relView === "list" ? "active" : ""}`}
+                  aria-pressed={relView === "list"}
+                  onClick={() => onRelViewChange?.("list")}
+                >목록</button>
+                <button
+                  type="button"
+                  className={`ov-seg ${relView === "graph" ? "active" : ""}`}
+                  aria-pressed={relView === "graph"}
+                  onClick={() => onRelViewChange?.("graph")}
+                >그래프</button>
+              </div>
+            </div>
+
+            {/* GRAPH 모드 — head + 1-hop(옵션 2-hop) 토폴로지. 목록은 아래에서 항상 폴백으로 유지. */}
+            {relView === "graph" && (
+              relGraph && relGraph.nodes.length > 1 ? (
+                <div className="ov-rel-graph">
+                  <div className="ov-rel-depth" role="group" aria-label="관계 깊이(hop)">
+                    <button
+                      type="button"
+                      className={`ov-seg ov-seg-sm ${graphDepth === 1 ? "active" : ""}`}
+                      aria-pressed={graphDepth === 1}
+                      onClick={() => setGraphDepth(1)}
+                    >1-hop</button>
+                    <button
+                      type="button"
+                      className={`ov-seg ov-seg-sm ${graphDepth === 2 ? "active" : ""}`}
+                      aria-pressed={graphDepth === 2}
+                      onClick={() => setGraphDepth(2)}
+                    >2-hop</button>
+                  </div>
+                  <TopologyView
+                    graph={relGraph}
+                    interactive={false}
+                    height={320}
+                    selectedId={head}
+                    showMetrics={false}
+                    onSelect={(nodeId) => { if (nodeId !== head) traverse(nodeId); }}
+                    edgeStatusColor={(_e, from, to) => {
+                      const w = worseStatus(from, to);
+                      return w === "crit" ? "var(--red)" : w === "warn" ? "var(--amber)" : null;
+                    }}
+                  />
+                  <p className="ov-rel-graph-hint muted">노드를 클릭하면 그 객체로 이동합니다. 목록 보기로 동일 관계를 텍스트로 확인할 수 있습니다.</p>
+                </div>
+              ) : (
+                <div className="empty">그래프로 그릴 인접 객체가 없습니다.</div>
+              )
+            )}
+
+            {/* LIST 모드(기본·a11y 폴백) — linkKind 그룹. 이웃 클릭 → in-place traverse. */}
+            {relView === "list" && (
+            groups.length === 0 ? (
               <div className="empty">인접 객체가 없습니다.</div>
             ) : (
               groups.map((g) => {
@@ -427,7 +559,7 @@ export default function ObjectView({ objectId, onClose, onNavigateFull, stack: i
                   </div>
                 );
               })
-            )}
+            ))}
           </section>
 
           {/* (4) Actions — 대상 type 유효 verb. 게이팅(observe disabled+사유)은 ActionForm 담당. */}
