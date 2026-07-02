@@ -143,7 +143,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-96 | ux | 액션 인라인 설명 InfoTip — 무엇을·언제·상태전이·부수효과·되돌리기를 버튼 앞에서(WCAG 1.4.13 native title 대체, consequence-tiered, registry 단일출처) | medium | M | high | grounded | 2026-07-02 |
 | IMP-97 | ux | 인시던트 화면 '읽는 법' 온보딩 + 상태 InfoTip(triggered/NotReady/backpressure) — 정보폭탄 없이(default-collapsed·1회 dismiss·first-anomaly 타임라인은 drill-down 층) | medium | M | high | grounded | 2026-07-02 |
 | IMP-98 | compete | 복합 진단 read-only MCP tool — get_incident_context/get_pod_diagnostics로 원인 컨텍스트를 한 호출에(원자 tool 유지 하이브리드·buildIncidentEvidence seam 재사용) | medium | L | high | grounded | 2026-07-02 |
-| IMP-99 | code | 근거 파생 seam 통합 — objectId→상관 K8sPod/K8sEvent/큐신호→신호→추정원인→영향 구조체를 detection/investigate/ObjectView/MCP가 공유하는 단일 순수 함수 | medium | M | medium | proposed | 2026-07-02 |
+| IMP-99 | code | 근거 파생 seam 통합 — objectId→상관 K8sPod/K8sEvent/큐신호→신호→추정원인→영향 구조체를 detection/investigate/ObjectView/MCP가 공유하는 단일 순수 함수 | medium | M | medium | done | 2026-07-02 |
 | IMP-100 | aesthetic | 근거 타임라인 시각언어 — 신호→추정원인→영향을 세로 evidence timeline으로(first-anomaly부터 severity 색·경과시간·인과 연결선, Datadog Watchdog/incident.io 수준) | medium | M | medium | proposed | 2026-07-02 |
 | IMP-101 | platform | 파드 상태·재시작·waiting reason·OOM 근거 수집을 kube-state-metrics + cAdvisor로 표준화 + 스케줄러/큐 메트릭 매핑(IMP-79/74 확장, 실수집 spike park) | medium | L | medium | spike-needed | 2026-07-02 |
 
@@ -1100,6 +1100,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 - **Deep-dive suggestion**: 이미 grounded — /build-next 대상. IMP-99 seam을 선행 추출 후 이 tool들이 소비. IMP-73 레지스트리 파생·IMP-95 AI 원인설명과 동일 seam 공유. 실 kube-mcp는 IMP-79/91과 함께 spike park.
 
 ### IMP-99 — 근거 파생 seam 통합 — K8s 이벤트·파드·큐 신호를 detection/investigate가 공유하는 단일 순수 함수
+- **Status**: done (2026-07-02) — `web/src/api/incidentEvidence.ts` `buildIncidentEvidence(objectId, snapshot)` 신설(순수·결정적·직렬화). detection.ts 에서 `signalsForObject`/`probableCauseText`/`indexFirstAnomalies`(=investigate.buildRootCausePath 경유)를 export 해 seam 이 재사용(중복 파생 0). `attributeDetections` 는 first-anomaly 인덱싱을 `indexFirstAnomalies` 로 추출해 behavior-preserving(기존 detection/investigate/isolation 테스트 green). K8s pods/events/deployments 를 objectId 로 결정적 상관, empty-state "수집된 이벤트 없음"(환각 금지), confidence ≥2=high. 테스트: `web/src/api/incidentEvidence.test.ts`. IMP-93/98/95/100 이 이 seam 하나만 소비.
 - **Type**: code (sev=medium, effort=M)
 - **Area**: `web/src/api/detection.ts`(signalsForObject), `web/src/api/investigate.ts`(buildRootCausePath), `web/src/api/agent.ts`(toolGetEvents/toolListPods), `web/src/api/mock.ts`
 - **Problem**: 인시던트 근거 파생 로직이 여러 곳에 흩어질 위험이 크다: detection.ts가 KineticAlert 신호를, agent.ts가 K8s tool 결과를, investigate.ts가 hop 신호를 각각 만든다. IMP-93/94/95/98/100이 'objectId → 상관 K8sPod/K8sEvent/큐신호 → 사람용 근거 줄'을 여러 표면(ObjectView·COP·KineticStrip·MCP)에서 재현하면 규칙이 갈라져(임계·라벨·시각) explainability가 화면마다 어긋난다.

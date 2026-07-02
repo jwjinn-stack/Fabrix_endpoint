@@ -71,7 +71,8 @@ function throttleReasons(obj: OntologyObject): string[] {
 }
 
 // first-anomaly index(0=가장 오래됨, 23=최신) → "N분 전" 라벨(investigate.ts 와 동일 규약, 24분 창).
-function anomalyLabel(index: number): string {
+// IMP-99: buildIncidentEvidence 가 first-anomaly 인덱싱에 동일 라벨 규약을 재사용(단일 출처).
+export function anomalyLabel(index: number): string {
   if (index < 0) return "관측 시각 미상";
   const minsAgo = Math.round(((24 - 1 - index) * 60) / 60);
   return minsAgo <= 0 ? "방금" : `${minsAgo}분 전`;
@@ -79,7 +80,8 @@ function anomalyLabel(index: number): string {
 
 // ── 신호 수집(객체별) ────────────────────────────────────────────────────────
 // 한 객체에서 나온 모든 감지 신호를 모은다(아직 dedupe 전). 각 신호는 근거 슬롯 한 줄이 된다.
-function signalsForObject(
+// IMP-99: buildIncidentEvidence 가 이 함수를 재사용해 근거를 조립한다(중복 파생 금지 — 단일 출처).
+export function signalsForObject(
   obj: OntologyObject,
   firstAnomaly: { index: number; label: string } | null,
 ): DetectionSignal[] {
@@ -197,7 +199,8 @@ function signalsForObject(
 }
 
 // 추정 원인 경로 서술(슬롯3) — first-anomaly 시각 + 타입별 인과 요약. "추정" 명시(상관≠인과).
-function probableCauseText(obj: OntologyObject, firstAnomaly: { label: string } | null, signalCount: number): string {
+// IMP-99: buildIncidentEvidence 의 rootCauseSummary 가 이 함수를 재사용(단일 출처).
+export function probableCauseText(obj: OntologyObject, firstAnomaly: { label: string } | null, signalCount: number): string {
   const when = firstAnomaly ? `가장 이른 이상이 ${firstAnomaly.label} 관측됨` : "이상이 관측됨";
   const kind =
     obj.type === "GpuDevice" ? "GPU 하드웨어/포화가 상류 지연을 유발"
@@ -224,15 +227,14 @@ export interface AttributeOptions {
 //     - state transition: status crit/warn 인 객체만 승격(정상 ok/unknown 미승격).
 //     - sustained collapse: breachCount(신규=1, 유지=2)로 접어 카운트 배지.
 //     - adaptive baseline: TTFT p95 는 baseline 배수로 판정(signalsForObject 내부).
-export function attributeDetections(
+// first-anomaly 인덱싱(단일 출처) — 통증 우선 진입점(crit/warn Endpoint·Incident) 각각에서 원인 경로를
+// 만들고, hop 별 first-anomaly 중 가장 이른(작은 index) 관측을 객체별로 유지한다. buildRootCausePath 파생.
+// IMP-99: buildIncidentEvidence 가 이 함수를 재사용해 특정 객체의 first-anomaly 시각을 얻는다(동형 규약).
+export function indexFirstAnomalies(
   objects: OntologyObject[],
   links: OntologyLink[],
-  opts: AttributeOptions = {},
-): KineticAlert[] {
-  // first-anomaly 근거 — 가장 아픈 진입점에서 원인 경로를 한 번 만들고, hop 별 first-anomaly 를 인덱싱.
-  // (경로가 닿는 객체에만 시간축 근거가 붙는다 — 고립 이상 객체는 자체 신호로만 승격.)
+): Map<string, { index: number; label: string }> {
   const anomalyByObject = new Map<string, { index: number; label: string }>();
-  // 통증 우선 진입점 후보(crit/warn Endpoint 또는 Incident) 각각에서 경로를 만들어 first-anomaly 수집.
   const entries = objects
     .filter((o) => (o.type === "Endpoint" || o.type === "Incident") && o.status !== "ok")
     .sort((a, b) => (STATUS_RANK[a.status] - STATUS_RANK[b.status]) || (a.id < b.id ? -1 : 1));
@@ -247,6 +249,17 @@ export function attributeDetections(
       }
     }
   }
+  return anomalyByObject;
+}
+
+export function attributeDetections(
+  objects: OntologyObject[],
+  links: OntologyLink[],
+  opts: AttributeOptions = {},
+): KineticAlert[] {
+  // first-anomaly 근거 — 가장 아픈 진입점에서 원인 경로를 한 번 만들고, hop 별 first-anomaly 를 인덱싱.
+  // (경로가 닿는 객체에만 시간축 근거가 붙는다 — 고립 이상 객체는 자체 신호로만 승격.)
+  const anomalyByObject = indexFirstAnomalies(objects, links);
 
   const alerts: KineticAlert[] = [];
   for (const obj of objects) {
