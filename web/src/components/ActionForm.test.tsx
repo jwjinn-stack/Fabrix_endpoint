@@ -53,7 +53,8 @@ describe("ActionForm — capability 게이팅(observe + 사유)", () => {
   it("can()=false 면 submit disabled + 기계판독 사유 노출", () => {
     mockCan = (c) => c !== "models.write"; // models.write 만 거부(observe)
     renderForm();
-    const btn = screen.getByRole("button");
+    // IMP-96 — head 에 InfoTip 트리거 버튼이 추가되므로 submit(레이블) 버튼을 특정한다.
+    const btn = screen.getByRole("button", { name: /레플리카 조정|실행/ });
     expect(btn).toBeDisabled();
     expect(screen.getByText(/models\.write 권한이 없습니다/)).toBeInTheDocument();
   });
@@ -63,7 +64,7 @@ describe("ActionForm — bad-input", () => {
   it("required 미입력 제출 → FieldError + submitAction 호출 안 함", async () => {
     const spy = vi.spyOn(client, "submitAction");
     renderForm();
-    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("button", { name: /레플리카 조정|실행/ }));
     await waitFor(() => expect(screen.getByText(/필수 입력 항목입니다/)).toBeInTheDocument());
     expect(spy).not.toHaveBeenCalled();
   });

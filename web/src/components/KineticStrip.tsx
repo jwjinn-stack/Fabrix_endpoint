@@ -23,6 +23,7 @@ import Badge, { type BadgeTone } from "./Badge";
 import DataFreshness from "./DataFreshness";
 import PauseToggle from "./PauseToggle";
 import ActionForm from "./ActionForm";
+import { ActionInfoTip, ReversibleChip } from "./ActionInfoTip";
 import type { NavFn } from "../router";
 
 const STATUS_TONE: Record<ObjectStatus, BadgeTone> = { ok: "green", warn: "amber", crit: "red", unknown: "neutral" };
@@ -219,6 +220,13 @@ function KineticCard({
                 {spec.label} — 확인 후 실행 →
               </button>
             ) : null
+          )}
+          {/* IMP-96 — 실행 rung 앞 인라인 설명(접근가능 InfoTip, native title 대체) + 되돌리기 칩. registry 단일 출처. */}
+          {spec && alert.suggestedAction && (
+            <span className="kinetic-rung-explain">
+              <ActionInfoTip spec={spec} />
+              <ReversibleChip spec={spec} />
+            </span>
           )}
         </div>
 

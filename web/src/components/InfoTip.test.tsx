@@ -29,4 +29,20 @@ describe("InfoTip (접근 가능한 toggletip)", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByText("도움말 내용")).not.toBeInTheDocument();
   });
+
+  // IMP-96 — WCAG 1.4.13/2.1.1: hover+focus 트리거(네이티브 title 아님).
+  it("opens on keyboard focus (WCAG 2.1.1)", async () => {
+    const user = userEvent.setup();
+    render(<InfoTip>도움말 내용</InfoTip>);
+    await user.tab();
+    expect(screen.getByRole("button")).toHaveFocus();
+    expect(screen.getByText("도움말 내용")).toBeInTheDocument();
+  });
+
+  it("opens on hover (WCAG 1.4.13)", async () => {
+    const user = userEvent.setup();
+    render(<InfoTip>도움말 내용</InfoTip>);
+    await user.hover(screen.getByRole("button"));
+    expect(screen.getByText("도움말 내용")).toBeInTheDocument();
+  });
 });

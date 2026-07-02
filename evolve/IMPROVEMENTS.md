@@ -140,7 +140,7 @@ Grounded improvement candidates for FABRIX Endpoint (계층 대시보드 UX + MC
 | IMP-93 | ux | 객체·인시던트 상시 근거(Evidence) 패널 — K8s 이벤트·파드 진단을 채팅 없이 ObjectView/COP hop에 순수 파생으로 접지(신호→추정원인→영향, progressive disclosure) | high | M | high | done | 2026-07-02 |
 | IMP-94 | ux | backpressure 원인 신호 모델링 — 큐깊이·처리율·동시성·대기 p95를 결정적 파생 신호로(현재 알림 문자열 한 줄뿐), waiting>0≠인시던트·SLO 게이팅 | high | M | high | done | 2026-07-02 |
 | IMP-95 | compete | 온-객체 AI 원인 설명 — 인시던트 열면 근거 인용된 '무엇이/왜/영향/다음 조치' 자연어 자동 생성(runK8sAgent, HARD grounding·클릭형 인용·룰기반 폴백 badge) | high | L | high | grounded | 2026-07-02 |
-| IMP-96 | ux | 액션 인라인 설명 InfoTip — 무엇을·언제·상태전이·부수효과·되돌리기를 버튼 앞에서(WCAG 1.4.13 native title 대체, consequence-tiered, registry 단일출처) | medium | M | high | grounded | 2026-07-02 |
+| IMP-96 | ux | 액션 인라인 설명 InfoTip — 무엇을·언제·상태전이·부수효과·되돌리기를 버튼 앞에서(WCAG 1.4.13 native title 대체, consequence-tiered, registry 단일출처) | medium | M | high | done | 2026-07-02 |
 | IMP-97 | ux | 인시던트 화면 '읽는 법' 온보딩 + 상태 InfoTip(triggered/NotReady/backpressure) — 정보폭탄 없이(default-collapsed·1회 dismiss·first-anomaly 타임라인은 drill-down 층) | medium | M | high | grounded | 2026-07-02 |
 | IMP-98 | compete | 복합 진단 read-only MCP tool — get_incident_context/get_pod_diagnostics로 원인 컨텍스트를 한 호출에(원자 tool 유지 하이브리드·buildIncidentEvidence seam 재사용) | medium | L | high | grounded | 2026-07-02 |
 | IMP-99 | code | 근거 파생 seam 통합 — objectId→상관 K8sPod/K8sEvent/큐신호→신호→추정원인→영향 구조체를 detection/investigate/ObjectView/MCP가 공유하는 단일 순수 함수 | medium | M | medium | done | 2026-07-02 |

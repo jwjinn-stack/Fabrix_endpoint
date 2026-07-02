@@ -2442,6 +2442,18 @@ tr.row-sel { background: var(--primary-weak) !important; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
+/* IMP-96: 액션 인라인 설명(무엇을·언제·상태전이·부수효과·되돌리기) — InfoTip 버블 내부 레이아웃 */
+.action-tip { display: block; }
+.action-tip-title { display: block; margin-bottom: 4px; color: var(--text, #1f2530); }
+.action-tip-dl { margin: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 3px; }
+.action-tip-dl dt { font-weight: 600; color: var(--text-dim, #6b7280); white-space: nowrap; }
+.action-tip-dl dd { margin: 0; color: var(--text, #1f2530); }
+.action-tip-lite { display: flex; flex-direction: column; gap: 2px; }
+.action-tip-transition { color: var(--text, #1f2530); }
+.action-tip-when { color: var(--text-dim, #6b7280); }
+/* KineticStrip 실행 rung 옆 설명 묶음(InfoTip + 되돌리기 칩) */
+.kinetic-rung-explain { display: inline-flex; align-items: center; gap: 6px; }
+
 /* ── 의미론적 유틸 (IMP-19) ──
    일회성 인라인 style 의 raw-px/하드코딩 색을 토큰으로 수렴하기 위한 최소 유틸.
    상수-토큰 유틸(.mt-1 등)은 만들지 않는다(Pajamas deprecated). 반복 의도가

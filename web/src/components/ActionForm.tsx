@@ -19,6 +19,7 @@ import { useFieldValidation } from "../hooks/useFieldValidation";
 import { actionSeverity, evaluateSubmission, getActionSpec } from "../actions/registry";
 import FieldError from "./FieldError";
 import ConfirmDialog from "./ConfirmDialog";
+import { ActionInfoTip, ReversibleChip } from "./ActionInfoTip";
 import type { ActionResult, ObjectStatus } from "../api/types";
 
 // 수렴 상태 — provisional=낙관적 표시(회색), reconciled=canonical 확정, error=롤백됨.
@@ -123,6 +124,9 @@ export default function ActionForm({ actionType, target, targetStatus, revision,
     <form className="action-form" onSubmit={onSubmit} aria-label={`${spec.label} 실행`}>
       <div className="action-form-head">
         <strong>{spec.label}</strong>
+        {/* IMP-96 — 버튼 앞 인라인 설명(접근가능 InfoTip) + 되돌리기 칩. registry 단일 출처. */}
+        <ActionInfoTip spec={spec} />
+        <ReversibleChip spec={spec} />
         <span className="action-target" title={target}>{target}</span>
         {/* 낙관적/확정 상태 배지 — provisional 은 회색(미확정)+pending pulse, reconciled 은 확정 톤.
             IMP-65: provisional 국면에 pulse dot(reduce-motion 정지). 색-only 금지 — 텍스트 병기 유지. */}
