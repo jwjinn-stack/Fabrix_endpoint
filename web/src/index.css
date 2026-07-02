@@ -3303,7 +3303,7 @@ tr.row-sel { background: var(--primary-weak) !important; }
   padding: 1px 6px; border-radius: 999px; color: var(--text-dim);
   background: var(--surface-2); border: 1px solid var(--border);
 }
-.kinetic-sig-kind.kind-throttle, .kinetic-sig-kind.kind-saturation { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
+.kinetic-sig-kind.kind-throttle, .kinetic-sig-kind.kind-saturation, .kinetic-sig-kind.kind-backpressure { color: var(--amber); background: var(--amber-weak); border-color: var(--amber-border); }
 .kinetic-sig-kind.kind-alertrule { color: var(--red); background: var(--red-weak); border-color: var(--red-border); }
 .kinetic-sig-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .kinetic-sig-label { font-size: var(--fs-sm); font-weight: 600; color: var(--text); }

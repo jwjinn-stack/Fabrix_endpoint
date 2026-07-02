@@ -36,6 +36,7 @@ const SIGNAL_KIND_LABEL: Record<DetectionSignal["kind"], string> = {
   throttle: "하드웨어",
   idleAlloc: "유휴 갭",
   saturation: "포화",
+  backpressure: "큐 적체",
   firstAnomaly: "시간축",
 };
 

@@ -215,3 +215,34 @@ describe("KineticStrip — IMP-77 신선도·폴링 정합", () => {
     vi.useRealTimers();
   });
 });
+
+// IMP-94 — backpressure Incident 카드가 큐 신호(큐 적체)를 4-슬롯에 렌더하는지.
+describe("KineticStrip — backpressure 카드(IMP-94)", () => {
+  const BP: KineticAlert = {
+    objectId: "incident:inc_seed_q", title: "대기 큐 적체 — 스케줄러 backpressure",
+    objectType: "Incident", status: "warn",
+    signals: [
+      { kind: "backpressure", label: "대기 큐 깊이 상승", detail: "대기 12건 (추이 0→2→4→7→9→12) — vllm:num_requests_waiting(mock)", observedAt: "3분 전", citation: "incident:inc_seed_q" },
+      { kind: "backpressure", label: "유입 > 수용력", detail: "유입 28/s > 수용 16/s — 초과 12/s 적체(mock)", observedAt: "3분 전", citation: "incident:inc_seed_q" },
+      { kind: "backpressure", label: "대기 p95 SLO 초과", detail: "대기 p95 3s > SLO 2s · TTFT 동반 상승(mock)", observedAt: "3분 전", citation: "incident:inc_seed_q" },
+    ],
+    confidence: "high",
+    probableCause: "유입이 수용력·동시성 한도를 넘어 큐가 적체(유입>수용력·concurrency cap·대형 prefill 정황)하는 것으로 추정됩니다(신호 3건).",
+    hypothesis: "대기 큐 적체(incident:inc_seed_q)의 이상 근본원인을 관계 그래프로 확인해줘",
+    suggestedAction: { actionType: "ack", target: "incident:inc_seed_q" },
+    breachCount: 2,
+  };
+
+  it("큐 적체 신호 라벨 + 큐깊이/대기 p95 근거가 렌더된다", async () => {
+    vi.spyOn(client, "fetchKineticAlerts").mockResolvedValue(list([BP]));
+    renderStrip({ onNavigate: vi.fn() });
+    await waitFor(() => expect(screen.getByText("대기 큐 적체 — 스케줄러 backpressure")).toBeInTheDocument());
+    // 신호 계열 라벨(큐 적체) — backpressure kind.
+    expect(screen.getAllByText("큐 적체").length).toBeGreaterThan(0);
+    // 큐 깊이 + 대기 p95 근거.
+    expect(screen.getByText("대기 큐 깊이 상승")).toBeInTheDocument();
+    expect(screen.getByText("대기 p95 SLO 초과")).toBeInTheDocument();
+    // 추정 원인(슬롯3 probableCause) — 유입>수용력·concurrency cap·대형 prefill.
+    expect(screen.getByText(/유입>수용력·concurrency cap·대형 prefill/)).toBeInTheDocument();
+  });
+});

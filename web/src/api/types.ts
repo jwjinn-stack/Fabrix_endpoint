@@ -1494,7 +1494,25 @@ export type DetectionSignalKind =
   | "throttle"    // GPU clock-throttle reason 비트(thermal/reliability, IMP-76)
   | "idleAlloc"   // GPU 유휴 할당 갭(VRAM 점유·util 낮음)
   | "saturation"  // Node CPU/네트워크 포화
+  | "backpressure" // 스케줄러 큐 적체(큐 깊이·처리율·동시성·대기 p95, IMP-94)
   | "firstAnomaly"; // buildRootCausePath first-anomaly 시간축(추정 원인 시각)
+
+// ── 스케줄러/큐 backpressure 신호 (IMP-94) ──────────────────────────────────
+// backpressure 인시던트(scheduler:queue-backpressure)의 원인 근거. mock 은 waiting seed 의 고정 함수로
+// 결정적 파생(mockFactory.deriveSchedulerSignals) 후 Incident.props 에 실어 detection.signalsForObject 가 읽는다.
+// 실수집 스왑 대비 vLLM 표준 메트릭 시맨틱에 1:1 매핑(주석 참조) — 지금은 전부 mock(source:"mock").
+export interface SchedulerSignals {
+  queueDepthTrend: number[];   // 큐 깊이 추이(짧은 시계열, 끝=현재). ~ vllm:num_requests_waiting
+  admittedRate: number;        // 초당 수용(admit)된 요청 수(req/s). = 수용력 상한 근사
+  offeredRate: number;         // 초당 유입(offer)된 요청 수(req/s). admitted<offered = 유입>수용력
+  concurrencyLimit: number;    // 동시 실행 한도. ~ vLLM max_num_seqs
+  concurrencyInUse: number;    // 현재 동시 실행 수(inUse≥limit = concurrency 포화)
+  queueWaitP95: number;        // 대기 시간 p95(초). ~ vllm:request_queue_time_seconds
+  queueWaitSlo: number;        // 대기 시간 SLO(초) — 게이팅 임계(bare constant 아님, SLO 대비)
+  ttftRising: boolean;         // TTFT 동반 상승 여부(상관 게이팅용 — waiting seed 파생)
+  waiting: number;             // 원시 seed(재현·감사용). alarm 문자열(>8)과 정합
+  source: "mock";              // 데이터 출처 라벨(실수집 스왑 대비 — 지금은 mock)
+}
 
 // 근거(evidence) 슬롯 한 줄 — 어느 신호가 언제 임계 초과했는가 + 인용(objectId/시각).
 export interface DetectionSignal {

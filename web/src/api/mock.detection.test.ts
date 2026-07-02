@@ -14,9 +14,9 @@ describe("GET /ontology/detections — normal(감지→객체 귀속)", () => {
     expect(r.source).toContain("mock");
     expect(Array.isArray(r.alerts)).toBe(true);
     for (const a of r.alerts) {
-      // [1] 영향 객체 — id/type/status.
+      // [1] 영향 객체 — id/type/status. (IMP-94: backpressure Incident 도 승격 대상.)
       expect(a.objectId).toBeTruthy();
-      expect(["Model", "GpuDevice", "Node"]).toContain(a.objectType);
+      expect(["Model", "GpuDevice", "Node", "Incident"]).toContain(a.objectType);
       // 승격된 알림은 정상(ok) 상태가 아니어야 한다(state transition 억제).
       expect(a.status).not.toBe("ok");
       // [2] 근거 — 신호 ≥1, 각 신호 인용/시각.

@@ -87,6 +87,7 @@ function detectionImpact(kind: DetectionSignal["kind"], type?: ObjectType): stri
     case "throttle": return "GPU 스로틀로 상류 서빙 지연 유발(추정)";
     case "idleAlloc": return "VRAM 점유·미사용으로 스케줄 용량 낭비(추정)";
     case "saturation": return type === "Node" ? "노드 자원 포화가 위 워크로드로 번짐(추정)" : "포화로 처리량 저하(추정)";
+    case "backpressure": return "대기 SLA 초과 · TTFT 동반 상승으로 사용자 지연(추정)";
     case "firstAnomaly": return "원인 경로 상 가장 이른 이상 — 이후 홉으로 전파(추정)";
     default: return "관계 그래프로 전파(추정)";
   }
@@ -99,6 +100,7 @@ function detectionCause(kind: DetectionSignal["kind"], type?: ObjectType): strin
     case "throttle": return "하드웨어 클럭 스로틀(열/신뢰성) 정황(추정)";
     case "idleAlloc": return "할당됐으나 미사용(유휴 할당 갭) 정황(추정)";
     case "saturation": return type === "Node" ? "노드 CPU/네트워크 포화 정황(추정)" : "자원 포화 정황(추정)";
+    case "backpressure": return "유입>수용력 · concurrency cap · 대형 prefill 정황(추정)";
     case "firstAnomaly": return "가장 이른 이상 관측 시각(추정 원인 시간축)";
     default: return "관계 그래프 상 이상 전파(추정)";
   }
@@ -226,7 +228,7 @@ export function buildIncidentEvidence(objectId: string, snapshot: IncidentSnapsh
   //   firstAnomaly 를 최상단에 두어 "무엇이 먼저 무너졌나" 가 먼저 읽히게 한다(IMP-100 타임라인 앵커).
   const KIND_RANK: Record<EvidenceLine["kind"], number> = {
     firstAnomaly: 0, k8sEvent: 1, k8sPod: 2, k8sDeployment: 3,
-    alertrule: 4, throttle: 5, saturation: 6, idleAlloc: 7,
+    alertrule: 4, throttle: 5, saturation: 6, backpressure: 7, idleAlloc: 8,
   };
   lines.sort((a, b) => {
     const ra = KIND_RANK[a.kind] ?? 9, rb = KIND_RANK[b.kind] ?? 9;

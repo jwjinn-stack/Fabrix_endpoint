@@ -22,6 +22,7 @@ import type {
   ObjectMetricTree, MetricCategory, MetricRow, MetricType, MetricStatus,
   ActionAuditEntry, ActionOutcome, ActionResult, KineticAlertList,
   MetricSourceCoverage, MetricSourceCard, MetricSourceStatus, MetricSourceScrape, SignalCoverageCell,
+  SchedulerSignals,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
 import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
@@ -958,6 +959,40 @@ function severityToStatus(sev: string): ObjectStatus {
   return sev === "critical" ? "crit" : sev === "warning" ? "warn" : "ok";
 }
 
+// ── 스케줄러 backpressure 신호 결정적 파생 (IMP-94) ────────────────────────────
+// 기존 waiting seed 하나에서 큐 깊이 추이·처리율·동시성·대기 p95 를 **고정 함수**로 파생한다.
+// NO Date.now — 오직 waiting 의 순수 함수(입력 동일 → 출력 동일). detection.signalsForObject 가
+// Incident.props 에서 이 값을 읽어 backpressure 클러스터를 방출한다. 전부 mock(source:"mock").
+// vLLM 표준 시맨틱 매핑: 큐깊이~vllm:num_requests_waiting, 동시성~max_num_seqs, 대기~vllm:request_queue_time_seconds.
+export function deriveSchedulerSignals(waiting: number): SchedulerSignals {
+  const w = Math.max(0, Math.round(waiting));
+  // 큐 깊이 추이 — 6포인트, 낮은 baseline 에서 현재 waiting 으로 단조 수렴(적체가 "쌓여온" 모양). 결정적.
+  const trend = [0, 1, 2, 3, 4, 5].map((i) => Math.round((w * i) / 5));
+  // 동시성 한도 — mock 배치 상한(max_num_seqs 근사). inUse 는 한도까지 채워짐(포화) + 큐 대기 초과분.
+  const concurrencyLimit = 16;
+  const concurrencyInUse = concurrencyLimit + w; // 한도 포화(inUse≥limit) + 대기 초과분(적체가 슬롯을 못 얻음)
+  // 처리율(req/s) — admitted 는 수용력 상한(동시성/평균 서비스타임 근사), offered 는 admitted + 대기 유입.
+  const admittedRate = concurrencyLimit; // 16 req/s 수용력(mock)
+  const offeredRate = admittedRate + w;  // 유입 = 수용 + 적체분(유입>수용력의 직접 표현)
+  // 대기 p95(초) — 큐 깊이/수용력 ≈ 대기시간(리틀의 법칙 근사). SLO=2s(bare constant 아님 — SLO 임계).
+  const queueWaitP95 = +(w / Math.max(1, admittedRate) * 4).toFixed(2); // waiting=12 → 3.0s
+  const queueWaitSlo = 2.0;
+  // TTFT 동반 상승 — 대기 p95 가 SLO 를 넘고 큐가 지속(≥ alarm 임계 8)일 때만 true(상관 게이팅 seed).
+  const ttftRising = queueWaitP95 > queueWaitSlo && w >= 8;
+  return {
+    queueDepthTrend: trend,
+    admittedRate, offeredRate,
+    concurrencyLimit, concurrencyInUse,
+    queueWaitP95, queueWaitSlo,
+    ttftRising,
+    waiting: w,
+    source: "mock",
+  };
+}
+
+// backpressure 인시던트 seed waiting — 기존 alarm 문자열(waiting>8)과 정합하는 고정값(결정적, Date.now 아님).
+const BACKPRESSURE_WAITING_SEED = 12;
+
 // (IMP-90: PROCESS 레이어 Task / Workflow(assignee·priority·status·workflow 승격)는 제거 —
 //  관제 콘솔은 과업 배정이 아니라 알림+즉시대응(KineticStrip)으로 수렴. Incident 라이프사이클은 유지.)
 
@@ -1145,11 +1180,16 @@ function buildOntologyFresh(): OntologySnapshot {
 
   // ── Incident (INCIDENTS 승격) ── affects→{object}. dedup_key 로 영향 대상을 유추.
   for (const inc of INCIDENTS) {
-    add(`incident:${inc.id}`, "Incident", inc.title, severityToStatus(inc.severity), {
-      dedup_key: inc.dedup_key, severity: inc.severity, state: inc.state, count: inc.count,
-    });
     // dedup_key 형식 "endpoint:<name>:..." / "scheduler:..." / "guard:..." 에서 대상 추론.
     const parts = inc.dedup_key.split(":");
+    // backpressure 인시던트(scheduler:queue-backpressure) — waiting seed 로 큐/스케줄러 신호를 결정적 파생해 props 에 실음(IMP-94).
+    const schedulerProps = parts[0] === "scheduler"
+      ? { scheduler: deriveSchedulerSignals(BACKPRESSURE_WAITING_SEED) }
+      : {};
+    add(`incident:${inc.id}`, "Incident", inc.title, severityToStatus(inc.severity), {
+      dedup_key: inc.dedup_key, severity: inc.severity, state: inc.state, count: inc.count,
+      ...schedulerProps,
+    });
     if (parts[0] === "endpoint" && parts[1]) {
       const ep = ENDPOINTS.find((x) => x.name === parts[1]);
       if (ep) links.push({ from: `incident:${inc.id}`, to: `endpoint:${ep.name}`, linkKind: "affects" });
