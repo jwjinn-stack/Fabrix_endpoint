@@ -1,4 +1,497 @@
 {
+  "resourceContents": {
+    "glossary": {
+      "acked": {
+        "aliases": [
+          "acked",
+          "acknowledged",
+          "확인됨"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "triggered"
+        ],
+        "short": "누군가 이미 확인(ack)하고 담당으로 잡은 상태입니다.",
+        "term": "확인·배정됨",
+        "why": "중복 대응을 피하려면 배정자를 확인하고 진행 상황을 이어받으세요."
+      },
+      "backpressure": {
+        "aliases": [
+          "backpressure",
+          "back-pressure",
+          "역압",
+          "적체"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "queue-depth",
+          "concurrency",
+          "ttft",
+          "prefill"
+        ],
+        "short": "들어오는 요청이 처리 속도를 넘어서 대기 큐가 쌓이는 상태입니다.",
+        "term": "backpressure(유입>처리율)",
+        "why": "동시성 한도·대형 prefill 정황 — 대기 시간(TTFT)이 함께 올라 사용자 지연으로 이어집니다."
+      },
+      "blast": {
+        "aliases": [
+          "blast",
+          "blast radius",
+          "blast-radius",
+          "영향 확산"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "crit",
+          "nvlink"
+        ],
+        "short": "하나의 원인이 관계 그래프를 타고 여러 대상으로 번진 범위입니다.",
+        "term": "영향 확산(blast-radius)",
+        "why": "같은 노드/GPU를 공유하는 다른 서비스까지 영향받는지 함께 봐야 합니다."
+      },
+      "block-rate": {
+        "aliases": [
+          "block rate",
+          "block-rate",
+          "차단율"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "error-rate",
+          "throttle"
+        ],
+        "short": "가드레일·정책에 의해 차단된 요청의 비율입니다.",
+        "term": "차단율(block-rate)",
+        "why": "정상 요청이 과차단되는지, 위협이 실제 늘었는지 구분해야 합니다."
+      },
+      "concurrency": {
+        "aliases": [
+          "concurrency",
+          "동시성",
+          "in-flight"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "queue-depth",
+          "backpressure",
+          "throttle-reason"
+        ],
+        "short": "같은 시점에 동시에 처리 중인 요청 수입니다.",
+        "term": "동시성(concurrency)",
+        "why": "한도를 넘으면 대기 큐가 쌓임 — backpressure·throttle의 근원입니다."
+      },
+      "cordon": {
+        "aliases": [
+          "cordon",
+          "코든",
+          "스케줄 차단"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "drain",
+          "notready"
+        ],
+        "short": "노드에 새 파드가 배치되지 않도록 표시하는 조작입니다(기존 파드는 유지).",
+        "term": "cordon(스케줄 차단)",
+        "why": "문제 노드 격리의 첫 단계 — drain 전에 신규 유입만 먼저 막습니다."
+      },
+      "crit": {
+        "aliases": [
+          "crit",
+          "critical",
+          "위험"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "warn",
+          "blast"
+        ],
+        "short": "값이 위험 임계선을 넘어 사용자 영향이 진행 중일 가능성이 큽니다.",
+        "term": "위험(crit)",
+        "why": "가장 우선 대응 대상 — 근거(신호→추정원인→영향)를 확인하고 조치하세요."
+      },
+      "decode": {
+        "aliases": [
+          "decode",
+          "generation",
+          "생성"
+        ],
+        "category": "latency",
+        "relatedKeys": [
+          "prefill",
+          "concurrency"
+        ],
+        "short": "prefill 이후 토큰을 하나씩 이어서 생성하는 단계입니다.",
+        "term": "decode(토큰 생성 단계)",
+        "why": "출력 길이·동시성에 비례해 처리량을 결정 — 토큰당 지연을 봅니다."
+      },
+      "drain": {
+        "aliases": [
+          "drain",
+          "드레인",
+          "파드 축출"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "cordon",
+          "replica"
+        ],
+        "short": "노드의 기존 파드를 안전하게 다른 노드로 옮기는 조작입니다.",
+        "term": "drain(파드 축출)",
+        "why": "cordon 이후 문제 노드를 완전히 비울 때 사용 — 서비스 중단 최소화가 관건입니다."
+      },
+      "ecc": {
+        "aliases": [
+          "ecc",
+          "ecc error",
+          "error correcting code"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "xid"
+        ],
+        "short": "GPU 메모리의 비트 오류를 감지·정정하는 기능입니다.",
+        "term": "ECC(오류 정정 메모리)",
+        "why": "정정불가(uncorrectable) 오류가 쌓이면 XID·파드 크래시로 이어집니다."
+      },
+      "error-rate": {
+        "aliases": [
+          "error rate",
+          "error-rate",
+          "에러율",
+          "실패율"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "block-rate",
+          "slo"
+        ],
+        "short": "전체 요청 대비 실패(5xx 등) 요청의 비율입니다.",
+        "term": "에러율(error-rate)",
+        "why": "SLO 위반의 직접 신호 — 급등 시 배포·의존성·자원을 함께 살핍니다."
+      },
+      "notready": {
+        "aliases": [
+          "notready",
+          "not ready",
+          "미기동"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "replica",
+          "cordon"
+        ],
+        "short": "쿠버네티스 파드가 아직 준비(Ready)되지 않아 요청을 받지 못하는 상태입니다.",
+        "term": "파드 미기동(NotReady)",
+        "why": "기동 실패·크래시 루프·자원 부족 정황 — 가용 레플리카가 줄어 처리량이 떨어집니다."
+      },
+      "nvlink": {
+        "aliases": [
+          "nvlink",
+          "nv-link",
+          "nvlink link"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "pcie",
+          "blast"
+        ],
+        "short": "여러 GPU를 직접 잇는 고대역폭 인터커넥트입니다.",
+        "term": "NVLink(GPU 간 고속 링크)",
+        "why": "멀티-GPU 추론의 병목 지점 — 링크 저하 시 처리량이 급감합니다."
+      },
+      "p95": {
+        "aliases": [
+          "p95",
+          "95th percentile",
+          "95백분위"
+        ],
+        "category": "latency",
+        "relatedKeys": [
+          "p99",
+          "slo",
+          "ttft"
+        ],
+        "short": "요청 100건 중 95번째로 느린 값 — 평균이 숨기는 꼬리 지연을 봅니다.",
+        "term": "p95(95백분위 지연)",
+        "why": "SLO 판정 기준으로 흔히 쓰임 — 소수 사용자의 나쁜 경험을 잡아냅니다."
+      },
+      "p99": {
+        "aliases": [
+          "p99",
+          "99th percentile",
+          "99백분위"
+        ],
+        "category": "latency",
+        "relatedKeys": [
+          "p95",
+          "slo"
+        ],
+        "short": "요청 100건 중 99번째로 느린 값 — 극단 꼬리 지연을 봅니다.",
+        "term": "p99(99백분위 지연)",
+        "why": "p95는 정상이어도 p99가 튀면 특정 조건(대형 요청·자원 경합) 정황입니다."
+      },
+      "pcie": {
+        "aliases": [
+          "pcie",
+          "pci-e",
+          "pci express"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "nvlink"
+        ],
+        "short": "CPU/메모리와 GPU를 잇는 시스템 버스입니다.",
+        "term": "PCIe(호스트-장치 버스)",
+        "why": "대역폭 저하·다운그레이드 시 데이터 전송 지연 — 처리량 병목이 됩니다."
+      },
+      "prefill": {
+        "aliases": [
+          "prefill",
+          "pre-fill",
+          "입력 처리"
+        ],
+        "category": "latency",
+        "relatedKeys": [
+          "decode",
+          "ttft"
+        ],
+        "short": "모델이 입력 프롬프트 전체를 한 번에 읽어 KV 캐시를 채우는 단계입니다.",
+        "term": "prefill(입력 처리 단계)",
+        "why": "긴 입력일수록 오래 걸려 TTFT를 좌우 — 첫 토큰 지연의 주 원인입니다."
+      },
+      "qps": {
+        "aliases": [
+          "qps",
+          "queries per second",
+          "rps",
+          "초당 요청"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "concurrency",
+          "backpressure"
+        ],
+        "short": "초당 처리되는 요청 건수 — 트래픽 규모의 기본 지표입니다.",
+        "term": "QPS(초당 요청 수)",
+        "why": "급증 시 backpressure·throttle의 선행 신호 — 용량 대비로 봅니다."
+      },
+      "queue-depth": {
+        "aliases": [
+          "queue depth",
+          "queue-depth",
+          "대기 큐",
+          "큐 깊이",
+          "waiting"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "backpressure",
+          "concurrency",
+          "ttft"
+        ],
+        "short": "처리를 기다리며 대기 큐에 쌓인 요청 수입니다.",
+        "term": "큐 적체 깊이(queue-depth)",
+        "why": "깊어질수록 대기 시간(TTFT) 증가 — backpressure의 직접 척도입니다."
+      },
+      "replica": {
+        "aliases": [
+          "replica",
+          "replicas",
+          "레플리카"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "notready",
+          "cordon",
+          "drain"
+        ],
+        "short": "동일 모델을 서빙하는 파드 사본의 수입니다.",
+        "term": "replica(레플리카)",
+        "why": "가용 레플리카가 줄면 남은 파드에 부하가 몰려 지연·backpressure가 커집니다."
+      },
+      "slo": {
+        "aliases": [
+          "slo",
+          "service level objective",
+          "서비스 수준 목표"
+        ],
+        "category": "latency",
+        "relatedKeys": [
+          "p95",
+          "error-rate",
+          "warn"
+        ],
+        "short": "지연·에러율 등에 대해 지키기로 한 목표 임계선입니다.",
+        "term": "SLO(서비스 수준 목표)",
+        "why": "정상/이상 판정의 기준선 — 이 선을 넘으면 인시던트 후보가 됩니다."
+      },
+      "throttle": {
+        "aliases": [
+          "throttle",
+          "throttling",
+          "rate limit",
+          "요청 제한"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "throttle-reason",
+          "block-rate",
+          "qps"
+        ],
+        "short": "과부하를 막으려 요청을 의도적으로 지연·거부하는 조치입니다.",
+        "term": "throttle(요청 제한)",
+        "why": "429/거부가 늘면 사용자 영향 — 왜 걸렸는지(reason)를 함께 봐야 합니다."
+      },
+      "throttle-reason": {
+        "aliases": [
+          "throttle reason",
+          "throttle-reason",
+          "제한 사유"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "throttle",
+          "backpressure",
+          "concurrency"
+        ],
+        "short": "요청이 제한된 이유(동시성 한도·쿼터·backpressure 등)입니다.",
+        "term": "throttle 사유",
+        "why": "사유별로 대응이 다름 — 쿼터면 증설, backpressure면 부하 완화입니다."
+      },
+      "token-cost": {
+        "aliases": [
+          "token cost",
+          "token-cost",
+          "토큰비용",
+          "토큰 비용"
+        ],
+        "category": "traffic",
+        "relatedKeys": [
+          "qps",
+          "prefill"
+        ],
+        "short": "처리한 입력·출력 토큰 수에 비례해 발생하는 비용입니다.",
+        "term": "토큰 비용(token-cost)",
+        "why": "트래픽·프롬프트 길이 급증 시 비용이 함께 뜀 — 예산·효율 판단에 씁니다."
+      },
+      "triggered": {
+        "aliases": [
+          "triggered",
+          "unacked",
+          "미확인"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "acked",
+          "crit"
+        ],
+        "short": "알림이 방금 울렸고 아직 아무도 확인(ack)하지 않은 상태입니다.",
+        "term": "발생·미확인",
+        "why": "가장 먼저 손봐야 할 후보 — 확인·배정으로 담당자를 지정하세요."
+      },
+      "ttft": {
+        "aliases": [
+          "ttft",
+          "time to first token",
+          "첫 토큰"
+        ],
+        "category": "latency",
+        "relatedKeys": [
+          "prefill",
+          "backpressure",
+          "p95"
+        ],
+        "short": "요청을 보낸 뒤 첫 응답 토큰이 나오기까지 걸린 시간입니다.",
+        "term": "TTFT(첫 토큰까지 시간)",
+        "why": "체감 응답성의 핵심 — prefill 지연·대기 큐가 길어지면 함께 올라갑니다."
+      },
+      "warn": {
+        "aliases": [
+          "warn",
+          "warning",
+          "주의"
+        ],
+        "category": "incident-status",
+        "relatedKeys": [
+          "crit",
+          "slo"
+        ],
+        "short": "값이 주의 임계선을 넘었습니다 — 아직 위험은 아니지만 추세를 지켜봐야 합니다.",
+        "term": "주의(warn)",
+        "why": "지금 원인을 좁혀 두면 위험(crit)으로 번지기 전에 막을 수 있습니다."
+      },
+      "xid": {
+        "aliases": [
+          "xid",
+          "xid error",
+          "gpu error code"
+        ],
+        "category": "gpu",
+        "relatedKeys": [
+          "ecc",
+          "nvlink"
+        ],
+        "short": "NVIDIA GPU가 커널에 보고하는 하드웨어/드라이버 오류 코드입니다.",
+        "term": "XID(GPU 오류 코드)",
+        "why": "특정 XID는 ECC·과열·재부팅 신호 — 파드 크래시의 근본 원인일 수 있습니다."
+      }
+    },
+    "widgets": {
+      "dashboard.gpu": {
+        "relatedTerms": [
+          "xid",
+          "nvlink",
+          "ecc",
+          "replica"
+        ],
+        "title": "GPU / MIG",
+        "whatItShows": "GPU 사용률·KV 캐시 점유·MIG 슬라이스 효율 — 자원이 얼마나 알차게 쓰이는지."
+      },
+      "dashboard.guardrail": {
+        "relatedTerms": [
+          "block-rate",
+          "error-rate"
+        ],
+        "title": "가드레일",
+        "whatItShows": "가드레일이 차단한 요청·PII·Jailbreak·flagged 건수(증적 기반) — 정책 개입 규모."
+      },
+      "dashboard.quality": {
+        "relatedTerms": [
+          "ttft",
+          "p95",
+          "prefill",
+          "decode"
+        ],
+        "title": "응답 품질",
+        "whatItShows": "첫 토큰까지 지연(TTFT p95)·토큰 간 지연(ITL)·KV/prefix 캐시 적중률 — 체감 응답성."
+      },
+      "dashboard.traffic": {
+        "relatedTerms": [
+          "qps",
+          "concurrency",
+          "queue-depth",
+          "backpressure"
+        ],
+        "title": "실시간 트래픽",
+        "whatItShows": "vLLM 엔진의 실행/대기 요청 수·초당 처리량(QPS)·성공률 — 지금 얼마나 들어오고 처리되는지."
+      }
+    }
+  },
+  "resourceTemplates": [
+    {
+      "description": "관측 도메인 용어의 정의(short)·왜 중요한가(why)·분류·연관 용어를 term(key 또는 alias)으로 조회한다(read-only, 정적 참조데이터). 미지 용어는 지어내지 않는다.",
+      "mimeType": "application/json",
+      "name": "용어 사전(glossary)",
+      "uriTemplate": "glossary://{term}"
+    },
+    {
+      "description": "대시보드 위젯/영역이 무엇을 보여주는지(whatItShows)·좋음나쁨 판정 근거(임계 참조)·연관 용어를 위젯 id 로 조회한다(read-only, 정적 참조데이터). 선언된 메타 없으면 지어내지 않는다.",
+      "mimeType": "application/json",
+      "name": "위젯 메타(widget)",
+      "uriTemplate": "widget://{id}"
+    }
+  ],
   "tools": [
     {
       "description": "Kubernetes 배포(Deployment)의 rollout 상태(desired/updated/available/unavailable·조건)를 조회한다(조회 전용, mock-first).",
@@ -122,6 +615,60 @@
         "type": "object"
       },
       "name": "get_pod_diagnostics"
+    },
+    {
+      "description": "read-only, no mutation. 현재 화면(route)에 마운트된 위젯 id·메타와 동적 컨텍스트(열린 객체 objectId·facet·선택 영역 selection)를 한 호출로 반환한다 — 어시스트가 '지금 이 화면에서' 답을 접지할 근거. 앱 전체 덤프가 아니라 그 화면에 실제 마운트된 위젯만 준다(정보폭탄 금지).",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "facet": {
+            "description": "활성 facet/서브뷰(선택)",
+            "type": "string"
+          },
+          "objectId": {
+            "description": "열린 온톨로지 객체 id(선택)",
+            "type": "string"
+          },
+          "route": {
+            "description": "현재 라우트(화면)",
+            "enum": [
+              "dashboard",
+              "ontology",
+              "usage",
+              "guard",
+              "traces",
+              "sessions",
+              "models",
+              "model-import",
+              "playground",
+              "eval",
+              "endpoints",
+              "gpu",
+              "nodes",
+              "network",
+              "topology",
+              "investigate",
+              "agent",
+              "keys",
+              "traffic",
+              "settings",
+              "credentials",
+              "diagnostics",
+              "metric-sources"
+            ],
+            "type": "string"
+          },
+          "selection": {
+            "description": "선택 영역/위젯 id(선택)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "route"
+        ],
+        "type": "object"
+      },
+      "name": "get_screen_context"
     },
     {
       "description": "Kubernetes 노드를 조회한다(condition·NotReady 사유). NotReady 노드를 찾는 데 쓴다(조회 전용, mock-first).",

@@ -70,6 +70,9 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 		resp.Result, resp.Error = s.mcpCallTool(r.Context(), req.Params)
 	case "resources/list":
 		resp.Result = map[string]any{"resources": mcpResources()}
+	case "resources/templates/list":
+		// IMP-106 — glossary://{term}·widget://{id} 어시스트 resource template(프론트 단일 출처 파생).
+		resp.Result = map[string]any{"resourceTemplates": assistResourceTemplateEntries()}
 	case "resources/read":
 		resp.Result, resp.Error = mcpReadResource(req.Params)
 	default:
@@ -237,6 +240,25 @@ func mcpReadResource(raw json.RawMessage) (any, *rpcErr) {
 		URI string `json:"uri"`
 	}
 	_ = json.Unmarshal(raw, &p)
+	// IMP-106 — 어시스트 resource template 해석(glossary://{term}·widget://{id}). read-only·정적 콘텐츠.
+	// 미지 term/id 는 지어내지 않고 명시적 not-found 페이로드를 텍스트로 돌려준다(환각 금지).
+	if strings.HasPrefix(p.URI, "glossary://") {
+		term := strings.TrimPrefix(p.URI, "glossary://")
+		if raw, ok := resolveGlossaryResource(term); ok {
+			return map[string]any{"contents": []map[string]any{{"uri": p.URI, "mimeType": "application/json", "text": string(raw)}}}, nil
+		}
+		notFound, _ := json.Marshal(map[string]any{"found": false, "message": "선언된 용어 없음"})
+		return map[string]any{"contents": []map[string]any{{"uri": p.URI, "mimeType": "application/json", "text": string(notFound)}}}, nil
+	}
+	if strings.HasPrefix(p.URI, "widget://") {
+		id := strings.TrimPrefix(p.URI, "widget://")
+		if raw, ok := resolveWidgetResource(id); ok {
+			return map[string]any{"contents": []map[string]any{{"uri": p.URI, "mimeType": "application/json", "text": string(raw)}}}, nil
+		}
+		notFound, _ := json.Marshal(map[string]any{"found": false, "message": "선언된 메타 없음"})
+		return map[string]any{"contents": []map[string]any{{"uri": p.URI, "mimeType": "application/json", "text": string(notFound)}}}, nil
+	}
+
 	var payload any
 	switch p.URI {
 	case "fabrix://metric-catalog":

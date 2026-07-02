@@ -41,6 +41,8 @@ func TestMCP_OntologyContract_ReadOnlyShape(t *testing.T) {
 		"list_pods": false, "list_nodes": false, "get_events": false, "describe_deployment": false,
 		// IMP-98 — 복합 진단 read-only tool(coarse-grained; buildIncidentEvidence seam 노출, mutating verb 없음).
 		"get_incident_context": false, "get_pod_diagnostics": false,
+		// IMP-106 — 어시스트 컨텍스트 read-only TOOL(동적 per-turn 상태; query verb, mutating 없음).
+		"get_screen_context": false,
 	}
 	for _, s := range specs {
 		if s.InputSchema == nil {
@@ -72,7 +74,7 @@ func TestMCP_ToolsList_IncludesOntology(t *testing.T) {
 	rec := postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":7,"method":"tools/list"}`)
 	body := rec.Body.String()
 	// aggregate + 온톨로지 read tool + K8s read tool(IMP-91) + 복합 진단 tool(IMP-98)이 모두 노출(합집합).
-	for _, name := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics", "list_pods", "list_nodes", "get_events", "describe_deployment", "get_incident_context", "get_pod_diagnostics"} {
+	for _, name := range []string{"groupby_metric", "query_objects", "traverse_links", "get_object", "get_object_metrics", "list_pods", "list_nodes", "get_events", "describe_deployment", "get_incident_context", "get_pod_diagnostics", "get_screen_context"} {
 		if !strings.Contains(body, `"`+name+`"`) {
 			t.Errorf("tools/list 에 %q 가 없음: %s", name, body)
 		}
@@ -93,5 +95,42 @@ func TestMCP_OntologySchemaResource(t *testing.T) {
 		if !strings.Contains(body, tok) {
 			t.Errorf("ontology/schema 리소스에 %q 가 없음: %s", tok, body)
 		}
+	}
+}
+
+// IMP-106 — 어시스트 resource template(glossary://·widget://)이 templates/list 에 노출·read 로 해석되는지.
+func TestMCP_AssistResourceTemplates(t *testing.T) {
+	// templates/list 에 glossary://·widget:// template.
+	rec := postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":10,"method":"resources/templates/list"}`)
+	body := rec.Body.String()
+	for _, tok := range []string{"glossary://{term}", "widget://{id}"} {
+		if !strings.Contains(body, tok) {
+			t.Errorf("resources/templates/list 에 %q 가 없음: %s", tok, body)
+		}
+	}
+
+	// glossary://ttft read → 정의 텍스트(key 해석).
+	rec = postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"glossary://ttft"}}`)
+	body = rec.Body.String()
+	if !strings.Contains(body, "TTFT") {
+		t.Errorf("glossary://ttft read 에 정의가 없음: %s", body)
+	}
+
+	// glossary alias 해석(대소문자 무시) — "p95" alias 등도 통과.
+	rec = postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":12,"method":"resources/read","params":{"uri":"glossary://95th percentile"}}`)
+	if !strings.Contains(rec.Body.String(), "p95") && !strings.Contains(rec.Body.String(), "95") {
+		t.Errorf("glossary alias 해석 실패: %s", rec.Body.String())
+	}
+
+	// widget://dashboard.gpu read → 메타.
+	rec = postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":13,"method":"resources/read","params":{"uri":"widget://dashboard.gpu"}}`)
+	if !strings.Contains(rec.Body.String(), "whatItShows") {
+		t.Errorf("widget://dashboard.gpu read 에 메타가 없음: %s", rec.Body.String())
+	}
+
+	// 미지 term → not-found(환각 금지), 에러 아님(명시 페이로드).
+	rec = postMCP(t, mcpHandlerCapOn(), `{"jsonrpc":"2.0","id":14,"method":"resources/read","params":{"uri":"glossary://없는용어xyz"}}`)
+	if !strings.Contains(rec.Body.String(), "선언된 용어 없음") {
+		t.Errorf("미지 glossary term 에 not-found 페이로드가 없음: %s", rec.Body.String())
 	}
 }

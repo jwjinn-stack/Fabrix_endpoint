@@ -25,7 +25,8 @@ import type {
   SchedulerSignals,
 } from "./types";
 import { ACTION_REGISTRY, STATE_TRANSITION, evaluateSubmission } from "../actions/registry";
-import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY } from "../actions/ontologyTools";
+import { ONTOLOGY_TOOL_REGISTRY, K8S_TOOL_REGISTRY, ASSIST_TOOL_REGISTRY, ASSIST_RESOURCE_TEMPLATES } from "../actions/ontologyTools";
+import { resolveAssistResource } from "../actions/assistContext";
 // 토폴로지·노드·네트워크 mock 팩토리(IMP-55) — seed/hash·임계 단일 출처 재사용.
 import { buildNetwork, buildNodeMetrics, buildTopology, statusFromThresholds } from "./mockFactory";
 // GPU 하드웨어 도메인 디코더/라벨(IMP-76) — buildOntology throttle 요약 등에서 값으로 사용.
@@ -2084,7 +2085,7 @@ async function route(method: string, path: string, q: URLSearchParams, body: Jso
     case "GET /usage/trend": return ok(genUsageTrend(parseRange(q)));
     case "GET /metrics/breakdown": return ok(genMetricsBreakdown(parseRange(q), q.get("dim") ?? "model"));
     case "GET /metrics/dimensions": return ok({ dimensions: METRIC_DIMENSIONS, metrics: METRIC_CATALOG });
-    case "POST /mcp": return ok(mcpRpc(body as { id?: unknown; method?: string }));
+    case "POST /mcp": return ok(mcpRpc(body as { id?: unknown; method?: string; params?: { uri?: string } }));
     case "GET /models": return ok({ generated_at: new Date().toISOString(), models: MODELS.map(modelInfo) } satisfies ModelCatalog);
     case "GET /models/metrics": return ok(genModelMetrics());
     case "GET /guard/audit": return ok(genGuardAudit(parseRange(q), q.get("decision") ?? undefined, q.get("type") ?? undefined));
@@ -2454,7 +2455,7 @@ const MCP_AGGREGATE_TOOLS = [
 // 패널이 계약을 그대로 노출한다. K8s tool 도 read-only(list/get/describe) — mutating 동사 없음(two-tier).
 const MCP_TOOLS = [
   ...MCP_AGGREGATE_TOOLS,
-  ...[...Object.values(ONTOLOGY_TOOL_REGISTRY), ...Object.values(K8S_TOOL_REGISTRY)]
+  ...[...Object.values(ONTOLOGY_TOOL_REGISTRY), ...Object.values(K8S_TOOL_REGISTRY), ...Object.values(ASSIST_TOOL_REGISTRY)]
     .slice()
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
@@ -2464,13 +2465,43 @@ const MCP_RESOURCES = [
   { uri: "fabrix://dimensions", name: "groupby 차원", description: "분해 가능한 차원과 Prometheus 라벨 매핑", mimeType: "application/json" },
   { uri: "fabrix://ontology/schema", name: "온톨로지 스키마", description: "Object/Link/Action 타입 카탈로그(§5.1·5.2·5.3)", mimeType: "application/json" },
 ];
-function mcpRpc(req: { id?: unknown; method?: string }): Json {
+// IMP-106 — 어시스트 resource template(glossary://·widget://). 아티팩트/레지스트리 단일 출처에서 파생
+// (수기 미러 금지) → Diagnostics 패널·어시스트가 mock 에서도 백엔드와 동일 목록/해석을 본다.
+const MCP_RESOURCE_TEMPLATES = ASSIST_RESOURCE_TEMPLATES.slice()
+  .sort((a, b) => (a.uriTemplate < b.uriTemplate ? -1 : a.uriTemplate > b.uriTemplate ? 1 : 0))
+  .map((t) => ({ uriTemplate: t.uriTemplate, name: t.name, description: t.description, mimeType: t.mimeType }));
+
+// resources/read 페이로드 — glossary://·widget:// 는 resolveAssistResource(순수·read-only) 로 해석.
+// 미지 term/id 는 지어내지 않고 not-found 텍스트(환각 금지). 사용자 입력 보간 없음(injection-safe).
+function mcpReadResourcePayload(uri: string): Json | null {
+  const parsed = resolveAssistResource(uri);
+  if (parsed.kind === "glossary") {
+    const text = parsed.payload.found
+      ? JSON.stringify(parsed.payload.term)
+      : JSON.stringify({ found: false, message: "선언된 용어 없음" });
+    return { contents: [{ uri, mimeType: "application/json", text }] };
+  }
+  if (parsed.kind === "widget") {
+    return { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(parsed.payload) }] };
+  }
+  return null; // 어시스트 스킴 아님 — 호출부가 기존 fabrix:// 리소스로 처리.
+}
+
+function mcpRpc(req: { id?: unknown; method?: string; params?: { uri?: string } }): Json {
   const base = { jsonrpc: "2.0", id: req.id ?? null };
   switch (req.method) {
     case "initialize":
       return { ...base, result: { protocolVersion: "2024-11-05", capabilities: { tools: {}, resources: {} }, serverInfo: { name: "fabrix-endpoint", version: "0.1.0" } } };
     case "tools/list": return { ...base, result: { tools: MCP_TOOLS } };
     case "resources/list": return { ...base, result: { resources: MCP_RESOURCES } };
+    case "resources/templates/list": return { ...base, result: { resourceTemplates: MCP_RESOURCE_TEMPLATES } };
+    case "resources/read": {
+      const uri = req.params?.uri ?? "";
+      const payload = mcpReadResourcePayload(uri);
+      if (payload) return { ...base, result: payload };
+      // 기존 fabrix:// 리소스(정적 카탈로그)는 목록만 mock — read 미지원 스킴은 명시 오류.
+      return { ...base, error: { code: -32602, message: `unknown resource: ${uri}` } };
+    }
     default: return { ...base, error: { code: -32601, message: `method not found: ${req.method ?? ""}` } };
   }
 }

@@ -144,15 +144,18 @@ export function fetchCapabilities(signal?: AbortSignal): Promise<Capabilities> {
 // UI(IMP-5)가 백엔드 mcp.go 와 드리프트하지 않도록 tool/resource 카탈로그를 LIVE 로 받는다.
 export interface McpTool { name: string; description?: string; inputSchema?: unknown }
 export interface McpResource { uri: string; name?: string; description?: string; mimeType?: string }
+// IMP-106 — 어시스트 resource template(glossary://{term}·widget://{id}).
+export interface McpResourceTemplate { uriTemplate: string; name?: string; description?: string; mimeType?: string }
+export interface McpResourceContent { uri: string; mimeType?: string; text?: string }
 
 interface RpcResponse<T> { jsonrpc?: string; id?: unknown; result?: T; error?: { code: number; message: string } }
 
 // JSON-RPC 한 번 호출. cap-off(라우트 미등록 → 404/405)·네트워크·rpc 오류는 throw → 호출부 fallback.
-async function mcpRpc<T>(method: string, signal?: AbortSignal): Promise<T> {
+async function mcpRpc<T>(method: string, signal?: AbortSignal, params: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch(apiPath(`/mcp`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: {} }),
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     signal,
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
@@ -170,6 +173,18 @@ export async function mcpListTools(signal?: AbortSignal): Promise<McpTool[]> {
 export async function mcpListResources(signal?: AbortSignal): Promise<McpResource[]> {
   const r = await mcpRpc<{ resources?: McpResource[] }>("resources/list", signal);
   return r.resources ?? [];
+}
+
+// IMP-106 — 어시스트 resource template 목록(glossary://·widget://). read-only, cap-off 시 throw → fallback.
+export async function mcpListResourceTemplates(signal?: AbortSignal): Promise<McpResourceTemplate[]> {
+  const r = await mcpRpc<{ resourceTemplates?: McpResourceTemplate[] }>("resources/templates/list", signal);
+  return r.resourceTemplates ?? [];
+}
+
+// IMP-106 — resource template 해석(glossary://{term}·widget://{id}). read-only 조회 — 부작용 없음.
+export async function mcpReadResource(uri: string, signal?: AbortSignal): Promise<McpResourceContent[]> {
+  const r = await mcpRpc<{ contents?: McpResourceContent[] }>("resources/read", signal, { uri });
+  return r.contents ?? [];
 }
 
 // 외부 의존성 능동 프로브 결과(연동 상태). 실사이트 연동·디버깅용.

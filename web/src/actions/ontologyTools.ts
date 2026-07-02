@@ -16,6 +16,28 @@
 // (additionalProperties:false = 여분 필드 거부, enum = 허용값 밖 거부) 핸들러 진입 전에 검증한다.
 
 import { OBJECT_TYPES, LINK_KINDS } from "../api/ontologySchema";
+import { GLOSSARY, type GlossaryTerm } from "../api/glossary";
+import { WIDGET_META } from "../components/widgetMeta";
+import type { Page } from "../components/Layout";
+
+// ── 어시스트 컨텍스트 seam(IMP-106): route enum 은 Page union 에서 파생(하드코딩 금지) ──────────
+// get_screen_context 의 route 인자 허용값. Page(Layout.tsx)와 어긋나면 타입이 잡는다.
+// (Page 는 문자열 리터럴 union — 런타임 배열이 없으므로 여기 한 곳에서만 열거하고, 아래
+//  assertRouteEnumCoversPages 가 Page 값이 이 배열에 다 담겼는지 컴파일 타임에 강제한다.)
+export const SCREEN_ROUTES: Page[] = [
+  "dashboard", "ontology", "usage", "guard", "traces", "sessions", "models", "model-import",
+  "playground", "eval", "endpoints", "gpu", "nodes", "network", "topology", "investigate",
+  "agent", "keys", "traffic", "settings", "credentials", "diagnostics", "metric-sources",
+];
+// 컴파일 타임 가드 — Page 에 값이 추가되면 이 배열이 빠짐없이 담아야 통과(exhaustiveness).
+// SCREEN_ROUTES 를 Record 키로 재구성했을 때 Page 를 정확히 덮는지 타입 체크(누락/오탈자 방지).
+type _RouteEnumCoversPages = Record<Page, true> extends Record<(typeof SCREEN_ROUTES)[number], true>
+  ? Record<(typeof SCREEN_ROUTES)[number], true> extends Record<Page, true>
+    ? true
+    : ["SCREEN_ROUTES 에 Page 아닌 값이 있음"]
+  : ["SCREEN_ROUTES 가 일부 Page 를 누락함"];
+const _routeEnumCheck: _RouteEnumCoversPages = true;
+void _routeEnumCheck;
 
 // 메트릭 시간 범위 — 백엔드 domain.ParseRange 와 동일 허용값(단일 출처 정합).
 export const METRIC_RANGES = ["1h", "6h", "24h", "7d"] as const;
@@ -194,6 +216,68 @@ export const K8S_TOOL_REGISTRY: Record<string, OntologyToolSpec> = {
   },
 };
 
+// ── 어시스트 컨텍스트 TOOL 레지스트리(IMP-106) — get_screen_context 하나(동적 per-turn 상태) ──────
+// MCP primitive 분할: glossary/widget 은 정적·named → RESOURCE(아래 ASSIST_RESOURCE_TEMPLATES).
+// get_screen_context 는 라우트/열린 객체/facet/선택 영역 + 그 화면에 마운트된 widget id 로,
+// 매 턴 바뀌는 동적 상태라 정당한 read-only TOOL(파라미터화 조회). 조회 동사(query) — mutating 아님.
+// route enum 은 SCREEN_ROUTES(Page 파생)에서 spread → 화면 목록과 어긋날 수 없다.
+export const ASSIST_TOOL_REGISTRY: Record<string, OntologyToolSpec> = {
+  get_screen_context: {
+    name: "get_screen_context",
+    description: "read-only, no mutation. 현재 화면(route)에 마운트된 위젯 id·메타와 동적 컨텍스트(열린 객체 objectId·facet·선택 영역 selection)를 한 호출로 반환한다 — 어시스트가 '지금 이 화면에서' 답을 접지할 근거. 앱 전체 덤프가 아니라 그 화면에 실제 마운트된 위젯만 준다(정보폭탄 금지).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        route: { type: "string", description: "현재 라우트(화면)", enum: [...SCREEN_ROUTES] },
+        objectId: { type: "string", description: "열린 온톨로지 객체 id(선택)" },
+        facet: { type: "string", description: "활성 facet/서브뷰(선택)" },
+        selection: { type: "string", description: "선택 영역/위젯 id(선택)" },
+      },
+      required: ["route"],
+      additionalProperties: false,
+    },
+  },
+};
+
+// ── 어시스트 RESOURCE 템플릿(IMP-106) — glossary://{term}·widget://{id}, read-only·addressable ──────
+// MCP resource template(uriTemplate). tool 이 아니라 리소스라 tool-call 비용 0 + pinnable.
+// **injection surface**: name/description 은 정적 선언 문자열만(사용자·객체 내용 보간 금지, prompt-injection 방어).
+export interface AssistResourceTemplate {
+  uriTemplate: string;   // 예: "glossary://{term}"
+  name: string;          // 사람용 라벨(정적)
+  description: string;   // 모델용 설명(정적 — 보간 금지)
+  mimeType: string;
+}
+export const ASSIST_RESOURCE_TEMPLATES: AssistResourceTemplate[] = [
+  {
+    uriTemplate: "glossary://{term}",
+    name: "용어 사전(glossary)",
+    description: "관측 도메인 용어의 정의(short)·왜 중요한가(why)·분류·연관 용어를 term(key 또는 alias)으로 조회한다(read-only, 정적 참조데이터). 미지 용어는 지어내지 않는다.",
+    mimeType: "application/json",
+  },
+  {
+    uriTemplate: "widget://{id}",
+    name: "위젯 메타(widget)",
+    description: "대시보드 위젯/영역이 무엇을 보여주는지(whatItShows)·좋음나쁨 판정 근거(임계 참조)·연관 용어를 위젯 id 로 조회한다(read-only, 정적 참조데이터). 선언된 메타 없으면 지어내지 않는다.",
+    mimeType: "application/json",
+  },
+];
+
+// resolved 콘텐츠(emit 시 아티팩트에 실어 Go 도 동일 단일 출처에서 read 를 서빙 — 데이터 중복 없음).
+// 순수 조회만 — GLOSSARY/WIDGET_META 를 그대로 담고, 어떤 사용자 입력도 보간하지 않는다.
+export interface AssistResourceContents {
+  glossary: Record<string, GlossaryTerm>; // key → term(alias 해석은 resolver 가 담당)
+  widgets: Record<string, { title: string; whatItShows: string; relatedTerms: string[] }>;
+}
+export function buildAssistResourceContents(): AssistResourceContents {
+  const widgets: AssistResourceContents["widgets"] = {};
+  for (const [id, meta] of Object.entries(WIDGET_META)) {
+    // 숫자·라이브 판정은 담지 않는다(단일 출처: verdict 는 답변 시점 deriveVerdict 파생). 정적 메타만.
+    widgets[id] = { title: meta.title, whatItShows: meta.whatItShows, relatedTerms: [...meta.relatedTerms] };
+  }
+  return { glossary: GLOSSARY, widgets };
+}
+
 // ── read-only 불변식 가드(two-tier 안전) ────────────────────────────────────
 // mutating 성격의 이름이 이 레지스트리에 들어오면 즉시 실패(mutation 은 ACTION_REGISTRY 에만).
 // tools/list 를 이 레지스트리에서 파생하므로, 여기 가드가 곧 "auto-callable mutation 없음" 보장.
@@ -209,9 +293,10 @@ export function assertReadOnly(reg: Record<string, OntologyToolSpec> = ONTOLOGY_
     }
   }
 }
-// 모듈 로드 시 1회 강제(개발 중 실수로 mutating tool 추가 시 즉시 터짐). 온톨로지+K8s 두 레지스트리 모두.
+// 모듈 로드 시 1회 강제(개발 중 실수로 mutating tool 추가 시 즉시 터짐). 온톨로지+K8s+어시스트 세 레지스트리 모두.
 assertReadOnly(ONTOLOGY_TOOL_REGISTRY);
 assertReadOnly(K8S_TOOL_REGISTRY);
+assertReadOnly(ASSIST_TOOL_REGISTRY); // IMP-106 — get_screen_context(query verb) read-only 강제.
 
 // ── 계약 아티팩트 emit(TS→Go 단일 출처) ─────────────────────────────────────
 // 레지스트리에서 committed .json 아티팩트(ontology-tools.schema.json)를 결정적으로 만든다.
@@ -231,19 +316,33 @@ function sortDeep(v: unknown): unknown {
   return v;
 }
 
-// emit 페이로드 — 버전 + tool 배열(name 순 정렬). 아티팩트 파일과 byte 동일해야 한다.
+// emit 페이로드 — 버전 + tool 배열(name 순 정렬) + 어시스트 resource template/콘텐츠(IMP-106).
+// 아티팩트 파일과 byte 동일해야 한다.
 export interface OntologyToolsArtifact {
   version: number;
   tools: OntologyToolSpec[];
+  // IMP-106 — 어시스트 컨텍스트 seam(RESOURCE 축). 단일 아티팩트로 emit 해 3-way drift canary 가 함께 강제.
+  resourceTemplates: AssistResourceTemplate[];
+  resourceContents: AssistResourceContents;
 }
 
-// 아티팩트는 온톨로지 read tool + K8s read tool(IMP-91)을 합쳐 name 순으로 담는다 —
-// 둘 다 read-only 계약의 단일 출처라 하나의 아티팩트로 emit 하면 3-way drift canary 가 함께 강제한다.
+// 아티팩트는 온톨로지 read tool + K8s read tool(IMP-91) + 어시스트 TOOL(IMP-106 get_screen_context)을
+// 합쳐 name 순으로 담고, 어시스트 RESOURCE 템플릿·콘텐츠를 함께 실는다 — 전부 read-only 계약의 단일
+// 출처라 하나의 아티팩트로 emit 하면 3-way drift canary(web↔아티팩트↔Go)가 함께 강제한다.
 export function buildOntologyToolsArtifact(): OntologyToolsArtifact {
-  const tools = [...Object.values(ONTOLOGY_TOOL_REGISTRY), ...Object.values(K8S_TOOL_REGISTRY)]
+  const tools = [
+    ...Object.values(ONTOLOGY_TOOL_REGISTRY),
+    ...Object.values(K8S_TOOL_REGISTRY),
+    ...Object.values(ASSIST_TOOL_REGISTRY),
+  ]
     .slice()
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  return { version: 1, tools };
+  return {
+    version: 1,
+    tools,
+    resourceTemplates: ASSIST_RESOURCE_TEMPLATES,
+    resourceContents: buildAssistResourceContents(),
+  };
 }
 
 // 커밋 아티팩트와 동일한 문자열 표현(들여쓰기 2, 마지막 개행 포함, key 정렬).
